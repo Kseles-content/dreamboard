@@ -1,0 +1,35 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Check OpenAPI format
+        run: |
+          if [ -f packages/contracts/openapi/openapi.yaml ]; then
+            echo "✅ OpenAPI file exists"
+          else
+            echo "❌ OpenAPI file missing"
+            exit 1
+          fi
+      - name: Check SQL files
+        run: |
+          if [ -f packages/contracts/sql/schema.sql ]; then
+            echo "✅ SQL file exists"
+          else
+            echo "❌ SQL file missing"
+            exit 1
+          fi
+      - name: Check JSON schemas
+        run: |
+          if [ -f packages/contracts/json-schema/user.schema.json ] && [ -f packages/contracts/json-schema/board.schema.json ]; then
+            echo "✅ JSON schemas exist"
+          else
+            echo "❌ JSON schemas missing"
+            exit 1
+          fi
