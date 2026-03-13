@@ -1,7 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { UsersService } from '../users/users.service';
 import { BoardEntity } from './board.entity';
 import { CreateBoardDto } from './dto/create-board.dto';
 
@@ -10,28 +9,51 @@ export class BoardsService {
   constructor(
     @InjectRepository(BoardEntity)
     private readonly boardsRepository: Repository<BoardEntity>,
-    private readonly usersService: UsersService,
   ) {}
 
-  listBoards(ownerUserId?: number): Promise<BoardEntity[]> {
+  listBoards(userId: number): Promise<BoardEntity[]> {
     return this.boardsRepository.find({
-      where: ownerUserId ? { ownerUserId } : {},
+      where: { ownerUserId: userId },
       order: { id: 'ASC' },
     });
   }
 
-  async createBoard(input: CreateBoardDto): Promise<BoardEntity> {
-    const owner = await this.usersService.findById(input.ownerUserId);
-    if (!owner) {
-      throw new NotFoundException(`User ${input.ownerUserId} not found`);
+  async getBoardById(id: number, userId: number): Promise<BoardEntity> {
+    const board = await this.boardsRepository.findOne({ where: { id } });
+    if (!board) {
+      throw new NotFoundException(`Board ${id} not found`);
+    }
+    if (board.ownerUserId !== userId) {
+      throw new ForbiddenException('No access to this board');
+    }
+    return board;
+  }
+
+  async createBoard(input: CreateBoardDto, userId: number, requestId: string): Promise<BoardEntity> {
+    const boardsCount = await this.boardsRepository.count({ where: { ownerUserId: userId } });
+    if (boardsCount >= 50) {
+      throw new HttpException(
+        {
+          code: 'BOARD_LIMIT_REACHED',
+          message: 'Board limit reached: maximum 50 boards per user',
+          requestId,
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     const entity = this.boardsRepository.create({
-      ownerUserId: input.ownerUserId,
+      ownerUserId: userId,
       title: input.title,
       description: input.description ?? null,
     });
 
     return this.boardsRepository.save(entity);
+  }
+
+  async deleteBoard(id: number, userId: number): Promise<{ success: true }> {
+    const board = await this.getBoardById(id, userId);
+    await this.boardsRepository.delete({ id: board.id });
+    return { success: true };
   }
 }

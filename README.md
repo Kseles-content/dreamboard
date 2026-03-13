@@ -20,7 +20,18 @@ npm run test:e2e
 
 ## API
 
-- `GET /users`
-- `POST /users`
-- `GET /boards?ownerUserId=...`
+### Auth
+- `POST /v1/auth/login`
+- `POST /v1/auth/refresh`
+- `POST /v1/auth/logout`
+
+### Boards (JWT required)
+- `GET /boards`
 - `POST /boards`
+- `GET /boards/:id`
+- `DELETE /boards/:id`
+
+Limit: max 50 boards per user. On overflow API returns:
+- `code: BOARD_LIMIT_REACHED`
+- `message`
+- `requestId`

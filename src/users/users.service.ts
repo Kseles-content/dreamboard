@@ -23,4 +23,8 @@ export class UsersService {
   findById(id: number): Promise<UserEntity | null> {
     return this.usersRepository.findOne({ where: { id } });
   }
+
+  findByEmail(email: string): Promise<UserEntity | null> {
+    return this.usersRepository.findOne({ where: { email } });
+  }
 }
