@@ -1,2 +1,6 @@
 .openclaw/
 memory/
+node_modules/
+dist/
+*.sqlite
+coverage/
