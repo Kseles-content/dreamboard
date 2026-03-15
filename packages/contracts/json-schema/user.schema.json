@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamboard.local/schemas/user.schema.json",
+  "title": "User",
+  "type": "object",
+  "required": ["id", "email", "name", "createdAt", "updatedAt"],
+  "properties": {
+    "id": { "type": "integer", "minimum": 1 },
+    "email": { "type": "string", "format": "email" },
+    "name": { "type": "string", "minLength": 1 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
