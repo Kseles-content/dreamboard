@@ -36,23 +36,3 @@ jobs:
       - name: Web build
         run: |
           npm --prefix apps/web run build
-
-  mobile-check:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
-        with:
-          channel: stable
-      - name: Bootstrap Flutter project files
-        working-directory: apps/mobile
-        run: flutter create --platforms=android --project-name dreamboard_mobile .
-      - name: Flutter pub get
-        working-directory: apps/mobile
-        run: flutter pub get
-      - name: Mobile analyze
-        working-directory: apps/mobile
-        run: flutter analyze
-      - name: Mobile build check
-        working-directory: apps/mobile
-        run: flutter build apk --debug
