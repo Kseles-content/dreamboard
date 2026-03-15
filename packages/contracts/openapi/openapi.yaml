@@ -1,0 +1,47 @@
+openapi: 3.0.3
+info:
+  title: DreamBoard API Contract
+  version: 1.0.0
+servers:
+  - url: https://api.example.com
+paths:
+  /v1/auth/login:
+    post:
+      summary: Login
+      responses:
+        '200':
+          description: OK
+  /v1/boards:
+    get:
+      summary: List boards
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create board
+      responses:
+        '201':
+          description: Created
+  /v1/boards/{boardId}:
+    get:
+      summary: Get board
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Delete board
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
