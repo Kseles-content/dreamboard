@@ -26,6 +26,30 @@ jobs:
         run: |
           npm --prefix apps/api run build
 
+  api-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm test -- --runInBand
+
+  api-e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: npm ci
+      - name: E2E tests
+        run: npm run test:e2e -- --runInBand
+
   web-build:
     runs-on: ubuntu-latest
     steps:
