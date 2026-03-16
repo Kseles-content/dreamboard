@@ -1,3 +1,6 @@
+process.env.DB_PATH = ':memory:';
+process.env.JWT_SECRET = 'test-secret';
+
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
