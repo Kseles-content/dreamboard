@@ -35,3 +35,44 @@ Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`
 - `message`
 - `requestId`
+
+## Demo (Day 2)
+
+1) Start server
+
+```bash
+npm install
+npm run migration:run
+npm run start
+```
+
+2) Login and get token
+
+```bash
+curl -s -X POST http://localhost:3000/v1/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"email":"demo@example.com","name":"Demo"}'
+```
+
+3) Create board (replace `<TOKEN>`)
+
+```bash
+curl -s -X POST http://localhost:3000/boards \
+  -H 'authorization: Bearer <TOKEN>' \
+  -H 'content-type: application/json' \
+  -d '{"title":"Roadmap","description":"Q2"}'
+```
+
+4) Health check
+
+```bash
+curl -s http://localhost:3000/health
+# {"status":"ok"}
+```
+
+5) Run tests
+
+```bash
+npm test
+npm run test:e2e
+```
