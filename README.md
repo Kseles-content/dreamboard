@@ -18,6 +18,12 @@ npm test
 npm run test:e2e
 ```
 
+## Contracts / Specs
+
+- `packages/contracts/json-schema/board-state-v1.schema.json`
+- `packages/contracts/json-schema/board-state-v2.schema.json`
+- `docs/day3-interactive-board-spec.md`
+
 ## API
 
 ### Auth
