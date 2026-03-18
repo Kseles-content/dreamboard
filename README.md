@@ -82,3 +82,9 @@ curl -s http://localhost:3000/health
 npm test
 npm run test:e2e
 ```
+
+6) Local demo evidence (NO_STAGING mode)
+
+```bash
+bash scripts/demo-check.sh
+```
