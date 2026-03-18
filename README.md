@@ -1,6 +1,6 @@
-# DreamBoard Day 2
+# DreamBoard MVP (Day 5 scope freeze)
 
-NestJS backend implementing Day 1 contracts for users and boards.
+NestJS backend with stable MVP scope: **Auth + Boards CRUD**.
 
 ## Run locally
 
@@ -21,8 +21,9 @@ npm run test:e2e
 ## Contracts / Specs
 
 - `packages/contracts/json-schema/board-state-v1.schema.json`
-- `packages/contracts/json-schema/board-state-v2.schema.json`
-- `docs/day3-interactive-board-spec.md`
+- `packages/contracts/json-schema/board-state-v2.schema.json` *(prepared for next stage, not in Day 5 MVP scope)*
+- `docs/day3-interactive-board-spec.md` *(next stage input)*
+- `docs/day4-release-gate.md`
 
 ## API
 

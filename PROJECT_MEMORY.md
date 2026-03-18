@@ -145,3 +145,15 @@
 1) UI tokens (colors/spacing/type)
 2) Mobile screen map (MVP)
 3) Interactive board behavior spec (drag/resize/rotate)
+
+## 7) Scope override (подтверждено пользователем в текущем спринте)
+
+Финальный приоритет и границы Day 5:
+- В MVP входят только:
+  - Auth
+  - Boards CRUD
+- Отложено на следующий этап:
+  - cards
+  - uploads
+  - editor implementation
+- Для закрытия Day 5 staging не требуется; принимается локальное demo-evidence.
