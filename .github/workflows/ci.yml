@@ -62,3 +62,20 @@ jobs:
       - name: Web build
         run: |
           npm --prefix apps/web run build
+
+  mobile-analyze-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Flutter pub get
+        working-directory: apps/mobile
+        run: flutter pub get
+      - name: Flutter analyze
+        working-directory: apps/mobile
+        run: flutter analyze
+      - name: Flutter build apk (debug)
+        working-directory: apps/mobile
+        run: flutter build apk --debug
