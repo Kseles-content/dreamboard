@@ -33,10 +33,11 @@ npm run test:e2e
 - `POST /v1/auth/logout`
 
 ### Boards (JWT required)
-- `GET /boards`
-- `POST /boards`
-- `GET /boards/:id`
-- `DELETE /boards/:id`
+- `GET /v1/boards` (cursor pagination: `?limit=<n>&cursor=<id>`)
+- `POST /v1/boards`
+- `GET /v1/boards/:boardId`
+- `PATCH /v1/boards/:boardId`
+- `DELETE /v1/boards/:boardId` (soft delete)
 
 Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`
@@ -64,10 +65,17 @@ curl -s -X POST http://localhost:3000/v1/auth/login \
 3) Create board (replace `<TOKEN>`)
 
 ```bash
-curl -s -X POST http://localhost:3000/boards \
+curl -s -X POST http://localhost:3000/v1/boards \
   -H 'authorization: Bearer <TOKEN>' \
   -H 'content-type: application/json' \
   -d '{"title":"Roadmap","description":"Q2"}'
+```
+
+4) List with cursor pagination
+
+```bash
+curl -s "http://localhost:3000/v1/boards?limit=2" \
+  -H 'authorization: Bearer <TOKEN>'
 ```
 
 4) Health check

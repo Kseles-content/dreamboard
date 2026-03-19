@@ -1,8 +1,15 @@
-import { Injectable, NotFoundException, ForbiddenException, HttpException, HttpStatus } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  HttpException,
+  HttpStatus,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { MoreThan, Repository } from 'typeorm';
 import { BoardEntity } from './board.entity';
 import { CreateBoardDto } from './dto/create-board.dto';
+import { UpdateBoardDto } from './dto/update-board.dto';
 
 @Injectable()
 export class BoardsService {
@@ -11,11 +18,24 @@ export class BoardsService {
     private readonly boardsRepository: Repository<BoardEntity>,
   ) {}
 
-  listBoards(userId: number): Promise<BoardEntity[]> {
-    return this.boardsRepository.find({
-      where: { ownerUserId: userId },
+  async listBoards(userId: number, limit = 20, cursor?: number): Promise<{ items: BoardEntity[]; nextCursor: number | null }> {
+    const normalizedLimit = Math.min(Math.max(limit, 1), 100);
+
+    const where = cursor
+      ? { ownerUserId: userId, id: MoreThan(cursor) }
+      : { ownerUserId: userId };
+
+    const rows = await this.boardsRepository.find({
+      where,
       order: { id: 'ASC' },
+      take: normalizedLimit + 1,
     });
+
+    const hasMore = rows.length > normalizedLimit;
+    const items = hasMore ? rows.slice(0, normalizedLimit) : rows;
+    const nextCursor = hasMore ? items[items.length - 1].id : null;
+
+    return { items, nextCursor };
   }
 
   async getBoardById(id: number, userId: number): Promise<BoardEntity> {
@@ -51,9 +71,23 @@ export class BoardsService {
     return this.boardsRepository.save(entity);
   }
 
+  async updateBoard(id: number, input: UpdateBoardDto, userId: number): Promise<BoardEntity> {
+    const board = await this.getBoardById(id, userId);
+
+    if (typeof input.title !== 'undefined') {
+      board.title = input.title;
+    }
+
+    if (typeof input.description !== 'undefined') {
+      board.description = input.description;
+    }
+
+    return this.boardsRepository.save(board);
+  }
+
   async deleteBoard(id: number, userId: number): Promise<{ success: true }> {
     const board = await this.getBoardById(id, userId);
-    await this.boardsRepository.delete({ id: board.id });
+    await this.boardsRepository.softDelete({ id: board.id });
     return { success: true };
   }
 }

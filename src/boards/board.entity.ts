@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { UserEntity } from '../users/user.entity';
 
@@ -32,4 +33,7 @@ export class BoardEntity {
 
   @UpdateDateColumn({ type: 'datetime' })
   updatedAt!: Date;
+
+  @DeleteDateColumn({ type: 'datetime', nullable: true })
+  deletedAt!: Date | null;
 }

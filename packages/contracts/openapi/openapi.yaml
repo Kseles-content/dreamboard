@@ -1,7 +1,7 @@
 openapi: 3.0.3
 info:
   title: DreamBoard API Contract
-  version: 1.0.0
+  version: 1.1.0
 servers:
   - url: https://api.example.com
 paths:
@@ -9,11 +9,35 @@ paths:
     post:
       summary: Login
       responses:
-        '200':
-          description: OK
+        '201':
+          description: Created
+  /v1/auth/refresh:
+    post:
+      summary: Refresh token
+      responses:
+        '201':
+          description: Created
+  /v1/auth/logout:
+    post:
+      summary: Logout
+      responses:
+        '201':
+          description: Created
   /v1/boards:
     get:
       summary: List boards
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+            minimum: 0
       responses:
         '200':
           description: OK
@@ -34,8 +58,8 @@ paths:
       responses:
         '200':
           description: OK
-    delete:
-      summary: Delete board
+    patch:
+      summary: Update board
       parameters:
         - in: path
           name: boardId
@@ -45,3 +69,28 @@ paths:
       responses:
         '200':
           description: OK
+    delete:
+      summary: Soft-delete board
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+components:
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          nullable: true

@@ -1,4 +1,5 @@
 import { ForbiddenException, HttpException, NotFoundException } from '@nestjs/common';
+import { MoreThan } from 'typeorm';
 import { BoardsService } from './boards.service';
 
 describe('BoardsService', () => {
@@ -8,7 +9,7 @@ describe('BoardsService', () => {
     count: jest.fn(),
     create: jest.fn(),
     save: jest.fn(),
-    delete: jest.fn(),
+    softDelete: jest.fn(),
   } as any;
 
   let service: BoardsService;
@@ -18,16 +19,29 @@ describe('BoardsService', () => {
     service = new BoardsService(repo);
   });
 
-  it('lists boards for user ordered by id ASC', async () => {
-    repo.find.mockResolvedValue([{ id: 1 }]);
+  it('lists boards with cursor pagination', async () => {
+    repo.find.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
 
-    const result = await service.listBoards(42);
+    const result = await service.listBoards(42, 2);
 
     expect(repo.find).toHaveBeenCalledWith({
       where: { ownerUserId: 42 },
       order: { id: 'ASC' },
+      take: 3,
     });
-    expect(result).toEqual([{ id: 1 }]);
+    expect(result).toEqual({ items: [{ id: 1 }, { id: 2 }], nextCursor: 2 });
+  });
+
+  it('uses cursor in list query', async () => {
+    repo.find.mockResolvedValue([{ id: 8 }]);
+
+    await service.listBoards(42, 20, 7);
+
+    expect(repo.find).toHaveBeenCalledWith({
+      where: { ownerUserId: 42, id: MoreThan(7) },
+      order: { id: 'ASC' },
+      take: 21,
+    });
   });
 
   it('throws NotFound when board does not exist', async () => {
@@ -58,6 +72,15 @@ describe('BoardsService', () => {
     expect(result).toMatchObject({ id: 11, ownerUserId: 7, title: 'Roadmap' });
   });
 
+  it('updates board fields', async () => {
+    repo.findOne.mockResolvedValue({ id: 10, ownerUserId: 7, title: 'Old', description: null });
+    repo.save.mockImplementation(async (v: unknown) => v);
+
+    const result = await service.updateBoard(10, { title: 'New' }, 7);
+
+    expect(result).toMatchObject({ id: 10, title: 'New' });
+  });
+
   it('returns BOARD_LIMIT_REACHED when user has 50 boards', async () => {
     repo.count.mockResolvedValue(50);
 
@@ -76,13 +99,13 @@ describe('BoardsService', () => {
     }
   });
 
-  it('deletes own board', async () => {
+  it('soft-deletes own board', async () => {
     repo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
-    repo.delete.mockResolvedValue({ affected: 1 });
+    repo.softDelete.mockResolvedValue({ affected: 1 });
 
     const result = await service.deleteBoard(15, 7);
 
-    expect(repo.delete).toHaveBeenCalledWith({ id: 15 });
+    expect(repo.softDelete).toHaveBeenCalledWith({ id: 15 });
     expect(result).toEqual({ success: true });
   });
 });
