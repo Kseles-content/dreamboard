@@ -97,3 +97,5 @@ npm run test:e2e
 ```bash
 bash scripts/demo-check.sh
 ```
+
+Week 2 in progress, auth + boards
