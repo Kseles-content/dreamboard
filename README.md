@@ -98,4 +98,6 @@ npm run test:e2e
 bash scripts/demo-check.sh
 ```
 
-Week 2 in progress, auth + boards
+## Week 2 status
+
+✅ Auth + Boards реализованы, тесты проходят, CI зелёный, демо доступно через scripts/demo-check.sh
