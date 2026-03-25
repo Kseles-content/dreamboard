@@ -152,24 +152,35 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _submit() async {
+    final baseUrl = _baseUrlCtrl.text.trim();
+    final email = _emailCtrl.text.trim();
+    final name = _nameCtrl.text.trim();
+
+    if (baseUrl.isEmpty || email.isEmpty) {
+      setState(() => _error = 'Base URL and email are required.');
+      return;
+    }
+
     setState(() {
       _loading = true;
       _error = null;
     });
 
     try {
-      final auth = await ApiClient(baseUrl: _baseUrlCtrl.text.trim()).login(
-        email: _emailCtrl.text.trim(),
-        name: _nameCtrl.text.trim(),
+      final auth = await ApiClient(baseUrl: baseUrl).login(
+        email: email,
+        name: name,
       );
 
       await widget.onLoggedIn(
         accessToken: auth.accessToken,
         refreshToken: auth.refreshToken,
-        baseUrl: _baseUrlCtrl.text.trim(),
+        baseUrl: baseUrl,
       );
+    } on ApiException catch (e) {
+      setState(() => _error = e.userMessage);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = 'Unexpected error: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -179,9 +190,10 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(title: const Text('DreamBoard Login')),
-      body: Padding(
+      body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             TextField(
               controller: _baseUrlCtrl,
@@ -243,6 +255,10 @@ class _BoardsScreenState extends State<BoardsScreen> {
     _loadBoards();
   }
 
+  void _toast(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
+
   Future<void> _loadBoards() async {
     setState(() {
       _loading = true;
@@ -254,8 +270,10 @@ class _BoardsScreenState extends State<BoardsScreen> {
       setState(() => _boards = list);
     } on UnauthorizedException {
       await widget.onUnauthorized();
+    } on ApiException catch (e) {
+      setState(() => _error = e.userMessage);
     } catch (e) {
-      setState(() => _error = e.toString());
+      setState(() => _error = 'Unexpected error: $e');
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -283,39 +301,74 @@ class _BoardsScreenState extends State<BoardsScreen> {
           ],
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Create')),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Create'),
+          ),
         ],
       ),
     );
 
     if (ok != true) return;
 
+    final title = titleCtrl.text.trim();
+    if (title.isEmpty) {
+      _toast('Board title is required.');
+      return;
+    }
+
     try {
       await widget.client.createBoard(
-        title: titleCtrl.text.trim(),
-        description: descriptionCtrl.text.trim().isEmpty ? null : descriptionCtrl.text.trim(),
+        title: title,
+        description:
+            descriptionCtrl.text.trim().isEmpty ? null : descriptionCtrl.text.trim(),
       );
       await _loadBoards();
+      _toast('Board created.');
     } on UnauthorizedException {
       await widget.onUnauthorized();
+    } on ApiException catch (e) {
+      _toast('Create failed: ${e.userMessage}');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Create failed: $e')));
-      }
+      _toast('Create failed: $e');
     }
   }
 
   Future<void> _deleteBoard(Board board) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete board'),
+        content: Text('Delete "${board.title}"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Delete'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
     try {
       await widget.client.deleteBoard(board.id);
       await _loadBoards();
+      _toast('Board deleted.');
     } on UnauthorizedException {
       await widget.onUnauthorized();
+    } on ApiException catch (e) {
+      _toast('Delete failed: ${e.userMessage}');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Delete failed: $e')));
-      }
+      _toast('Delete failed: $e');
     }
   }
 
@@ -327,16 +380,23 @@ class _BoardsScreenState extends State<BoardsScreen> {
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text('Board #${opened.id}'),
-          content: Text('Title: ${opened.title}\nDescription: ${opened.description ?? '-'}'),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close'))],
+          content: Text(
+            'Title: ${opened.title}\nDescription: ${opened.description ?? '-'}',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Close'),
+            ),
+          ],
         ),
       );
     } on UnauthorizedException {
       await widget.onUnauthorized();
+    } on ApiException catch (e) {
+      _toast('Open failed: ${e.userMessage}');
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Open failed: $e')));
-      }
+      _toast('Open failed: $e');
     }
   }
 
@@ -361,7 +421,19 @@ class _BoardsScreenState extends State<BoardsScreen> {
           }
 
           if (_error != null) {
-            return Center(child: Text('Error: $_error'));
+            return Center(
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Error: $_error'),
+                    const SizedBox(height: 8),
+                    ElevatedButton(onPressed: _loadBoards, child: const Text('Retry')),
+                  ],
+                ),
+              ),
+            );
           }
 
           if (_boards.isEmpty) {
@@ -395,78 +467,135 @@ class ApiClient {
   final String baseUrl;
   final String? accessToken;
 
-  Uri _u(String path, [Map<String, dynamic>? q]) =>
-      Uri.parse('$baseUrl$path').replace(queryParameters: q?.map((k, v) => MapEntry(k, '$v')));
+  Uri _u(String path, [Map<String, dynamic>? q]) => Uri.parse('$baseUrl$path')
+      .replace(queryParameters: q?.map((k, v) => MapEntry(k, '$v')));
 
   Future<AuthTokens> login({required String email, required String name}) async {
-    final res = await http.post(
+    final res = await _request(
+      'POST',
       _u('/v1/auth/login'),
-      headers: {'content-type': 'application/json'},
-      body: jsonEncode({'email': email, 'name': name}),
+      body: {'email': email, 'name': name},
+      includeAuth: false,
     );
-    _throwIfBad(res);
-    final m = jsonDecode(res.body) as Map<String, dynamic>;
-    return AuthTokens.fromJson(m);
+    return AuthTokens.fromJson(_asMap(res));
   }
 
   Future<void> logout(String refreshToken) async {
-    await http.post(
+    await _request(
+      'POST',
       _u('/v1/auth/logout'),
-      headers: {'content-type': 'application/json'},
-      body: jsonEncode({'refreshToken': refreshToken}),
+      body: {'refreshToken': refreshToken},
+      includeAuth: false,
     );
   }
 
   Future<List<Board>> listBoards() async {
-    final res = await http.get(_u('/v1/boards', {'limit': 50}), headers: _authHeaders());
-    _throwIfBad(res);
-    final m = jsonDecode(res.body) as Map<String, dynamic>;
-    final items = (m['items'] as List<dynamic>? ?? []);
+    final res = await _request('GET', _u('/v1/boards', {'limit': 50}));
+    final map = _asMap(res);
+    final items = (map['items'] as List<dynamic>? ?? []);
     return items.map((e) => Board.fromJson(e as Map<String, dynamic>)).toList();
   }
 
   Future<Board> createBoard({required String title, String? description}) async {
-    final res = await http.post(
+    final res = await _request(
+      'POST',
       _u('/v1/boards'),
-      headers: _authHeaders(),
-      body: jsonEncode({'title': title, 'description': description}),
+      body: {'title': title, 'description': description},
     );
-    _throwIfBad(res);
-    return Board.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+    return Board.fromJson(_asMap(res));
   }
 
   Future<Board> getBoard(int id) async {
-    final res = await http.get(_u('/v1/boards/$id'), headers: _authHeaders());
-    _throwIfBad(res);
-    return Board.fromJson(jsonDecode(res.body) as Map<String, dynamic>);
+    final res = await _request('GET', _u('/v1/boards/$id'));
+    return Board.fromJson(_asMap(res));
   }
 
   Future<void> deleteBoard(int id) async {
-    final res = await http.delete(_u('/v1/boards/$id'), headers: _authHeaders());
-    _throwIfBad(res);
+    await _request('DELETE', _u('/v1/boards/$id'));
   }
 
-  Map<String, String> _authHeaders() => {
-        'content-type': 'application/json',
-        if (accessToken != null) 'authorization': 'Bearer $accessToken',
-      };
+  Future<http.Response> _request(
+    String method,
+    Uri uri, {
+    Map<String, dynamic>? body,
+    bool includeAuth = true,
+  }) async {
+    final headers = <String, String>{'content-type': 'application/json'};
+    if (includeAuth && accessToken != null) {
+      headers['authorization'] = 'Bearer $accessToken';
+    }
+
+    debugPrint('[api] -> $method $uri');
+    late final http.Response res;
+
+    switch (method) {
+      case 'GET':
+        res = await http.get(uri, headers: headers);
+      case 'POST':
+        res = await http.post(uri, headers: headers, body: jsonEncode(body ?? {}));
+      case 'DELETE':
+        res = await http.delete(uri, headers: headers);
+      default:
+        throw Exception('Unsupported method $method');
+    }
+
+    debugPrint('[api] <- $method $uri status=${res.statusCode} body=${res.body}');
+    _throwIfBad(res);
+    return res;
+  }
+
+  Map<String, dynamic> _asMap(http.Response response) {
+    final parsed = jsonDecode(response.body);
+    if (parsed is Map<String, dynamic>) return parsed;
+    throw ApiException(statusCode: response.statusCode, message: 'Invalid response body');
+  }
 
   void _throwIfBad(http.Response res) {
     if (res.statusCode >= 200 && res.statusCode < 300) return;
     if (res.statusCode == 401) throw UnauthorizedException();
 
+    String message = res.body;
     try {
       final body = jsonDecode(res.body) as Map<String, dynamic>;
-      throw Exception('${body['code'] ?? 'HTTP_${res.statusCode}'}: ${body['message'] ?? res.body}');
+      message = (body['message'] as String?) ?? message;
     } catch (_) {
-      throw Exception('HTTP_${res.statusCode}: ${res.body}');
+      // Keep raw body if not JSON.
     }
+
+    throw ApiException(statusCode: res.statusCode, message: message);
   }
 }
 
 class UnauthorizedException implements Exception {
   @override
   String toString() => 'Unauthorized';
+}
+
+class ApiException implements Exception {
+  ApiException({required this.statusCode, required this.message});
+
+  final int statusCode;
+  final String message;
+
+  String get userMessage {
+    switch (statusCode) {
+      case 400:
+        return 'Bad request. Please check your input.';
+      case 401:
+        return 'Unauthorized. Please login again.';
+      case 403:
+        return 'Forbidden for this account.';
+      case 404:
+        return 'Resource not found.';
+      case 500:
+        return 'Server error. Please retry later.';
+      default:
+        return 'Request failed ($statusCode): $message';
+    }
+  }
+
+  @override
+  String toString() => 'ApiException($statusCode): $message';
 }
 
 class AuthTokens {

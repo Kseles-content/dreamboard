@@ -79,6 +79,9 @@ jobs:
       - name: Flutter analyze
         working-directory: apps/mobile
         run: flutter analyze
+      - name: Flutter test
+        working-directory: apps/mobile
+        run: flutter test
       - name: Flutter build apk (debug)
         working-directory: apps/mobile
         run: flutter build apk --debug
