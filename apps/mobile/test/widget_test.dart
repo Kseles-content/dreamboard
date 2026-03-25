@@ -2,8 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:dreamboard_mobile/main.dart';
 
 void main() {
-  testWidgets('renders DreamBoardApp root widget', (WidgetTester tester) async {
+  testWidgets('renders login shell', (WidgetTester tester) async {
     await tester.pumpWidget(const DreamBoardApp());
-    expect(find.text('DreamBoard Mobile Foundation'), findsOneWidget);
+    await tester.pumpAndSettle();
+
+    expect(find.text('DreamBoard Login'), findsOneWidget);
+    expect(find.text('Login'), findsOneWidget);
   });
 }
