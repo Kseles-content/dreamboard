@@ -10,6 +10,11 @@ import { MoreThan, Repository } from 'typeorm';
 import { BoardEntity } from './board.entity';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
+import { CreateCardDto } from './dto/create-card.dto';
+import { UpdateCardDto } from './dto/update-card.dto';
+
+type Card = { id: string; text: string };
+type BoardState = { cards: Card[] };
 
 @Injectable()
 export class BoardsService {
@@ -66,6 +71,7 @@ export class BoardsService {
       ownerUserId: userId,
       title: input.title,
       description: input.description ?? null,
+      stateJson: JSON.stringify({ cards: [] }),
     });
 
     return this.boardsRepository.save(entity);
@@ -89,5 +95,73 @@ export class BoardsService {
     const board = await this.getBoardById(id, userId);
     await this.boardsRepository.softDelete({ id: board.id });
     return { success: true };
+  }
+
+  async listCards(boardId: number, userId: number): Promise<{ items: Card[] }> {
+    const board = await this.getBoardById(boardId, userId);
+    return { items: this.readState(board).cards };
+  }
+
+  async createCard(boardId: number, userId: number, input: CreateCardDto): Promise<{ items: Card[]; created: Card }> {
+    const board = await this.getBoardById(boardId, userId);
+    const state = this.readState(board);
+
+    if (state.cards.length >= 200) {
+      throw new HttpException(
+        {
+          code: 'CARD_LIMIT_REACHED',
+          message: 'Card limit reached: maximum 200 cards per board',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const created: Card = { id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, text: input.text };
+    state.cards.push(created);
+    board.stateJson = JSON.stringify(state);
+    await this.boardsRepository.save(board);
+
+    return { items: state.cards, created };
+  }
+
+  async updateCard(boardId: number, cardId: string, userId: number, input: UpdateCardDto): Promise<{ items: Card[]; updated: Card }> {
+    const board = await this.getBoardById(boardId, userId);
+    const state = this.readState(board);
+    const card = state.cards.find((c) => c.id === cardId);
+
+    if (!card) {
+      throw new NotFoundException(`Card ${cardId} not found`);
+    }
+
+    card.text = input.text;
+    board.stateJson = JSON.stringify(state);
+    await this.boardsRepository.save(board);
+
+    return { items: state.cards, updated: card };
+  }
+
+  async deleteCard(boardId: number, cardId: string, userId: number): Promise<{ items: Card[]; success: true }> {
+    const board = await this.getBoardById(boardId, userId);
+    const state = this.readState(board);
+    const before = state.cards.length;
+    state.cards = state.cards.filter((c) => c.id !== cardId);
+
+    if (state.cards.length === before) {
+      throw new NotFoundException(`Card ${cardId} not found`);
+    }
+
+    board.stateJson = JSON.stringify(state);
+    await this.boardsRepository.save(board);
+
+    return { items: state.cards, success: true };
+  }
+
+  private readState(board: BoardEntity): BoardState {
+    try {
+      const parsed = board.stateJson ? (JSON.parse(board.stateJson) as BoardState) : { cards: [] };
+      return { cards: Array.isArray(parsed.cards) ? parsed.cards : [] };
+    } catch {
+      return { cards: [] };
+    }
   }
 }

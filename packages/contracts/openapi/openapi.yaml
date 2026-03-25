@@ -80,6 +80,28 @@ paths:
       responses:
         '200':
           description: OK
+  /v1/boards/{boardId}/cards:
+    get:
+      summary: List text cards
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create text card
+      responses:
+        '201':
+          description: Created
+  /v1/boards/{boardId}/cards/{cardId}:
+    patch:
+      summary: Update text card
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Delete text card
+      responses:
+        '200':
+          description: OK
 components:
   schemas:
     ErrorEnvelope:

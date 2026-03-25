@@ -68,6 +68,7 @@ describe('BoardsService', () => {
       ownerUserId: 7,
       title: 'Roadmap',
       description: 'Q2',
+      stateJson: '{"cards":[]}',
     });
     expect(result).toMatchObject({ id: 11, ownerUserId: 7, title: 'Roadmap' });
   });

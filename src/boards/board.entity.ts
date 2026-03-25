@@ -28,6 +28,9 @@ export class BoardEntity {
   @Column({ type: 'text', nullable: true })
   description!: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  stateJson!: string | null;
+
   @CreateDateColumn({ type: 'datetime' })
   createdAt!: Date;
 
