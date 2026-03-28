@@ -20,6 +20,7 @@ import { UpdateBoardDto } from './dto/update-board.dto';
 import { ListBoardsQueryDto } from './dto/list-boards-query.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
+import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('v1/boards')
@@ -89,5 +90,14 @@ export class BoardsController {
     @Req() req: RequestWithId,
   ) {
     return this.boardsService.deleteCard(boardId, cardId, req.user!.sub);
+  }
+
+  @Post(':boardId/uploads/intents')
+  createUploadIntent(
+    @Param('boardId', ParseIntPipe) boardId: number,
+    @Req() req: RequestWithId,
+    @Body() input: CreateUploadIntentDto,
+  ) {
+    return this.boardsService.createUploadIntent(boardId, req.user!.sub, input);
   }
 }

@@ -109,4 +109,40 @@ describe('BoardsService', () => {
     expect(repo.softDelete).toHaveBeenCalledWith({ id: 15 });
     expect(result).toEqual({ success: true });
   });
+
+  it('creates upload intent for allowed mime', async () => {
+    repo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+
+    const result = await service.createUploadIntent(15, 7, {
+      mimeType: 'image/png',
+      sizeBytes: 1024,
+      fileName: 'hero.png',
+    });
+
+    expect(result).toMatchObject({
+      method: 'PUT',
+      headers: { 'content-type': 'image/png' },
+      maxSizeBytes: 10 * 1024 * 1024,
+    });
+    expect(result.objectKey).toContain('boards/15/uploads/');
+    expect(result.uploadUrl).toContain(result.objectKey);
+    expect(result.publicUrl).toContain(result.objectKey);
+  });
+
+  it('rejects upload intent with unsupported mime', async () => {
+    repo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+
+    await expect(
+      service.createUploadIntent(15, 7, {
+        mimeType: 'application/pdf',
+        sizeBytes: 1024,
+        fileName: 'doc.pdf',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: 'UPLOAD_MIME_NOT_ALLOWED',
+      },
+    });
+  });
 });

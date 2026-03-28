@@ -91,6 +91,15 @@ paths:
       responses:
         '201':
           description: Created
+
+  /v1/boards/{boardId}/uploads/intents:
+    post:
+      summary: Create upload intent for board asset
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Invalid input (mime/size)
   /v1/boards/{boardId}/cards/{cardId}:
     patch:
       summary: Update text card

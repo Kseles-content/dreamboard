@@ -12,9 +12,12 @@ import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
+import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 
 type Card = { id: string; text: string };
 type BoardState = { cards: Card[] };
+
+const ALLOWED_UPLOAD_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 @Injectable()
 export class BoardsService {
@@ -154,6 +157,53 @@ export class BoardsService {
     await this.boardsRepository.save(board);
 
     return { items: state.cards, success: true };
+  }
+
+  async createUploadIntent(boardId: number, userId: number, input: CreateUploadIntentDto) {
+    await this.getBoardById(boardId, userId);
+
+    if (!ALLOWED_UPLOAD_MIME_TYPES.has(input.mimeType)) {
+      throw new HttpException(
+        {
+          code: 'UPLOAD_MIME_NOT_ALLOWED',
+          message: `Unsupported mimeType: ${input.mimeType}`,
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
+    const extension = this.extensionByMimeType(input.mimeType);
+    const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const objectKey = `boards/${boardId}/uploads/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}.${extension}`;
+
+    const uploadBase = (process.env.STORAGE_UPLOAD_BASE_URL ?? 'https://uploads.local').replace(/\/$/, '');
+    const publicBase = (process.env.STORAGE_PUBLIC_BASE_URL ?? 'https://cdn.local').replace(/\/$/, '');
+    const expiresInSeconds = 15 * 60;
+
+    return {
+      method: 'PUT',
+      objectKey,
+      uploadUrl: `${uploadBase}/${objectKey}?signature=demo`,
+      publicUrl: `${publicBase}/${objectKey}`,
+      headers: {
+        'content-type': input.mimeType,
+      },
+      maxSizeBytes: 10 * 1024 * 1024,
+      expiresInSeconds,
+    };
+  }
+
+  private extensionByMimeType(mimeType: string): string {
+    switch (mimeType) {
+      case 'image/jpeg':
+        return 'jpg';
+      case 'image/png':
+        return 'png';
+      case 'image/webp':
+        return 'webp';
+      default:
+        return 'bin';
+    }
   }
 
   private readState(board: BoardEntity): BoardState {

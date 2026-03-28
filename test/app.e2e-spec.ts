@@ -179,4 +179,45 @@ describe('DreamBoard API (e2e)', () => {
       .send({ refreshToken: refreshed.body.refreshToken })
       .expect(201);
   });
+
+  it('creates upload intent for board image', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'upload@example.com', name: 'Upload User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Upload board' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    const intent = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/intents`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        fileName: 'cover.png',
+      })
+      .expect(201);
+
+    expect(intent.body.method).toBe('PUT');
+    expect(intent.body.headers['content-type']).toBe('image/png');
+    expect(intent.body.objectKey).toContain(`boards/${boardId}/uploads/`);
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/intents`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mimeType: 'application/pdf',
+        sizeBytes: 2048,
+        fileName: 'x.pdf',
+      })
+      .expect(400);
+  });
 });
