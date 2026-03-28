@@ -13,6 +13,8 @@ import { UpdateBoardDto } from './dto/update-board.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
+import { UploadAssetEntity } from './upload-asset.entity';
+import { FinalizeUploadDto } from './dto/finalize-upload.dto';
 
 type Card = { id: string; text: string };
 type BoardState = { cards: Card[] };
@@ -24,6 +26,8 @@ export class BoardsService {
   constructor(
     @InjectRepository(BoardEntity)
     private readonly boardsRepository: Repository<BoardEntity>,
+    @InjectRepository(UploadAssetEntity)
+    private readonly uploadAssetsRepository: Repository<UploadAssetEntity>,
   ) {}
 
   async listBoards(userId: number, limit = 20, cursor?: number): Promise<{ items: BoardEntity[]; nextCursor: number | null }> {
@@ -179,17 +183,66 @@ export class BoardsService {
     const uploadBase = (process.env.STORAGE_UPLOAD_BASE_URL ?? 'https://uploads.local').replace(/\/$/, '');
     const publicBase = (process.env.STORAGE_PUBLIC_BASE_URL ?? 'https://cdn.local').replace(/\/$/, '');
     const expiresInSeconds = 15 * 60;
+    const publicUrl = `${publicBase}/${objectKey}`;
+
+    await this.uploadAssetsRepository.save(
+      this.uploadAssetsRepository.create({
+        boardId,
+        ownerUserId: userId,
+        objectKey,
+        mimeType: input.mimeType,
+        sizeBytes: input.sizeBytes,
+        fileName: input.fileName,
+        status: 'INTENT_CREATED',
+        publicUrl,
+        etag: null,
+        finalizedAt: null,
+      }),
+    );
 
     return {
       method: 'PUT',
       objectKey,
       uploadUrl: `${uploadBase}/${objectKey}?signature=demo`,
-      publicUrl: `${publicBase}/${objectKey}`,
+      publicUrl,
       headers: {
         'content-type': input.mimeType,
       },
       maxSizeBytes: 10 * 1024 * 1024,
       expiresInSeconds,
+    };
+  }
+
+  async finalizeUpload(boardId: number, userId: number, input: FinalizeUploadDto) {
+    await this.getBoardById(boardId, userId);
+
+    const asset = await this.uploadAssetsRepository.findOne({
+      where: {
+        boardId,
+        ownerUserId: userId,
+        objectKey: input.objectKey,
+      },
+    });
+
+    if (!asset) {
+      throw new NotFoundException('Upload intent not found');
+    }
+
+    asset.status = 'READY';
+    asset.finalizedAt = new Date();
+    asset.etag = input.etag ?? null;
+
+    const saved = await this.uploadAssetsRepository.save(asset);
+
+    return {
+      id: saved.id,
+      boardId: saved.boardId,
+      objectKey: saved.objectKey,
+      mimeType: saved.mimeType,
+      sizeBytes: saved.sizeBytes,
+      status: saved.status,
+      publicUrl: saved.publicUrl,
+      finalizedAt: saved.finalizedAt,
     };
   }
 

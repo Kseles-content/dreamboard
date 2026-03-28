@@ -3,7 +3,7 @@ import { MoreThan } from 'typeorm';
 import { BoardsService } from './boards.service';
 
 describe('BoardsService', () => {
-  const repo = {
+  const boardsRepo = {
     find: jest.fn(),
     findOne: jest.fn(),
     count: jest.fn(),
@@ -12,19 +12,25 @@ describe('BoardsService', () => {
     softDelete: jest.fn(),
   } as any;
 
+  const uploadsRepo = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  } as any;
+
   let service: BoardsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BoardsService(repo);
+    service = new BoardsService(boardsRepo, uploadsRepo);
   });
 
   it('lists boards with cursor pagination', async () => {
-    repo.find.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
+    boardsRepo.find.mockResolvedValue([{ id: 1 }, { id: 2 }, { id: 3 }]);
 
     const result = await service.listBoards(42, 2);
 
-    expect(repo.find).toHaveBeenCalledWith({
+    expect(boardsRepo.find).toHaveBeenCalledWith({
       where: { ownerUserId: 42 },
       order: { id: 'ASC' },
       take: 3,
@@ -33,11 +39,11 @@ describe('BoardsService', () => {
   });
 
   it('uses cursor in list query', async () => {
-    repo.find.mockResolvedValue([{ id: 8 }]);
+    boardsRepo.find.mockResolvedValue([{ id: 8 }]);
 
     await service.listBoards(42, 20, 7);
 
-    expect(repo.find).toHaveBeenCalledWith({
+    expect(boardsRepo.find).toHaveBeenCalledWith({
       where: { ownerUserId: 42, id: MoreThan(7) },
       order: { id: 'ASC' },
       take: 21,
@@ -45,26 +51,26 @@ describe('BoardsService', () => {
   });
 
   it('throws NotFound when board does not exist', async () => {
-    repo.findOne.mockResolvedValue(null);
+    boardsRepo.findOne.mockResolvedValue(null);
 
     await expect(service.getBoardById(10, 1)).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('throws Forbidden when board belongs to another user', async () => {
-    repo.findOne.mockResolvedValue({ id: 10, ownerUserId: 99 });
+    boardsRepo.findOne.mockResolvedValue({ id: 10, ownerUserId: 99 });
 
     await expect(service.getBoardById(10, 1)).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it('creates board when under limit', async () => {
-    repo.count.mockResolvedValue(3);
-    repo.create.mockImplementation((v: unknown) => v);
-    repo.save.mockImplementation(async (v: unknown) => ({ id: 11, ...(v as object) }));
+    boardsRepo.count.mockResolvedValue(3);
+    boardsRepo.create.mockImplementation((v: unknown) => v);
+    boardsRepo.save.mockImplementation(async (v: unknown) => ({ id: 11, ...(v as object) }));
 
     const result = await service.createBoard({ title: 'Roadmap', description: 'Q2' }, 7, 'req-1');
 
-    expect(repo.count).toHaveBeenCalledWith({ where: { ownerUserId: 7 } });
-    expect(repo.create).toHaveBeenCalledWith({
+    expect(boardsRepo.count).toHaveBeenCalledWith({ where: { ownerUserId: 7 } });
+    expect(boardsRepo.create).toHaveBeenCalledWith({
       ownerUserId: 7,
       title: 'Roadmap',
       description: 'Q2',
@@ -74,8 +80,8 @@ describe('BoardsService', () => {
   });
 
   it('updates board fields', async () => {
-    repo.findOne.mockResolvedValue({ id: 10, ownerUserId: 7, title: 'Old', description: null });
-    repo.save.mockImplementation(async (v: unknown) => v);
+    boardsRepo.findOne.mockResolvedValue({ id: 10, ownerUserId: 7, title: 'Old', description: null });
+    boardsRepo.save.mockImplementation(async (v: unknown) => v);
 
     const result = await service.updateBoard(10, { title: 'New' }, 7);
 
@@ -83,7 +89,7 @@ describe('BoardsService', () => {
   });
 
   it('returns BOARD_LIMIT_REACHED when user has 50 boards', async () => {
-    repo.count.mockResolvedValue(50);
+    boardsRepo.count.mockResolvedValue(50);
 
     try {
       await service.createBoard({ title: 'Overflow' }, 7, 'req-limit');
@@ -101,17 +107,19 @@ describe('BoardsService', () => {
   });
 
   it('soft-deletes own board', async () => {
-    repo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
-    repo.softDelete.mockResolvedValue({ affected: 1 });
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    boardsRepo.softDelete.mockResolvedValue({ affected: 1 });
 
     const result = await service.deleteBoard(15, 7);
 
-    expect(repo.softDelete).toHaveBeenCalledWith({ id: 15 });
+    expect(boardsRepo.softDelete).toHaveBeenCalledWith({ id: 15 });
     expect(result).toEqual({ success: true });
   });
 
   it('creates upload intent for allowed mime', async () => {
-    repo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    uploadsRepo.create.mockImplementation((v: unknown) => v);
+    uploadsRepo.save.mockResolvedValue({ id: 77 });
 
     const result = await service.createUploadIntent(15, 7, {
       mimeType: 'image/png',
@@ -124,13 +132,14 @@ describe('BoardsService', () => {
       headers: { 'content-type': 'image/png' },
       maxSizeBytes: 10 * 1024 * 1024,
     });
+    expect(uploadsRepo.create).toHaveBeenCalled();
     expect(result.objectKey).toContain('boards/15/uploads/');
     expect(result.uploadUrl).toContain(result.objectKey);
     expect(result.publicUrl).toContain(result.objectKey);
   });
 
   it('rejects upload intent with unsupported mime', async () => {
-    repo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
 
     await expect(
       service.createUploadIntent(15, 7, {
@@ -144,5 +153,30 @@ describe('BoardsService', () => {
         code: 'UPLOAD_MIME_NOT_ALLOWED',
       },
     });
+  });
+
+  it('finalizes upload intent and returns metadata', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    uploadsRepo.findOne.mockResolvedValue({
+      id: 77,
+      boardId: 15,
+      ownerUserId: 7,
+      objectKey: 'boards/15/uploads/file.png',
+      mimeType: 'image/png',
+      sizeBytes: 100,
+      status: 'INTENT_CREATED',
+      publicUrl: 'https://cdn.local/boards/15/uploads/file.png',
+      finalizedAt: null,
+    });
+    uploadsRepo.save.mockImplementation(async (v: any) => v);
+
+    const result = await service.finalizeUpload(15, 7, {
+      objectKey: 'boards/15/uploads/file.png',
+      etag: 'etag1',
+    });
+
+    expect(result.status).toBe('READY');
+    expect(result.objectKey).toBe('boards/15/uploads/file.png');
+    expect(result.finalizedAt).toBeTruthy();
   });
 });

@@ -210,6 +210,15 @@ describe('DreamBoard API (e2e)', () => {
     expect(intent.body.headers['content-type']).toBe('image/png');
     expect(intent.body.objectKey).toContain(`boards/${boardId}/uploads/`);
 
+    const finalized = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/finalize`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ objectKey: intent.body.objectKey, etag: 'etag-demo' })
+      .expect(201);
+
+    expect(finalized.body.status).toBe('READY');
+    expect(finalized.body.objectKey).toBe(intent.body.objectKey);
+
     await request(app.getHttpServer())
       .post(`/v1/boards/${boardId}/uploads/intents`)
       .set('Authorization', `Bearer ${token}`)

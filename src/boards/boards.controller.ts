@@ -21,6 +21,7 @@ import { ListBoardsQueryDto } from './dto/list-boards-query.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
+import { FinalizeUploadDto } from './dto/finalize-upload.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('v1/boards')
@@ -99,5 +100,14 @@ export class BoardsController {
     @Body() input: CreateUploadIntentDto,
   ) {
     return this.boardsService.createUploadIntent(boardId, req.user!.sub, input);
+  }
+
+  @Post(':boardId/uploads/finalize')
+  finalizeUpload(
+    @Param('boardId', ParseIntPipe) boardId: number,
+    @Req() req: RequestWithId,
+    @Body() input: FinalizeUploadDto,
+  ) {
+    return this.boardsService.finalizeUpload(boardId, req.user!.sub, input);
   }
 }

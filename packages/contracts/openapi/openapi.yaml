@@ -100,6 +100,15 @@ paths:
           description: Created
         '400':
           description: Invalid input (mime/size)
+
+  /v1/boards/{boardId}/uploads/finalize:
+    post:
+      summary: Finalize uploaded board asset
+      responses:
+        '201':
+          description: Created
+        '404':
+          description: Upload intent not found
   /v1/boards/{boardId}/cards/{cardId}:
     patch:
       summary: Update text card

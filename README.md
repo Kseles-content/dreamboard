@@ -39,6 +39,7 @@ npm run test:e2e
 - `PATCH /v1/boards/:boardId`
 - `DELETE /v1/boards/:boardId` (soft delete)
 - `POST /v1/boards/:boardId/uploads/intents` (image upload pre-sign intent)
+- `POST /v1/boards/:boardId/uploads/finalize` (mark upload as READY and persist metadata)
 
 Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`
@@ -82,6 +83,15 @@ curl -s -X POST http://localhost:3000/v1/boards/<BOARD_ID>/uploads/intents \
   -H 'authorization: Bearer <TOKEN>' \
   -H 'content-type: application/json' \
   -d '{"mimeType":"image/png","sizeBytes":2048,"fileName":"cover.png"}'
+```
+
+6) Finalize upload (replace `<BOARD_ID>`)
+
+```bash
+curl -s -X POST http://localhost:3000/v1/boards/<BOARD_ID>/uploads/finalize \
+  -H 'authorization: Bearer <TOKEN>' \
+  -H 'content-type: application/json' \
+  -d '{"objectKey":"<OBJECT_KEY>","etag":"etag-demo"}'
 ```
 
 
