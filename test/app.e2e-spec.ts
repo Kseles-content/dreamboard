@@ -229,4 +229,44 @@ describe('DreamBoard API (e2e)', () => {
       })
       .expect(400);
   });
+
+  it('PATCH card is idempotent for same payload', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'idem@example.com', name: 'Idem User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Idempotent board' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    const createCard = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'hello' })
+      .expect(201);
+
+    const cardId = createCard.body.created.id as string;
+
+    const first = await request(app.getHttpServer())
+      .patch(`/v1/boards/${boardId}/cards/${cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'same-text' })
+      .expect(200);
+
+    const second = await request(app.getHttpServer())
+      .patch(`/v1/boards/${boardId}/cards/${cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'same-text' })
+      .expect(200);
+
+    expect(first.body.updated.text).toBe('same-text');
+    expect(second.body.updated.text).toBe('same-text');
+  });
 });

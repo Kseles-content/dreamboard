@@ -123,3 +123,10 @@ bash scripts/demo-check.sh
 ## Week 2 status
 
 ✅ Auth + Boards реализованы, тесты проходят, CI зелёный, демо доступно через scripts/demo-check.sh
+
+
+## Week 6 status
+
+✅ Web editor now includes autosave (800ms debounce), undo/redo history (depth 50), dirty-state + before-unload warning, and save-retry UX.
+
+See: `apps/web/README.md` for runbook and tests.

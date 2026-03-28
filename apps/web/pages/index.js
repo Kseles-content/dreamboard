@@ -1,6 +1,17 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  cloneCards,
+  createHistory,
+  deserializeHistory,
+  pushHistory,
+  redoHistory,
+  serializeHistory,
+  undoHistory,
+} from '../lib/history';
+import { AUTOSAVE_DEBOUNCE_MS, createDebouncedAutosave, diffCards } from '../lib/autosave';
 
 const DEFAULT_API = 'http://localhost:3000';
+const HISTORY_KEY_PREFIX = 'db_web_history_';
 
 export default function Home() {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_API);
@@ -11,9 +22,22 @@ export default function Home() {
 
   const [boards, setBoards] = useState([]);
   const [activeBoardId, setActiveBoardId] = useState(null);
-  const [cards, setCards] = useState([]);
+  const [history, setHistory] = useState(createHistory([]));
+  const [savedCards, setSavedCards] = useState([]);
+
   const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [saveError, setSaveError] = useState('');
+  const [dirty, setDirty] = useState(false);
+
+  const savingRef = useRef(false);
+  const queuedSaveRef = useRef(false);
+  const autosaveRef = useRef(null);
+
+  const cards = history.present;
+  const canUndo = history.past.length > 0;
+  const canRedo = history.future.length > 0;
 
   useEffect(() => {
     const saved = localStorage.getItem('db_web_auth');
@@ -31,6 +55,21 @@ export default function Home() {
       localStorage.setItem('db_web_auth', JSON.stringify({ token, refreshToken, baseUrl }));
     }
   }, [token, refreshToken, baseUrl]);
+
+  useEffect(() => {
+    const onBeforeUnload = (e) => {
+      if (!dirty) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => window.removeEventListener('beforeunload', onBeforeUnload);
+  }, [dirty]);
+
+  useEffect(() => {
+    if (!activeBoardId) return;
+    localStorage.setItem(`${HISTORY_KEY_PREFIX}${activeBoardId}`, serializeHistory(history));
+  }, [activeBoardId, history]);
 
   const authed = useMemo(() => Boolean(token), [token]);
 
@@ -84,7 +123,9 @@ export default function Home() {
     setRefreshToken('');
     setBoards([]);
     setActiveBoardId(null);
-    setCards([]);
+    setHistory(createHistory([]));
+    setSavedCards([]);
+    setDirty(false);
     localStorage.removeItem('db_web_auth');
   }
 
@@ -114,46 +155,136 @@ export default function Home() {
     finally { setLoading(false); }
   }
 
+  const applyLocalCards = useCallback((nextCards) => {
+    setHistory((prev) => pushHistory(prev, nextCards));
+    setDirty(true);
+    setSaveError('');
+    autosaveRef.current?.schedule();
+  }, []);
+
+  const persistCards = useCallback(async () => {
+    if (!activeBoardId) return;
+    if (savingRef.current) {
+      queuedSaveRef.current = true;
+      return;
+    }
+
+    const currentCards = cloneCards(history.present);
+    const baseCards = cloneCards(savedCards);
+    const { creates, updates, deletes } = diffCards(baseCards, currentCards);
+
+    if (creates.length === 0 && updates.length === 0 && deletes.length === 0) {
+      setDirty(false);
+      return;
+    }
+
+    savingRef.current = true;
+    setSaving(true);
+
+    try {
+      let workingCards = cloneCards(currentCards);
+
+      for (const card of creates) {
+        const data = await api(`/v1/boards/${activeBoardId}/cards`, {
+          method: 'POST',
+          body: JSON.stringify({ text: card.text }),
+        });
+        const created = data.created;
+        workingCards = workingCards.map((c) => (c.id === card.id ? created : c));
+      }
+
+      for (const card of updates) {
+        if (String(card.id).startsWith('tmp_')) continue;
+        await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ text: card.text }),
+        });
+      }
+
+      for (const card of deletes) {
+        if (String(card.id).startsWith('tmp_')) continue;
+        await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, { method: 'DELETE' });
+      }
+
+      setSavedCards(workingCards);
+      setHistory((prev) => ({ ...prev, present: workingCards }));
+      setDirty(false);
+      setSaveError('');
+    } catch (e2) {
+      setSaveError(String(e2.message || e2));
+      setDirty(true);
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
+      if (queuedSaveRef.current) {
+        queuedSaveRef.current = false;
+        autosaveRef.current?.schedule();
+      }
+    }
+  }, [activeBoardId, api, history.present, savedCards]);
+
+  useEffect(() => {
+    autosaveRef.current?.cancel?.();
+    autosaveRef.current = createDebouncedAutosave(() => {
+      persistCards();
+    }, AUTOSAVE_DEBOUNCE_MS);
+    return () => autosaveRef.current?.cancel?.();
+  }, [persistCards]);
+
   async function openBoard(id) {
+    if (dirty && !confirm('Есть несохранённые изменения. Открыть другую доску?')) return;
     setActiveBoardId(id);
     setLoading(true); setError('');
     try {
       const data = await api(`/v1/boards/${id}/cards`);
-      setCards(data.items || []);
+      const remoteCards = data.items || [];
+      setSavedCards(remoteCards);
+
+      const raw = localStorage.getItem(`${HISTORY_KEY_PREFIX}${id}`);
+      const parsed = raw ? deserializeHistory(raw) : null;
+      if (parsed) {
+        setHistory(parsed);
+        setDirty(true);
+      } else {
+        setHistory(createHistory(remoteCards));
+        setDirty(false);
+      }
+      setSaveError('');
     } catch (e2) { setError(String(e2.message || e2)); }
     finally { setLoading(false); }
   }
 
-  async function addCard() {
+  function addCard() {
     const text = prompt('Card text');
     if (!text || !activeBoardId) return;
-    setLoading(true); setError('');
-    try {
-      const data = await api(`/v1/boards/${activeBoardId}/cards`, { method: 'POST', body: JSON.stringify({ text }) });
-      setCards(data.items || []);
-    } catch (e2) { setError(String(e2.message || e2)); }
-    finally { setLoading(false); }
+    applyLocalCards([...cards, { id: `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text }]);
   }
 
-  async function editCard(card) {
+  function editCard(card) {
     const text = prompt('Edit card text', card.text);
-    if (!text || !activeBoardId) return;
-    setLoading(true); setError('');
-    try {
-      const data = await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, { method: 'PATCH', body: JSON.stringify({ text }) });
-      setCards(data.items || []);
-    } catch (e2) { setError(String(e2.message || e2)); }
-    finally { setLoading(false); }
+    if (text === null || !activeBoardId) return;
+    applyLocalCards(cards.map((c) => (c.id === card.id ? { ...c, text } : c)));
   }
 
-  async function deleteCard(card) {
+  function deleteCard(card) {
     if (!confirm('Delete card?') || !activeBoardId) return;
-    setLoading(true); setError('');
-    try {
-      const data = await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, { method: 'DELETE' });
-      setCards(data.items || []);
-    } catch (e2) { setError(String(e2.message || e2)); }
-    finally { setLoading(false); }
+    applyLocalCards(cards.filter((c) => c.id !== card.id));
+  }
+
+  function undo() {
+    setHistory((prev) => undoHistory(prev));
+    setDirty(true);
+    autosaveRef.current?.schedule();
+  }
+
+  function redo() {
+    setHistory((prev) => redoHistory(prev));
+    setDirty(true);
+    autosaveRef.current?.schedule();
+  }
+
+  function retrySave() {
+    autosaveRef.current?.flushNow();
   }
 
   if (!authed) {
@@ -171,13 +302,22 @@ export default function Home() {
 
   return <main style={{ padding: 20, display: 'grid', gap: 16 }}>
     <h1>DreamBoard Web Editor v1 (text cards)</h1>
-    <div style={{ display: 'flex', gap: 8 }}>
+    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button onClick={loadBoards}>Reload boards</button>
       <button onClick={createBoard}>Create board</button>
       <button onClick={logout}>Logout</button>
+      <button onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</button>
+      <button onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</button>
+      <button onClick={retrySave} disabled={!dirty || !activeBoardId}>Save now</button>
     </div>
     {loading && <p>Loading...</p>}
     {error && <p style={{ color: 'crimson' }}>Error: {error}</p>}
+
+    {activeBoardId && <p>
+      Save status:{' '}
+      {saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'All changes saved'}
+      {saveError ? <span style={{ color: 'crimson' }}> — Save failed: {saveError} <button onClick={retrySave}>Retry</button></span> : null}
+    </p>}
 
     <section>
       <h2>Boards list</h2>

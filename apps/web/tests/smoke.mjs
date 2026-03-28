@@ -3,6 +3,8 @@ import fs from 'node:fs';
 const required = [
   'pages/index.js',
   'package.json',
+  'lib/history.js',
+  'lib/autosave.js',
 ];
 
 for (const f of required) {
@@ -10,5 +12,8 @@ for (const f of required) {
     throw new Error(`Missing required web file: ${f}`);
   }
 }
+
+await import('./history.test.mjs');
+await import('./autosave.test.mjs');
 
 console.log('web smoke test ok');

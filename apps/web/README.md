@@ -1,6 +1,6 @@
-# DreamBoard Web — Editor core v1 (Week 5)
+# DreamBoard Web — Editor core v1 (Week 6)
 
-Stage 3 focus: text-card editor core with real API (no mocks).
+Stage 3 focus: text-card editor + autosave + history + data-loss protection.
 
 ## Features
 - Login
@@ -9,8 +9,12 @@ Stage 3 focus: text-card editor core with real API (no mocks).
 - Add text card
 - Edit text card
 - Delete text card
-- Persisted via API endpoints
-- Loading/error/empty states
+- **Autosave with 800ms debounce** (no save on every key/action burst)
+- **Undo/Redo history (depth 50)**
+- **Dirty state indicator** (Unsaved changes / All changes saved)
+- **Before-unload protection** for unsaved changes
+- **Save retry UX** on API failure
+- History persisted in localStorage per board
 
 ## Run
 ```bash
@@ -28,3 +32,7 @@ cd apps/web
 npm run build
 npm run test
 ```
+
+`npm run test` includes:
+- history unit tests
+- autosave debounce timing test (800ms idle window)
