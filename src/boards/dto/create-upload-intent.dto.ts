@@ -1,4 +1,4 @@
-import { IsInt, IsString, Max, Min } from 'class-validator';
+import { IsInt, IsString, Min } from 'class-validator';
 
 export class CreateUploadIntentDto {
   @IsString()
@@ -6,7 +6,6 @@ export class CreateUploadIntentDto {
 
   @IsInt()
   @Min(1)
-  @Max(10 * 1024 * 1024)
   sizeBytes!: number;
 
   @IsString()

@@ -219,7 +219,7 @@ describe('DreamBoard API (e2e)', () => {
     expect(finalized.body.status).toBe('READY');
     expect(finalized.body.objectKey).toBe(intent.body.objectKey);
 
-    await request(app.getHttpServer())
+    const unsupported = await request(app.getHttpServer())
       .post(`/v1/boards/${boardId}/uploads/intents`)
       .set('Authorization', `Bearer ${token}`)
       .send({
@@ -228,6 +228,20 @@ describe('DreamBoard API (e2e)', () => {
         fileName: 'x.pdf',
       })
       .expect(400);
+
+    expect(unsupported.body.code).toBe('UNSUPPORTED_ASSET_TYPE');
+
+    const tooLarge = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/intents`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mimeType: 'image/png',
+        sizeBytes: 10 * 1024 * 1024 + 1,
+        fileName: 'huge.png',
+      })
+      .expect(400);
+
+    expect(tooLarge.body.code).toBe('ASSET_TOO_LARGE');
   });
 
   it('PATCH card is idempotent for same payload', async () => {

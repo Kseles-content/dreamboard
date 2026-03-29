@@ -20,6 +20,7 @@ type Card = { id: string; text: string };
 type BoardState = { cards: Card[] };
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
 
 @Injectable()
 export class BoardsService {
@@ -166,10 +167,20 @@ export class BoardsService {
   async createUploadIntent(boardId: number, userId: number, input: CreateUploadIntentDto) {
     await this.getBoardById(boardId, userId);
 
+    if (input.sizeBytes > MAX_ASSET_SIZE_BYTES) {
+      throw new HttpException(
+        {
+          code: 'ASSET_TOO_LARGE',
+          message: `Asset is too large: max ${MAX_ASSET_SIZE_BYTES} bytes`,
+        },
+        HttpStatus.BAD_REQUEST,
+      );
+    }
+
     if (!ALLOWED_UPLOAD_MIME_TYPES.has(input.mimeType)) {
       throw new HttpException(
         {
-          code: 'UPLOAD_MIME_NOT_ALLOWED',
+          code: 'UNSUPPORTED_ASSET_TYPE',
           message: `Unsupported mimeType: ${input.mimeType}`,
         },
         HttpStatus.BAD_REQUEST,
@@ -208,7 +219,7 @@ export class BoardsService {
       headers: {
         'content-type': input.mimeType,
       },
-      maxSizeBytes: 10 * 1024 * 1024,
+      maxSizeBytes: MAX_ASSET_SIZE_BYTES,
       expiresInSeconds,
     };
   }

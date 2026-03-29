@@ -150,7 +150,25 @@ describe('BoardsService', () => {
     ).rejects.toMatchObject({
       status: 400,
       response: {
-        code: 'UPLOAD_MIME_NOT_ALLOWED',
+        code: 'UNSUPPORTED_ASSET_TYPE',
+      },
+    });
+  });
+
+
+  it('rejects upload intent when asset exceeds max size', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+
+    await expect(
+      service.createUploadIntent(15, 7, {
+        mimeType: 'image/png',
+        sizeBytes: 10 * 1024 * 1024 + 1,
+        fileName: 'huge.png',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: 'ASSET_TOO_LARGE',
       },
     });
   });

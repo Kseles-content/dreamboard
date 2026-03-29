@@ -99,7 +99,7 @@ paths:
         '201':
           description: Created
         '400':
-          description: Invalid input (mime/size)
+          description: Invalid input (ASSET_TOO_LARGE | UNSUPPORTED_ASSET_TYPE)
 
   /v1/boards/{boardId}/uploads/finalize:
     post:
