@@ -1,0 +1,90 @@
+name: Day1 CI
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  contracts-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check required contracts
+        run: |
+          test -f packages/contracts/openapi/openapi.yaml
+          test -f packages/contracts/sql/schema.sql
+          test -f packages/contracts/json-schema/board-state-v1.schema.json
+
+  api-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install API dependencies
+        run: npm --prefix apps/api ci
+      - name: API build
+        run: |
+          npm --prefix apps/api run build
+
+  api-unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: npm ci
+      - name: Unit tests
+        run: npm test -- --runInBand
+
+  api-e2e-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install root dependencies
+        run: npm ci
+      - name: E2E tests
+        run: npm run test:e2e -- --runInBand
+
+  web-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install Web dependencies
+        run: npm --prefix apps/web ci
+      - name: Web build
+        run: npm --prefix apps/web run build
+      - name: Web test
+        run: npm --prefix apps/web run test
+
+  mobile-analyze-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - name: Bootstrap Android project
+        working-directory: apps/mobile
+        run: flutter create --platforms android .
+      - name: Flutter pub get
+        working-directory: apps/mobile
+        run: flutter pub get
+      - name: Flutter analyze
+        working-directory: apps/mobile
+        run: flutter analyze
+      - name: Flutter test
+        working-directory: apps/mobile
+        run: flutter test
+      - name: Flutter build apk (debug)
+        working-directory: apps/mobile
+        run: flutter build apk --debug

@@ -1,0 +1,136 @@
+openapi: 3.0.3
+info:
+  title: DreamBoard API Contract
+  version: 1.1.0
+servers:
+  - url: https://api.example.com
+paths:
+  /v1/auth/login:
+    post:
+      summary: Login
+      responses:
+        '201':
+          description: Created
+  /v1/auth/refresh:
+    post:
+      summary: Refresh token
+      responses:
+        '201':
+          description: Created
+  /v1/auth/logout:
+    post:
+      summary: Logout
+      responses:
+        '201':
+          description: Created
+  /v1/boards:
+    get:
+      summary: List boards
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+        - in: query
+          name: cursor
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create board
+      responses:
+        '201':
+          description: Created
+  /v1/boards/{boardId}:
+    get:
+      summary: Get board
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    patch:
+      summary: Update board
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Soft-delete board
+      parameters:
+        - in: path
+          name: boardId
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: OK
+  /v1/boards/{boardId}/cards:
+    get:
+      summary: List text cards
+      responses:
+        '200':
+          description: OK
+    post:
+      summary: Create text card
+      responses:
+        '201':
+          description: Created
+
+  /v1/boards/{boardId}/uploads/intents:
+    post:
+      summary: Create upload intent for board asset
+      responses:
+        '201':
+          description: Created
+        '400':
+          description: Invalid input (mime/size)
+
+  /v1/boards/{boardId}/uploads/finalize:
+    post:
+      summary: Finalize uploaded board asset
+      responses:
+        '201':
+          description: Created
+        '404':
+          description: Upload intent not found
+  /v1/boards/{boardId}/cards/{cardId}:
+    patch:
+      summary: Update text card
+      responses:
+        '200':
+          description: OK
+    delete:
+      summary: Delete text card
+      responses:
+        '200':
+          description: OK
+components:
+  schemas:
+    ErrorEnvelope:
+      type: object
+      required: [code, message, requestId]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        requestId:
+          type: string
+        details:
+          nullable: true

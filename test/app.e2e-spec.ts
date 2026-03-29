@@ -1,15 +1,16 @@
+process.env.DB_PATH = ':memory:';
+process.env.JWT_SECRET = 'test-secret';
+
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../src/app.module';
+import { HttpErrorFilter } from '../src/common/http-error.filter';
 
 describe('DreamBoard API (e2e)', () => {
   let app: INestApplication;
 
   beforeAll(async () => {
-    process.env.DB_PATH = ':memory:';
-    process.env.JWT_SECRET = 'test-secret';
-
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -22,6 +23,7 @@ describe('DreamBoard API (e2e)', () => {
         transform: true,
       }),
     );
+    app.useGlobalFilters(new HttpErrorFilter());
     await app.init();
   });
 
@@ -29,17 +31,35 @@ describe('DreamBoard API (e2e)', () => {
     await app.close();
   });
 
-  it('supports auth + boards flow', async () => {
+  it('login returns tokens', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
       .send({ email: 'john@example.com', name: 'John' })
       .expect(201);
 
+    expect(login.body.accessToken).toBeTruthy();
+    expect(login.body.refreshToken).toBeTruthy();
+  });
+
+  it('rejects unauthorized boards access with unified envelope', async () => {
+    const res = await request(app.getHttpServer()).get('/v1/boards').expect(401);
+    expect(res.body).toMatchObject({
+      code: 'UNAUTHORIZED',
+      message: 'Missing bearer token',
+    });
+    expect(res.body.requestId).toBeTruthy();
+  });
+
+  it('supports auth + boards CRUD flow with soft delete', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'crud@example.com', name: 'Crud User' })
+      .expect(201);
+
     const token = login.body.accessToken as string;
-    expect(token).toBeTruthy();
 
     const create = await request(app.getHttpServer())
-      .post('/boards')
+      .post('/v1/boards')
       .set('Authorization', `Bearer ${token}`)
       .send({ title: 'Roadmap', description: 'Q2 goals' })
       .expect(201);
@@ -47,22 +67,32 @@ describe('DreamBoard API (e2e)', () => {
     const boardId = create.body.id as number;
 
     await request(app.getHttpServer())
-      .get('/boards')
+      .patch(`/v1/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Roadmap Updated' })
+      .expect(200);
+
+    const getOne = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
+    expect(getOne.body.title).toBe('Roadmap Updated');
+
     await request(app.getHttpServer())
-      .get(`/boards/${boardId}`)
+      .delete(`/v1/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    await request(app.getHttpServer())
-      .delete(`/boards/${boardId}`)
+    const deleted = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
-      .expect(200);
+      .expect(404);
+
+    expect(deleted.body.code).toBe('NOT_FOUND');
   });
 
-  it('returns BOARD_LIMIT_REACHED after 50 boards', async () => {
+  it('returns BOARD_LIMIT_REACHED after 50 boards with machine code', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
       .send({ email: 'limit@example.com', name: 'Limit User' })
@@ -72,14 +102,14 @@ describe('DreamBoard API (e2e)', () => {
 
     for (let i = 1; i <= 50; i += 1) {
       await request(app.getHttpServer())
-        .post('/boards')
+        .post('/v1/boards')
         .set('Authorization', `Bearer ${token}`)
         .send({ title: `Board ${i}` })
         .expect(201);
     }
 
     const overflow = await request(app.getHttpServer())
-      .post('/boards')
+      .post('/v1/boards')
       .set('Authorization', `Bearer ${token}`)
       .set('x-request-id', 'test-request-id-limit')
       .send({ title: 'Board 51' })
@@ -90,6 +120,43 @@ describe('DreamBoard API (e2e)', () => {
       message: 'Board limit reached: maximum 50 boards per user',
       requestId: 'test-request-id-limit',
     });
+  });
+
+  it('cursor pagination is stable across sequential calls', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'cursor@example.com', name: 'Cursor User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    for (let i = 1; i <= 5; i += 1) {
+      await request(app.getHttpServer())
+        .post('/v1/boards')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ title: `Cursor ${i}` })
+        .expect(201);
+    }
+
+    const page1 = await request(app.getHttpServer())
+      .get('/v1/boards?limit=2')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(page1.body.items).toHaveLength(2);
+    expect(page1.body.nextCursor).toBeTruthy();
+
+    const page2 = await request(app.getHttpServer())
+      .get(`/v1/boards?limit=2&cursor=${page1.body.nextCursor}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(page2.body.items).toHaveLength(2);
+
+    const ids1 = page1.body.items.map((b: { id: number }) => b.id);
+    const ids2 = page2.body.items.map((b: { id: number }) => b.id);
+
+    expect(ids1[1]).toBeLessThan(ids2[0]);
   });
 
   it('refreshes and logs out', async () => {
@@ -111,5 +178,95 @@ describe('DreamBoard API (e2e)', () => {
       .post('/v1/auth/logout')
       .send({ refreshToken: refreshed.body.refreshToken })
       .expect(201);
+  });
+
+  it('creates upload intent for board image', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'upload@example.com', name: 'Upload User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Upload board' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    const intent = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/intents`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mimeType: 'image/png',
+        sizeBytes: 2048,
+        fileName: 'cover.png',
+      })
+      .expect(201);
+
+    expect(intent.body.method).toBe('PUT');
+    expect(intent.body.headers['content-type']).toBe('image/png');
+    expect(intent.body.objectKey).toContain(`boards/${boardId}/uploads/`);
+
+    const finalized = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/finalize`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ objectKey: intent.body.objectKey, etag: 'etag-demo' })
+      .expect(201);
+
+    expect(finalized.body.status).toBe('READY');
+    expect(finalized.body.objectKey).toBe(intent.body.objectKey);
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/uploads/intents`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({
+        mimeType: 'application/pdf',
+        sizeBytes: 2048,
+        fileName: 'x.pdf',
+      })
+      .expect(400);
+  });
+
+  it('PATCH card is idempotent for same payload', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'idem@example.com', name: 'Idem User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Idempotent board' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    const createCard = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'hello' })
+      .expect(201);
+
+    const cardId = createCard.body.created.id as string;
+
+    const first = await request(app.getHttpServer())
+      .patch(`/v1/boards/${boardId}/cards/${cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'same-text' })
+      .expect(200);
+
+    const second = await request(app.getHttpServer())
+      .patch(`/v1/boards/${boardId}/cards/${cardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'same-text' })
+      .expect(200);
+
+    expect(first.body.updated.text).toBe('same-text');
+    expect(second.body.updated.text).toBe('same-text');
   });
 });

@@ -93,3 +93,67 @@
 ## 5) Важное ограничение по полноте памяти
 
 Я зафиксировал только то, что доступно в текущем workspace и журнале сессии. Поиск в памяти (`memory_search`) не вернул дополнительных архивных записей, поэтому неизвестные старые договоренности (если они были в других чатах/вне этого workspace) сюда не вошли.
+
+## 6) Master-plan из документа пользователя (v1.0, 25.02.2026)
+
+Источник: присланный документ `.docx` с заголовком «DreamBoard — Полное ТЗ и мастер‑план (v1.0)».
+
+### Продуктовая цель
+- DreamBoard как интерактивная визуальная доска целей (cards/image/text/stickers/links), с drag/resize/rotate, версиями и шарингом.
+
+### KPI (первые 3 месяца после запуска)
+- Activation ≥ 60%
+- Time-to-first-board ≤ 3 мин
+- D1 ≥ 30%, D7 ≥ 15%
+- Share rate ≥ 20%
+- Crash-free ≥ 99.5%
+
+### MVP scope
+- Auth (минимум 1 метод на старте)
+- Создание доски (шаблон/пустая)
+- Элементы: image/text/sticker
+- Жесты: drag/resize/rotate/layer/delete/duplicate
+- Автосейв
+- Export PNG/JPG
+- Public view-only link
+- Базовая аналитика
+
+### Out of MVP
+- Real-time collaboration
+- AI generation
+- Продвинутая анимация, marketplace, media-rich boards
+
+### План сроков
+- 5-дневный рабочий блок (текущий тактический план)
+- Далее стратегический план: ~12 недель до стабильного MVP:
+  - Discovery (1w)
+  - Foundation (2w)
+  - Core Editor (3w)
+  - Templates/Export/Share (2w)
+  - QA/Beta Hardening (2w)
+  - Soft Launch (1w)
+  - Public Launch (1w)
+
+### Тех-ориентиры
+- Backend: NestJS/Node
+- DB: PostgreSQL
+- Storage: S3-compatible
+- Cache/Queue: Redis
+- Monitoring: Sentry + metrics stack
+
+### Ближайшие продуктовые задачи (из приложения к документу)
+1) UI tokens (colors/spacing/type)
+2) Mobile screen map (MVP)
+3) Interactive board behavior spec (drag/resize/rotate)
+
+## 7) Scope override (подтверждено пользователем в текущем спринте)
+
+Финальный приоритет и границы Day 5:
+- В MVP входят только:
+  - Auth
+  - Boards CRUD
+- Отложено на следующий этап:
+  - cards
+  - uploads
+  - editor implementation
+- Для закрытия Day 5 staging не требуется; принимается локальное demo-evidence.
