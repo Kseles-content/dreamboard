@@ -219,6 +219,22 @@ describe('DreamBoard API (e2e)', () => {
     expect(finalized.body.status).toBe('READY');
     expect(finalized.body.objectKey).toBe(intent.body.objectKey);
 
+    const imageCard = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ type: 'image', objectKey: intent.body.objectKey })
+      .expect(201);
+
+    expect(imageCard.body.created.type).toBe('image');
+    expect(imageCard.body.created.objectKey).toBe(intent.body.objectKey);
+
+    const listed = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(listed.body.items.some((x: any) => x.type === 'image')).toBe(true);
+
     const unsupported = await request(app.getHttpServer())
       .post(`/v1/boards/${boardId}/uploads/intents`)
       .set('Authorization', `Bearer ${token}`)

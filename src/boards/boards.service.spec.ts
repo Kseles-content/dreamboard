@@ -116,6 +116,45 @@ describe('BoardsService', () => {
     expect(result).toEqual({ success: true });
   });
 
+
+  it('creates image card from finalized upload asset', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7, stateJson: '{"cards":[]}' });
+    boardsRepo.save.mockImplementation(async (v: any) => v);
+    uploadsRepo.findOne.mockResolvedValue({
+      id: 100,
+      boardId: 15,
+      ownerUserId: 7,
+      objectKey: 'boards/15/uploads/p.png',
+      status: 'READY',
+      publicUrl: 'https://cdn.local/boards/15/uploads/p.png',
+    });
+
+    const result = await service.createCard(15, 7, {
+      type: 'image',
+      objectKey: 'boards/15/uploads/p.png',
+    });
+
+    expect(result.created.type).toBe('image');
+    expect((result.created as any).imageUrl).toContain('/boards/15/uploads/p.png');
+  });
+
+  it('rejects image card when upload asset is not ready', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7, stateJson: '{"cards":[]}' });
+    uploadsRepo.findOne.mockResolvedValue(null);
+
+    await expect(
+      service.createCard(15, 7, {
+        type: 'image',
+        objectKey: 'boards/15/uploads/missing.png',
+      }),
+    ).rejects.toMatchObject({
+      status: 400,
+      response: {
+        code: 'IMAGE_ASSET_NOT_READY',
+      },
+    });
+  });
+
   it('creates upload intent for allowed mime', async () => {
     boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
     uploadsRepo.create.mockImplementation((v: unknown) => v);

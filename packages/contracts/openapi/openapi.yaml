@@ -87,10 +87,12 @@ paths:
         '200':
           description: OK
     post:
-      summary: Create text card
+      summary: Create card (text or image)
       responses:
         '201':
           description: Created
+        '400':
+          description: Invalid card payload (e.g. IMAGE_ASSET_NOT_READY)
 
   /v1/boards/{boardId}/uploads/intents:
     post:

@@ -16,7 +16,9 @@ import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 import { UploadAssetEntity } from './upload-asset.entity';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
 
-type Card = { id: string; text: string };
+type TextCard = { id: string; type: 'text'; text: string };
+type ImageCard = { id: string; type: 'image'; imageUrl: string; objectKey: string };
+type Card = TextCard | ImageCard;
 type BoardState = { cards: Card[] };
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -124,7 +126,60 @@ export class BoardsService {
       );
     }
 
-    const created: Card = { id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, text: input.text };
+    const type = input.type ?? 'text';
+
+    let created: Card;
+
+    if (type === 'image') {
+      if (!input.objectKey) {
+        throw new HttpException(
+          {
+            code: 'IMAGE_OBJECT_KEY_REQUIRED',
+            message: 'objectKey is required for image card',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const asset = await this.uploadAssetsRepository.findOne({
+        where: {
+          boardId,
+          ownerUserId: userId,
+          objectKey: input.objectKey,
+          status: 'READY',
+        },
+      });
+
+      if (!asset || !asset.publicUrl) {
+        throw new HttpException(
+          {
+            code: 'IMAGE_ASSET_NOT_READY',
+            message: 'Image asset is not finalized',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      created = {
+        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        type: 'image',
+        objectKey: asset.objectKey,
+        imageUrl: asset.publicUrl,
+      };
+    } else {
+      if (!input.text) {
+        throw new HttpException(
+          {
+            code: 'TEXT_REQUIRED',
+            message: 'text is required for text card',
+          },
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      created = { id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, type: 'text', text: input.text };
+    }
+
     state.cards.push(created);
     board.stateJson = JSON.stringify(state);
     await this.boardsRepository.save(board);
@@ -139,6 +194,16 @@ export class BoardsService {
 
     if (!card) {
       throw new NotFoundException(`Card ${cardId} not found`);
+    }
+
+    if (card.type !== 'text') {
+      throw new HttpException(
+        {
+          code: 'CARD_TYPE_MISMATCH',
+          message: 'Only text card can be updated via text endpoint',
+        },
+        HttpStatus.BAD_REQUEST,
+      );
     }
 
     card.text = input.text;
@@ -272,8 +337,22 @@ export class BoardsService {
 
   private readState(board: BoardEntity): BoardState {
     try {
-      const parsed = board.stateJson ? (JSON.parse(board.stateJson) as BoardState) : { cards: [] };
-      return { cards: Array.isArray(parsed.cards) ? parsed.cards : [] };
+      const parsed = board.stateJson ? (JSON.parse(board.stateJson) as { cards?: any[] }) : { cards: [] };
+      const cards = Array.isArray(parsed.cards)
+        ? parsed.cards
+            .map((card) => {
+              if (!card || typeof card !== 'object') return null;
+              if (card.type === 'image' && typeof card.id === 'string' && typeof card.imageUrl === 'string' && typeof card.objectKey === 'string') {
+                return { id: card.id, type: 'image', imageUrl: card.imageUrl, objectKey: card.objectKey } as ImageCard;
+              }
+              if (typeof card.id === 'string' && typeof card.text === 'string') {
+                return { id: card.id, type: 'text', text: card.text } as TextCard;
+              }
+              return null;
+            })
+            .filter((c): c is Card => c !== null)
+        : [];
+      return { cards };
     } catch {
       return { cards: [] };
     }

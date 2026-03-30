@@ -129,4 +129,6 @@ bash scripts/demo-check.sh
 
 ✅ Web editor now includes autosave (800ms debounce), undo/redo history (depth 50), dirty-state + before-unload warning, and save-retry UX.
 
+Week 7 progress: backend supports image-card creation from finalized uploads (`type=image`, `objectKey`).
+
 See: `apps/web/README.md` for runbook and tests.
