@@ -12,6 +12,8 @@ import { AUTOSAVE_DEBOUNCE_MS, createDebouncedAutosave, diffCards } from '../lib
 
 const DEFAULT_API = 'http://localhost:3000';
 const HISTORY_KEY_PREFIX = 'db_web_history_';
+const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
 export default function Home() {
   const [baseUrl, setBaseUrl] = useState(DEFAULT_API);
@@ -30,10 +32,14 @@ export default function Home() {
   const [error, setError] = useState('');
   const [saveError, setSaveError] = useState('');
   const [dirty, setDirty] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadError, setUploadError] = useState('');
 
   const savingRef = useRef(false);
   const queuedSaveRef = useRef(false);
   const autosaveRef = useRef(null);
+  const uploadInputRef = useRef(null);
 
   const cards = history.present;
   const canUndo = history.past.length > 0;
@@ -85,11 +91,31 @@ export default function Home() {
       let msg = `HTTP_${res.status}`;
       try {
         const j = await res.json();
-        msg = j.message || msg;
+        msg = j.code ? `${j.code}: ${j.message || ''}` : (j.message || msg);
       } catch {}
       throw new Error(msg);
     }
     return res.json();
+  }
+
+  async function uploadBinary(url, file, headers = {}) {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open('PUT', url);
+      Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, String(v)));
+
+      xhr.upload.onprogress = (evt) => {
+        if (!evt.lengthComputable) return;
+        setUploadProgress(Math.round((evt.loaded / evt.total) * 100));
+      };
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) resolve(true);
+        else reject(new Error(`UPLOAD_HTTP_${xhr.status}`));
+      };
+      xhr.onerror = () => reject(new Error('UPLOAD_NETWORK_ERROR'));
+      xhr.send(file);
+    });
   }
 
   async function login(e) {
@@ -185,15 +211,19 @@ export default function Home() {
       let workingCards = cloneCards(currentCards);
 
       for (const card of creates) {
+        const payload = card.type === 'image'
+          ? { type: 'image', objectKey: card.objectKey }
+          : { type: 'text', text: card.text };
         const data = await api(`/v1/boards/${activeBoardId}/cards`, {
           method: 'POST',
-          body: JSON.stringify({ text: card.text }),
+          body: JSON.stringify(payload),
         });
         const created = data.created;
         workingCards = workingCards.map((c) => (c.id === card.id ? created : c));
       }
 
       for (const card of updates) {
+        if (card.type === 'image') continue;
         if (String(card.id).startsWith('tmp_')) continue;
         await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, {
           method: 'PATCH',
@@ -221,7 +251,7 @@ export default function Home() {
         autosaveRef.current?.schedule();
       }
     }
-  }, [activeBoardId, api, history.present, savedCards]);
+  }, [activeBoardId, history.present, savedCards]);
 
   useEffect(() => {
     autosaveRef.current?.cancel?.();
@@ -250,6 +280,7 @@ export default function Home() {
         setDirty(false);
       }
       setSaveError('');
+      setUploadError('');
     } catch (e2) { setError(String(e2.message || e2)); }
     finally { setLoading(false); }
   }
@@ -257,10 +288,11 @@ export default function Home() {
   function addCard() {
     const text = prompt('Card text');
     if (!text || !activeBoardId) return;
-    applyLocalCards([...cards, { id: `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, text }]);
+    applyLocalCards([...cards, { id: `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, type: 'text', text }]);
   }
 
   function editCard(card) {
+    if (card.type === 'image') return;
     const text = prompt('Edit card text', card.text);
     if (text === null || !activeBoardId) return;
     applyLocalCards(cards.map((c) => (c.id === card.id ? { ...c, text } : c)));
@@ -287,6 +319,59 @@ export default function Home() {
     autosaveRef.current?.flushNow();
   }
 
+  function askImageUpload() {
+    uploadInputRef.current?.click();
+  }
+
+  async function onImagePicked(e) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !activeBoardId) return;
+
+    setUploadError('');
+
+    if (file.size > MAX_ASSET_SIZE_BYTES) {
+      setUploadError('ASSET_TOO_LARGE: max 10MB');
+      return;
+    }
+    if (!ALLOWED_MIMES.has(file.type)) {
+      setUploadError('UNSUPPORTED_ASSET_TYPE: only jpeg/png/webp');
+      return;
+    }
+
+    setUploading(true);
+    setUploadProgress(0);
+
+    try {
+      const intent = await api(`/v1/boards/${activeBoardId}/uploads/intents`, {
+        method: 'POST',
+        body: JSON.stringify({ mimeType: file.type, sizeBytes: file.size, fileName: file.name }),
+      });
+
+      await uploadBinary(intent.uploadUrl, file, intent.headers || { 'content-type': file.type });
+
+      const finalized = await api(`/v1/boards/${activeBoardId}/uploads/finalize`, {
+        method: 'POST',
+        body: JSON.stringify({ objectKey: intent.objectKey }),
+      });
+
+      applyLocalCards([
+        ...cards,
+        {
+          id: `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          type: 'image',
+          objectKey: finalized.objectKey,
+          imageUrl: finalized.publicUrl || intent.publicUrl,
+        },
+      ]);
+      setUploadProgress(100);
+    } catch (e2) {
+      setUploadError(String(e2.message || e2));
+    } finally {
+      setUploading(false);
+    }
+  }
+
   if (!authed) {
     return <main style={{ padding: 20 }}>
       <h1>DreamBoard Web Login</h1>
@@ -301,7 +386,7 @@ export default function Home() {
   }
 
   return <main style={{ padding: 20, display: 'grid', gap: 16 }}>
-    <h1>DreamBoard Web Editor v1 (text cards)</h1>
+    <h1>DreamBoard Web Editor v1 (text + image cards)</h1>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
       <button onClick={loadBoards}>Reload boards</button>
       <button onClick={createBoard}>Create board</button>
@@ -309,6 +394,8 @@ export default function Home() {
       <button onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</button>
       <button onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</button>
       <button onClick={retrySave} disabled={!dirty || !activeBoardId}>Save now</button>
+      <button onClick={askImageUpload} disabled={!activeBoardId || uploading}>Upload image</button>
+      <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={onImagePicked} />
     </div>
     {loading && <p>Loading...</p>}
     {error && <p style={{ color: 'crimson' }}>Error: {error}</p>}
@@ -318,6 +405,9 @@ export default function Home() {
       {saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'All changes saved'}
       {saveError ? <span style={{ color: 'crimson' }}> — Save failed: {saveError} <button onClick={retrySave}>Retry</button></span> : null}
     </p>}
+
+    {activeBoardId && uploading ? <p>Upload progress: {uploadProgress}%</p> : null}
+    {activeBoardId && uploadError ? <p style={{ color: 'crimson' }}>Upload error: {uploadError}</p> : null}
 
     <section>
       <h2>Boards list</h2>
@@ -329,7 +419,17 @@ export default function Home() {
       <h2>Open board: {activeBoardId || 'none'}</h2>
       {activeBoardId && <button onClick={addCard}>Add text card</button>}
       {!activeBoardId ? <p>Select board first</p> : cards.length === 0 ? <p>Empty: no cards</p> :
-        <ul>{cards.map((c) => <li key={c.id}>{c.text} <button onClick={() => editCard(c)}>Edit</button> <button onClick={() => deleteCard(c)}>Delete</button></li>)}</ul>}
+        <ul>{cards.map((c) => <li key={c.id} style={{ marginBottom: 10 }}>
+          {c.type === 'image'
+            ? <div>
+              <div><b>Image card</b></div>
+              <img src={c.imageUrl} alt="uploaded" style={{ maxWidth: 260, maxHeight: 180, display: 'block', border: '1px solid #ddd' }} />
+            </div>
+            : <span>{c.text}</span>}
+          {' '}
+          {c.type !== 'image' ? <button onClick={() => editCard(c)}>Edit</button> : null}
+          <button onClick={() => deleteCard(c)}>Delete</button>
+        </li>)}</ul>}
     </section>
   </main>;
 }

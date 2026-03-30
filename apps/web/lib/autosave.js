@@ -27,6 +27,15 @@ export function createDebouncedAutosave(callback, delay = AUTOSAVE_DEBOUNCE_MS) 
   };
 }
 
+function cardChanged(prev, next) {
+  if ((prev.type || 'text') !== (next.type || 'text')) return true;
+  const type = next.type || 'text';
+  if (type === 'image') {
+    return prev.objectKey !== next.objectKey || prev.imageUrl !== next.imageUrl;
+  }
+  return prev.text !== next.text;
+}
+
 export function diffCards(savedCards = [], currentCards = []) {
   const savedMap = new Map(savedCards.map((c) => [c.id, c]));
   const currentMap = new Map(currentCards.map((c) => [c.id, c]));
@@ -38,7 +47,7 @@ export function diffCards(savedCards = [], currentCards = []) {
   for (const c of currentCards) {
     const prev = savedMap.get(c.id);
     if (!prev) creates.push(c);
-    else if (prev.text !== c.text) updates.push(c);
+    else if (cardChanged(prev, c)) updates.push(c);
   }
 
   for (const c of savedCards) {

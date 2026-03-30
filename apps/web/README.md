@@ -1,20 +1,19 @@
-# DreamBoard Web — Editor core v1 (Week 6)
+# DreamBoard Web — Editor core v1 (Week 7)
 
-Stage 3 focus: text-card editor + autosave + history + data-loss protection.
+Stage 4 focus: image uploads + image cards (with autosave/undo-redo preserved).
 
 ## Features
 - Login
 - Boards list
 - Open board
-- Add text card
-- Edit text card
-- Delete text card
-- **Autosave with 800ms debounce** (no save on every key/action burst)
-- **Undo/Redo history (depth 50)**
-- **Dirty state indicator** (Unsaved changes / All changes saved)
-- **Before-unload protection** for unsaved changes
-- **Save retry UX** on API failure
-- History persisted in localStorage per board
+- Add/Edit/Delete text card
+- Upload image and create image card
+- Upload flow: intent → binary PUT → finalize → image card create via autosave queue
+- Upload progress indicator
+- Image preview in editor
+- Autosave 800ms debounce
+- Undo/Redo history depth 50
+- Dirty-state and before-unload warning
 
 ## Run
 ```bash

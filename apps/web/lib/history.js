@@ -62,10 +62,18 @@ export function cloneCards(cards) {
   return (cards || []).map((c) => ({ ...c }));
 }
 
+function cardSig(card) {
+  if (!card) return '';
+  if (card.type === 'image') {
+    return `${card.id}|image|${card.objectKey || ''}|${card.imageUrl || ''}`;
+  }
+  return `${card.id}|text|${card.text || ''}`;
+}
+
 export function cardsEqual(a = [], b = []) {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) {
-    if (a[i].id !== b[i].id || a[i].text !== b[i].text) return false;
+    if (cardSig(a[i]) !== cardSig(b[i])) return false;
   }
   return true;
 }
