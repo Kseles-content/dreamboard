@@ -4,3 +4,6 @@ node_modules/
 dist/
 *.sqlite
 coverage/
+.openclaw/
+AGENTS.md
+BOOTSTRAP.md

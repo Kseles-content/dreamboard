@@ -5,9 +5,10 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { BoardEntity } from './board.entity';
 import { BoardsController } from './boards.controller';
 import { BoardsService } from './boards.service';
+import { UploadAssetEntity } from './upload-asset.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BoardEntity]), JwtModule.register({})],
+  imports: [TypeOrmModule.forFeature([BoardEntity, UploadAssetEntity]), JwtModule.register({})],
   controllers: [BoardsController],
   providers: [BoardsService, JwtAuthGuard],
 })

@@ -1,0 +1,74 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://dreamboard/contracts/board-state-v2.schema.json",
+  "title": "BoardStateV2",
+  "type": "object",
+  "required": ["id", "title", "ownerUserId", "elements", "updatedAt"],
+  "properties": {
+    "id": { "type": "string", "minLength": 1 },
+    "title": { "type": "string", "minLength": 1 },
+    "description": { "type": ["string", "null"] },
+    "ownerUserId": { "type": "string", "minLength": 1 },
+    "background": {
+      "type": "object",
+      "properties": {
+        "color": { "type": "string" },
+        "imageUrl": { "type": "string", "format": "uri" }
+      },
+      "additionalProperties": false
+    },
+    "elements": {
+      "type": "array",
+      "maxItems": 500,
+      "items": {
+        "type": "object",
+        "required": ["id", "type", "transform", "zIndex", "locked"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1 },
+          "type": { "type": "string", "enum": ["text", "image", "sticker", "link"] },
+          "zIndex": { "type": "integer", "minimum": 0 },
+          "locked": { "type": "boolean" },
+          "transform": {
+            "type": "object",
+            "required": ["x", "y", "width", "height", "rotation"],
+            "properties": {
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "width": { "type": "number", "exclusiveMinimum": 0 },
+              "height": { "type": "number", "exclusiveMinimum": 0 },
+              "rotation": { "type": "number", "minimum": -360, "maximum": 360 }
+            },
+            "additionalProperties": false
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "text": { "type": "string" },
+              "url": { "type": "string", "format": "uri" },
+              "alt": { "type": "string" }
+            },
+            "additionalProperties": true
+          },
+          "style": {
+            "type": "object",
+            "properties": {
+              "opacity": { "type": "number", "minimum": 0, "maximum": 1 }
+            },
+            "additionalProperties": true
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    "history": {
+      "type": "object",
+      "properties": {
+        "undoDepth": { "type": "integer", "minimum": 0, "maximum": 20 },
+        "redoDepth": { "type": "integer", "minimum": 0, "maximum": 20 }
+      },
+      "additionalProperties": false
+    },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  },
+  "additionalProperties": false
+}
