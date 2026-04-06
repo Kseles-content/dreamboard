@@ -2,15 +2,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-API_DIR="$ROOT_DIR/apps/api"
-
-cd "$API_DIR"
+cd "$ROOT_DIR"
 
 if [ ! -d node_modules ]; then
   npm ci
 fi
 
 PORT="${PORT:-3000}"
+fuser -k ${PORT}/tcp >/dev/null 2>&1 || true
 PORT="$PORT" npm run start:dev >/tmp/dreamboard-api.log 2>&1 &
 API_PID=$!
 

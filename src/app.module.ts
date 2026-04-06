@@ -4,8 +4,10 @@ import { UsersModule } from './users/users.module';
 import { BoardsModule } from './boards/boards.module';
 import { AuthModule } from './auth/auth.module';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
+import { HealthController } from './health.controller';
 
 @Module({
+  controllers: [HealthController],
   imports: [
     TypeOrmModule.forRoot({
       type: 'sqlite',

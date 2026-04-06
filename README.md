@@ -27,6 +27,10 @@ npm run test:e2e
 - `docs/week9-versions.md`
 - `docs/week10-sharing.md`
 - `docs/week11-perf-report.md`
+- `docs/week12-test-matrix.md`
+- `docs/week12-release-checklist.md`
+- `docs/week12-rollback-checklist.md`
+- `docs/week12-proof-pack.md`
 
 ## API
 
@@ -180,3 +184,18 @@ bash scripts/perf-baseline-week11.sh
 
 Report output:
 - `docs/week11-perf-report.md`
+
+## Week 12 Stabilization (Final RC)
+
+Critical scenario smoke:
+
+```bash
+bash scripts/week12-critical-smoke.sh
+```
+
+Release controls:
+- `docs/week12-release-checklist.md`
+- `docs/week12-rollback-checklist.md`
+
+Final proof pack:
+- `docs/week12-proof-pack.md`
