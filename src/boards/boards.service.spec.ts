@@ -18,11 +18,18 @@ describe('BoardsService', () => {
     save: jest.fn(),
   } as any;
 
+  const versionsRepo = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+    createQueryBuilder: jest.fn(),
+  } as any;
+
   let service: BoardsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BoardsService(boardsRepo, uploadsRepo);
+    service = new BoardsService(boardsRepo, uploadsRepo, versionsRepo);
   });
 
   it('lists boards with cursor pagination', async () => {
@@ -208,6 +215,87 @@ describe('BoardsService', () => {
       status: 400,
       response: {
         code: 'ASSET_TOO_LARGE',
+      },
+    });
+  });
+
+  it('lists versions with stable cursor pagination', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+
+    const qb = {
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      orderBy: jest.fn().mockReturnThis(),
+      take: jest.fn().mockReturnThis(),
+      getMany: jest.fn().mockResolvedValue([
+        { id: 9, boardId: 15, createdAt: new Date('2026-04-06T10:00:00Z') },
+        { id: 8, boardId: 15, createdAt: new Date('2026-04-06T09:00:00Z') },
+        { id: 7, boardId: 15, createdAt: new Date('2026-04-06T08:00:00Z') },
+      ]),
+    };
+    versionsRepo.createQueryBuilder.mockReturnValue(qb);
+
+    const result = await service.listVersions(15, 7, 2);
+
+    expect(result.items).toHaveLength(2);
+    expect(result.nextCursor).toBe(8);
+  });
+
+  it('creates version from current board snapshot', async () => {
+    boardsRepo.findOne.mockResolvedValue({
+      id: 15,
+      ownerUserId: 7,
+      title: 'Roadmap',
+      description: 'Q2',
+      stateJson: '{"cards":[{"id":"c1","type":"text","text":"hello"}]}',
+    });
+    versionsRepo.create.mockImplementation((v: unknown) => v);
+    versionsRepo.save.mockImplementation(async (v: any) => ({ id: 3, createdAt: new Date(), ...v }));
+
+    const created = await service.createVersion(15, 7);
+
+    expect(created.id).toBe(3);
+    expect(versionsRepo.create).toHaveBeenCalled();
+    const payload = versionsRepo.create.mock.calls[0][0];
+    expect(payload.boardId).toBe(15);
+    expect(typeof payload.snapshotJson).toBe('string');
+  });
+
+  it('restores board state from version snapshot', async () => {
+    boardsRepo.findOne.mockResolvedValue({
+      id: 15,
+      ownerUserId: 7,
+      title: 'Now',
+      description: null,
+      stateJson: '{"cards":[]}',
+    });
+    versionsRepo.findOne.mockResolvedValue({
+      id: 21,
+      boardId: 15,
+      ownerUserId: 7,
+      snapshotJson: JSON.stringify({
+        title: 'Before',
+        description: 'snapshot',
+        stateJson: '{"cards":[{"id":"x","type":"text","text":"old"}]}',
+      }),
+    });
+    boardsRepo.save.mockImplementation(async (v: any) => v);
+
+    const result = await service.restoreVersion(15, 21, 7);
+
+    expect(result.restoredVersionId).toBe(21);
+    expect(result.board.title).toBe('Before');
+    expect(result.board.stateJson).toContain('old');
+  });
+
+  it('returns VERSION_NOT_FOUND when version is missing', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    versionsRepo.findOne.mockResolvedValue(null);
+
+    await expect(service.restoreVersion(15, 999, 7)).rejects.toMatchObject({
+      status: 404,
+      response: {
+        code: 'VERSION_NOT_FOUND',
       },
     });
   });

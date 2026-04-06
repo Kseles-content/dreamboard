@@ -6,9 +6,10 @@ import { BoardEntity } from './board.entity';
 import { BoardsController } from './boards.controller';
 import { BoardsService } from './boards.service';
 import { UploadAssetEntity } from './upload-asset.entity';
+import { BoardVersionEntity } from './board-version.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([BoardEntity, UploadAssetEntity]), JwtModule.register({})],
+  imports: [TypeOrmModule.forFeature([BoardEntity, UploadAssetEntity, BoardVersionEntity]), JwtModule.register({})],
   controllers: [BoardsController],
   providers: [BoardsService, JwtAuthGuard],
 })

@@ -15,6 +15,7 @@ import { UpdateCardDto } from './dto/update-card.dto';
 import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 import { UploadAssetEntity } from './upload-asset.entity';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
+import { BoardVersionEntity } from './board-version.entity';
 
 type TextCard = { id: string; type: 'text'; text: string };
 type ImageCard = { id: string; type: 'image'; imageUrl: string; objectKey: string };
@@ -31,6 +32,8 @@ export class BoardsService {
     private readonly boardsRepository: Repository<BoardEntity>,
     @InjectRepository(UploadAssetEntity)
     private readonly uploadAssetsRepository: Repository<UploadAssetEntity>,
+    @InjectRepository(BoardVersionEntity)
+    private readonly boardVersionsRepository: Repository<BoardVersionEntity>,
   ) {}
 
   async listBoards(userId: number, limit = 20, cursor?: number): Promise<{ items: BoardEntity[]; nextCursor: number | null }> {
@@ -322,6 +325,91 @@ export class BoardsService {
     };
   }
 
+  async listVersions(boardId: number, userId: number, limit = 20, cursor?: number) {
+    await this.getBoardById(boardId, userId);
+    const normalizedLimit = Math.min(Math.max(limit, 1), 100);
+
+    const qb = this.boardVersionsRepository
+      .createQueryBuilder('v')
+      .where('v.boardId = :boardId', { boardId })
+      .andWhere('v.ownerUserId = :userId', { userId });
+
+    if (cursor) {
+      qb.andWhere('v.id < :cursor', { cursor });
+    }
+
+    const rows = await qb.orderBy('v.id', 'DESC').take(normalizedLimit + 1).getMany();
+    const hasMore = rows.length > normalizedLimit;
+    const items = (hasMore ? rows.slice(0, normalizedLimit) : rows).map((v) => ({
+      id: v.id,
+      boardId: v.boardId,
+      createdAt: v.createdAt,
+    }));
+
+    return {
+      items,
+      nextCursor: hasMore ? items[items.length - 1].id : null,
+    };
+  }
+
+  async createVersion(boardId: number, userId: number) {
+    const board = await this.getBoardById(boardId, userId);
+    const snapshotJson = JSON.stringify({
+      title: board.title,
+      description: board.description,
+      stateJson: board.stateJson,
+    });
+
+    const created = await this.boardVersionsRepository.save(
+      this.boardVersionsRepository.create({
+        boardId,
+        ownerUserId: userId,
+        snapshotJson,
+      }),
+    );
+
+    return {
+      id: created.id,
+      boardId: created.boardId,
+      createdAt: created.createdAt,
+    };
+  }
+
+  async restoreVersion(boardId: number, versionId: number, userId: number) {
+    const board = await this.getBoardById(boardId, userId);
+
+    const version = await this.boardVersionsRepository.findOne({
+      where: {
+        id: versionId,
+        boardId,
+        ownerUserId: userId,
+      },
+    });
+
+    if (!version) {
+      throw new HttpException(
+        {
+          code: 'VERSION_NOT_FOUND',
+          message: `Version ${versionId} not found`,
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const snapshot = this.readVersionSnapshot(version.snapshotJson);
+
+    board.title = snapshot.title;
+    board.description = snapshot.description;
+    board.stateJson = snapshot.stateJson;
+
+    const restored = await this.boardsRepository.save(board);
+
+    return {
+      restoredVersionId: version.id,
+      board: restored,
+    };
+  }
+
   private extensionByMimeType(mimeType: string): string {
     switch (mimeType) {
       case 'image/jpeg':
@@ -355,6 +443,28 @@ export class BoardsService {
       return { cards };
     } catch {
       return { cards: [] };
+    }
+  }
+
+  private readVersionSnapshot(snapshotJson: string): { title: string; description: string | null; stateJson: string | null } {
+    try {
+      const parsed = JSON.parse(snapshotJson) as {
+        title?: unknown;
+        description?: unknown;
+        stateJson?: unknown;
+      };
+
+      return {
+        title: typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : 'Untitled board',
+        description: typeof parsed.description === 'string' ? parsed.description : null,
+        stateJson: typeof parsed.stateJson === 'string' ? parsed.stateJson : JSON.stringify({ cards: [] }),
+      };
+    } catch {
+      return {
+        title: 'Untitled board',
+        description: null,
+        stateJson: JSON.stringify({ cards: [] }),
+      };
     }
   }
 }

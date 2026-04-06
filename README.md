@@ -24,6 +24,7 @@ npm run test:e2e
 - `packages/contracts/json-schema/board-state-v2.schema.json` *(prepared for next stage, not in Day 5 MVP scope)*
 - `docs/day3-interactive-board-spec.md` *(next stage input)*
 - `docs/day4-release-gate.md`
+- `docs/week9-versions.md`
 
 ## API
 
@@ -40,6 +41,9 @@ npm run test:e2e
 - `DELETE /v1/boards/:boardId` (soft delete)
 - `POST /v1/boards/:boardId/uploads/intents` (image upload pre-sign intent)
 - `POST /v1/boards/:boardId/uploads/finalize` (mark upload as READY and persist metadata)
+- `GET /v1/boards/:boardId/versions` (stable cursor pagination)
+- `POST /v1/boards/:boardId/versions` (create snapshot from current live state)
+- `POST /v1/boards/:boardId/versions/:versionId/restore` (restore live state from snapshot)
 
 Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`

@@ -35,6 +35,10 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versions, setVersions] = useState([]);
+  const [versionsCursor, setVersionsCursor] = useState(null);
+  const [versionsLoading, setVersionsLoading] = useState(false);
 
   const savingRef = useRef(false);
   const queuedSaveRef = useRef(false);
@@ -281,6 +285,8 @@ export default function Home() {
       }
       setSaveError('');
       setUploadError('');
+      setVersions([]);
+      setVersionsCursor(null);
     } catch (e2) { setError(String(e2.message || e2)); }
     finally { setLoading(false); }
   }
@@ -317,6 +323,57 @@ export default function Home() {
 
   function retrySave() {
     autosaveRef.current?.flushNow();
+  }
+
+  async function loadVersions({ reset = false } = {}) {
+    if (!activeBoardId) return;
+    setVersionsLoading(true);
+    setError('');
+    try {
+      const cursor = reset ? null : versionsCursor;
+      const q = cursor ? `?limit=5&cursor=${cursor}` : '?limit=5';
+      const data = await api(`/v1/boards/${activeBoardId}/versions${q}`);
+      setVersions((prev) => (reset ? (data.items || []) : [...prev, ...(data.items || [])]));
+      setVersionsCursor(data.nextCursor || null);
+    } catch (e2) {
+      setError(String(e2.message || e2));
+    } finally {
+      setVersionsLoading(false);
+    }
+  }
+
+  async function createVersion() {
+    if (!activeBoardId) return;
+    setVersionsLoading(true);
+    setError('');
+    try {
+      await api(`/v1/boards/${activeBoardId}/versions`, { method: 'POST' });
+      await loadVersions({ reset: true });
+    } catch (e2) {
+      setError(String(e2.message || e2));
+    } finally {
+      setVersionsLoading(false);
+    }
+  }
+
+  async function restoreVersion(versionId) {
+    if (!activeBoardId) return;
+    if (!confirm('Restore this version? Current state will be replaced.')) return;
+    setVersionsLoading(true);
+    setError('');
+    try {
+      await api(`/v1/boards/${activeBoardId}/versions/${versionId}/restore`, { method: 'POST' });
+      const cardsData = await api(`/v1/boards/${activeBoardId}/cards`);
+      const remoteCards = cardsData.items || [];
+      setSavedCards(remoteCards);
+      setHistory(createHistory(remoteCards));
+      setDirty(false);
+      await loadBoards();
+    } catch (e2) {
+      setError(String(e2.message || e2));
+    } finally {
+      setVersionsLoading(false);
+    }
   }
 
   function askImageUpload() {
@@ -395,6 +452,11 @@ export default function Home() {
       <button onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</button>
       <button onClick={retrySave} disabled={!dirty || !activeBoardId}>Save now</button>
       <button onClick={askImageUpload} disabled={!activeBoardId || uploading}>Upload image</button>
+      <button onClick={() => {
+        const next = !versionsOpen;
+        setVersionsOpen(next);
+        if (next && activeBoardId) loadVersions({ reset: true });
+      }} disabled={!activeBoardId}>Versions</button>
       <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={onImagePicked} />
     </div>
     {loading && <p>Loading...</p>}
@@ -408,6 +470,21 @@ export default function Home() {
 
     {activeBoardId && uploading ? <p>Upload progress: {uploadProgress}%</p> : null}
     {activeBoardId && uploadError ? <p style={{ color: 'crimson' }}>Upload error: {uploadError}</p> : null}
+
+    {versionsOpen && activeBoardId ? <section>
+      <h2>Versions</h2>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <button onClick={createVersion} disabled={versionsLoading}>Create snapshot</button>
+        <button onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Reload versions</button>
+      </div>
+      {versions.length === 0 ? <p>No versions yet</p> : <ul>
+        {versions.map((v) => <li key={v.id}>
+          #{v.id} — {new Date(v.createdAt).toLocaleString()} {' '}
+          <button onClick={() => restoreVersion(v.id)} disabled={versionsLoading}>Restore</button>
+        </li>)}
+      </ul>}
+      {versionsCursor ? <button onClick={() => loadVersions()} disabled={versionsLoading}>Load more</button> : null}
+    </section> : null}
 
     <section>
       <h2>Boards list</h2>
