@@ -7,3 +7,13 @@ coverage/
 .openclaw/
 AGENTS.md
 BOOTSTRAP.md
+SOUL.md
+TOOLS.md
+USER.md
+IDENTITY.md
+apps/api/src/main.ts.bak
+apps/mobile/.dart_tool/
+apps/mobile/.flutter-plugins-dependencies
+apps/mobile/build/
+apps/web/.env.local
+apps/web/.next/
