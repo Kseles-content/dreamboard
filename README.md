@@ -26,6 +26,7 @@ npm run test:e2e
 - `docs/day4-release-gate.md`
 - `docs/week9-versions.md`
 - `docs/week10-sharing.md`
+- `docs/week11-perf-report.md`
 
 ## API
 
@@ -141,3 +142,41 @@ bash scripts/demo-check.sh
 Week 7 progress: backend supports image-card creation from finalized uploads (`type=image`, `objectKey`).
 
 See: `apps/web/README.md` for runbook and tests.
+
+## Week 11 Export (Web)
+
+In web editor (`apps/web/pages/index.js`):
+- `Export PNG` button
+- `Export JPG` button
+
+Both exports are generated from the current in-editor state (visible cards snapshot).
+
+## Week 11 Observability
+
+Set in `apps/web` environment:
+
+- `NEXT_PUBLIC_SENTRY_DSN` — Sentry DSN (browser error capture)
+- `NEXT_PUBLIC_POSTHOG_KEY` — PostHog project key (event capture)
+- `NEXT_PUBLIC_POSTHOG_HOST` — optional (default `https://app.posthog.com`)
+
+Key tracked events:
+- `login`
+- `create_board`
+- `create_card`
+- `upload_image`
+- `create_share_link`
+- `export_board`
+
+Manual Sentry smoke check:
+- Use `Test Sentry Error` button in web editor.
+
+## Week 11 Performance Baseline
+
+Generate perf report:
+
+```bash
+bash scripts/perf-baseline-week11.sh
+```
+
+Report output:
+- `docs/week11-perf-report.md`
