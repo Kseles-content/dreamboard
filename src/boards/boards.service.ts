@@ -16,6 +16,8 @@ import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 import { UploadAssetEntity } from './upload-asset.entity';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
 import { BoardVersionEntity } from './board-version.entity';
+import { ShareLinkEntity } from './share-link.entity';
+import { v4 as uuidv4 } from 'uuid';
 
 type TextCard = { id: string; type: 'text'; text: string };
 type ImageCard = { id: string; type: 'image'; imageUrl: string; objectKey: string };
@@ -34,6 +36,8 @@ export class BoardsService {
     private readonly uploadAssetsRepository: Repository<UploadAssetEntity>,
     @InjectRepository(BoardVersionEntity)
     private readonly boardVersionsRepository: Repository<BoardVersionEntity>,
+    @InjectRepository(ShareLinkEntity)
+    private readonly shareLinksRepository: Repository<ShareLinkEntity>,
   ) {}
 
   async listBoards(userId: number, limit = 20, cursor?: number): Promise<{ items: BoardEntity[]; nextCursor: number | null }> {
@@ -410,6 +414,107 @@ export class BoardsService {
     };
   }
 
+  async listShareLinks(boardId: number, userId: number) {
+    await this.getBoardById(boardId, userId);
+
+    const rows = await this.shareLinksRepository.find({
+      where: { boardId, ownerUserId: userId },
+      order: { id: 'DESC' },
+    });
+
+    return {
+      items: rows.map((x) => ({
+        id: x.id,
+        boardId: x.boardId,
+        token: x.token,
+        url: this.buildPublicShareUrl(x.token),
+        createdAt: x.createdAt,
+        revokedAt: x.revokedAt,
+      })),
+    };
+  }
+
+  async createShareLink(boardId: number, userId: number) {
+    await this.getBoardById(boardId, userId);
+
+    const token = uuidv4().replace(/-/g, '');
+    const created = await this.shareLinksRepository.save(
+      this.shareLinksRepository.create({
+        boardId,
+        ownerUserId: userId,
+        token,
+        revokedAt: null,
+      }),
+    );
+
+    return {
+      id: created.id,
+      boardId: created.boardId,
+      token: created.token,
+      url: this.buildPublicShareUrl(created.token),
+      createdAt: created.createdAt,
+      revokedAt: created.revokedAt,
+    };
+  }
+
+  async revokeShareLink(boardId: number, linkId: number, userId: number) {
+    await this.getBoardById(boardId, userId);
+
+    const link = await this.shareLinksRepository.findOne({
+      where: { id: linkId, boardId, ownerUserId: userId },
+    });
+
+    if (!link) {
+      throw new NotFoundException(`Share link ${linkId} not found`);
+    }
+
+    link.revokedAt = new Date();
+    await this.shareLinksRepository.save(link);
+
+    return { success: true };
+  }
+
+  async getPublicBoardByToken(token: string) {
+    const link = await this.shareLinksRepository.findOne({ where: { token } });
+
+    if (!link || link.revokedAt) {
+      throw new HttpException(
+        {
+          code: 'SHARE_LINK_NOT_FOUND',
+          message: 'Share link not found',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const board = await this.boardsRepository.findOne({ where: { id: link.boardId } });
+    if (!board) {
+      throw new HttpException(
+        {
+          code: 'SHARE_LINK_NOT_FOUND',
+          message: 'Share link not found',
+        },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const state = this.readState(board);
+
+    return {
+      board: {
+        id: board.id,
+        title: board.title,
+        description: board.description,
+        cards: state.cards,
+        updatedAt: board.updatedAt,
+      },
+      share: {
+        token: link.token,
+        linkId: link.id,
+      },
+    };
+  }
+
   private extensionByMimeType(mimeType: string): string {
     switch (mimeType) {
       case 'image/jpeg':
@@ -466,5 +571,10 @@ export class BoardsService {
         stateJson: JSON.stringify({ cards: [] }),
       };
     }
+  }
+
+  private buildPublicShareUrl(token: string): string {
+    const webBase = (process.env.PUBLIC_WEB_BASE_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+    return `${webBase}/share/${token}`;
   }
 }

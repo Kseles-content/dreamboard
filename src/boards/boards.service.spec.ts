@@ -25,11 +25,18 @@ describe('BoardsService', () => {
     createQueryBuilder: jest.fn(),
   } as any;
 
+  const shareLinksRepo = {
+    find: jest.fn(),
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  } as any;
+
   let service: BoardsService;
 
   beforeEach(() => {
     jest.clearAllMocks();
-    service = new BoardsService(boardsRepo, uploadsRepo, versionsRepo);
+    service = new BoardsService(boardsRepo, uploadsRepo, versionsRepo, shareLinksRepo);
   });
 
   it('lists boards with cursor pagination', async () => {
@@ -298,6 +305,56 @@ describe('BoardsService', () => {
         code: 'VERSION_NOT_FOUND',
       },
     });
+  });
+
+  it('creates and lists share links', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    shareLinksRepo.create.mockImplementation((v: unknown) => v);
+    shareLinksRepo.save.mockImplementation(async (v: any) => ({ id: 31, createdAt: new Date(), ...v }));
+    shareLinksRepo.find.mockResolvedValue([
+      { id: 31, boardId: 15, token: 'abc', createdAt: new Date(), revokedAt: null, ownerUserId: 7 },
+    ]);
+
+    const created = await service.createShareLink(15, 7);
+    expect(created.id).toBe(31);
+    expect(created.url).toContain('/share/');
+
+    const listed = await service.listShareLinks(15, 7);
+    expect(listed.items).toHaveLength(1);
+    expect(listed.items[0].token).toBe('abc');
+  });
+
+  it('restores public board by valid token and rejects revoked link', async () => {
+    shareLinksRepo.findOne
+      .mockResolvedValueOnce({ id: 1, boardId: 15, ownerUserId: 7, token: 't1', revokedAt: null })
+      .mockResolvedValueOnce({ id: 1, boardId: 15, ownerUserId: 7, token: 't1', revokedAt: new Date() });
+
+    boardsRepo.findOne.mockResolvedValue({
+      id: 15,
+      title: 'Public board',
+      description: null,
+      stateJson: '{"cards":[{"id":"c1","type":"text","text":"hello"}]}',
+      updatedAt: new Date(),
+    });
+
+    const publicData = await service.getPublicBoardByToken('t1');
+    expect(publicData.board.title).toBe('Public board');
+    expect(publicData.board.cards).toHaveLength(1);
+
+    await expect(service.getPublicBoardByToken('t1')).rejects.toMatchObject({
+      status: 404,
+      response: { code: 'SHARE_LINK_NOT_FOUND' },
+    });
+  });
+
+  it('revokes share link', async () => {
+    boardsRepo.findOne.mockResolvedValue({ id: 15, ownerUserId: 7 });
+    shareLinksRepo.findOne.mockResolvedValue({ id: 3, boardId: 15, ownerUserId: 7, revokedAt: null });
+    shareLinksRepo.save.mockImplementation(async (v: any) => v);
+
+    const result = await service.revokeShareLink(15, 3, 7);
+    expect(result).toEqual({ success: true });
+    expect(shareLinksRepo.save).toHaveBeenCalled();
   });
 
   it('finalizes upload intent and returns metadata', async () => {

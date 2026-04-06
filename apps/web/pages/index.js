@@ -39,6 +39,9 @@ export default function Home() {
   const [versions, setVersions] = useState([]);
   const [versionsCursor, setVersionsCursor] = useState(null);
   const [versionsLoading, setVersionsLoading] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  const [shareLinks, setShareLinks] = useState([]);
+  const [shareLoading, setShareLoading] = useState(false);
 
   const savingRef = useRef(false);
   const queuedSaveRef = useRef(false);
@@ -287,6 +290,7 @@ export default function Home() {
       setUploadError('');
       setVersions([]);
       setVersionsCursor(null);
+      setShareLinks([]);
     } catch (e2) { setError(String(e2.message || e2)); }
     finally { setLoading(false); }
   }
@@ -376,6 +380,58 @@ export default function Home() {
     }
   }
 
+  async function loadShareLinks() {
+    if (!activeBoardId) return;
+    setShareLoading(true);
+    setError('');
+    try {
+      const data = await api(`/v1/boards/${activeBoardId}/share-links`);
+      setShareLinks(data.items || []);
+    } catch (e2) {
+      setError(String(e2.message || e2));
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function createShareLink() {
+    if (!activeBoardId) return;
+    setShareLoading(true);
+    setError('');
+    try {
+      await api(`/v1/boards/${activeBoardId}/share-links`, { method: 'POST' });
+      await loadShareLinks();
+    } catch (e2) {
+      setError(String(e2.message || e2));
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function revokeShareLink(linkId) {
+    if (!activeBoardId) return;
+    if (!confirm('Revoke this share link?')) return;
+    setShareLoading(true);
+    setError('');
+    try {
+      await api(`/v1/boards/${activeBoardId}/share-links/${linkId}`, { method: 'DELETE' });
+      await loadShareLinks();
+    } catch (e2) {
+      setError(String(e2.message || e2));
+    } finally {
+      setShareLoading(false);
+    }
+  }
+
+  async function copyShareUrl(url) {
+    try {
+      await navigator.clipboard.writeText(url);
+      alert('Share URL copied');
+    } catch {
+      prompt('Copy share URL', url);
+    }
+  }
+
   function askImageUpload() {
     uploadInputRef.current?.click();
   }
@@ -457,6 +513,11 @@ export default function Home() {
         setVersionsOpen(next);
         if (next && activeBoardId) loadVersions({ reset: true });
       }} disabled={!activeBoardId}>Versions</button>
+      <button onClick={() => {
+        const next = !shareOpen;
+        setShareOpen(next);
+        if (next && activeBoardId) loadShareLinks();
+      }} disabled={!activeBoardId}>Share</button>
       <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={onImagePicked} />
     </div>
     {loading && <p>Loading...</p>}
@@ -484,6 +545,22 @@ export default function Home() {
         </li>)}
       </ul>}
       {versionsCursor ? <button onClick={() => loadVersions()} disabled={versionsLoading}>Load more</button> : null}
+    </section> : null}
+
+    {shareOpen && activeBoardId ? <section>
+      <h2>Share links</h2>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+        <button onClick={createShareLink} disabled={shareLoading}>Create share link</button>
+        <button onClick={loadShareLinks} disabled={shareLoading}>Reload links</button>
+      </div>
+      {shareLinks.length === 0 ? <p>No share links</p> : <ul>
+        {shareLinks.map((s) => <li key={s.id}>
+          #{s.id} {s.revokedAt ? '(revoked)' : '(active)'} {' '}
+          <button onClick={() => copyShareUrl(s.url)}>Copy URL</button>{' '}
+          {!s.revokedAt ? <button onClick={() => revokeShareLink(s.id)} disabled={shareLoading}>Revoke</button> : null}
+          <div style={{ fontSize: 12 }}>{s.url}</div>
+        </li>)}
+      </ul>}
     </section> : null}
 
     <section>

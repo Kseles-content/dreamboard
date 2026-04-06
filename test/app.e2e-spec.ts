@@ -248,6 +248,67 @@ describe('DreamBoard API (e2e)', () => {
     expect(restoredCards.body.items[0].text).toBe('v1 text');
   });
 
+  it('supports share links lifecycle and public view-only access', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'share@example.com', name: 'Share Owner' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Share board', description: 'public demo' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'public card' })
+      .expect(201);
+
+    const share = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/share-links`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    expect(share.body.token).toBeTruthy();
+    expect(share.body.url).toContain('/share/');
+
+    const listed = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/share-links`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(listed.body.items.length).toBeGreaterThan(0);
+
+    const publicBoard = await request(app.getHttpServer())
+      .get(`/v1/share/${share.body.token}`)
+      .expect(200);
+
+    expect(publicBoard.body.board.title).toBe('Share board');
+    expect(publicBoard.body.board.cards[0].text).toBe('public card');
+
+    await request(app.getHttpServer())
+      .patch('/v1/boards/1')
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .delete(`/v1/boards/${boardId}/share-links/${share.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(`/v1/share/${share.body.token}`)
+      .expect(404)
+      .expect((res) => {
+        expect(res.body.code).toBe('SHARE_LINK_NOT_FOUND');
+      });
+  });
+
   it('refreshes and logs out', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')

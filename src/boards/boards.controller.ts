@@ -134,4 +134,23 @@ export class BoardsController {
   ) {
     return this.boardsService.restoreVersion(boardId, versionId, req.user!.sub);
   }
+
+  @Get(':boardId/share-links')
+  listShareLinks(@Param('boardId', ParseIntPipe) boardId: number, @Req() req: RequestWithId) {
+    return this.boardsService.listShareLinks(boardId, req.user!.sub);
+  }
+
+  @Post(':boardId/share-links')
+  createShareLink(@Param('boardId', ParseIntPipe) boardId: number, @Req() req: RequestWithId) {
+    return this.boardsService.createShareLink(boardId, req.user!.sub);
+  }
+
+  @Delete(':boardId/share-links/:linkId')
+  revokeShareLink(
+    @Param('boardId', ParseIntPipe) boardId: number,
+    @Param('linkId', ParseIntPipe) linkId: number,
+    @Req() req: RequestWithId,
+  ) {
+    return this.boardsService.revokeShareLink(boardId, linkId, req.user!.sub);
+  }
 }

@@ -25,6 +25,7 @@ npm run test:e2e
 - `docs/day3-interactive-board-spec.md` *(next stage input)*
 - `docs/day4-release-gate.md`
 - `docs/week9-versions.md`
+- `docs/week10-sharing.md`
 
 ## API
 
@@ -44,6 +45,10 @@ npm run test:e2e
 - `GET /v1/boards/:boardId/versions` (stable cursor pagination)
 - `POST /v1/boards/:boardId/versions` (create snapshot from current live state)
 - `POST /v1/boards/:boardId/versions/:versionId/restore` (restore live state from snapshot)
+- `GET /v1/boards/:boardId/share-links` (owner: list share links)
+- `POST /v1/boards/:boardId/share-links` (owner: create public view-only link)
+- `DELETE /v1/boards/:boardId/share-links/:linkId` (owner: revoke link)
+- `GET /v1/share/:token` (public view-only board data, no auth)
 
 Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`
