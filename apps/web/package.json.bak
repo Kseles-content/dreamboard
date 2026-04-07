@@ -3,7 +3,7 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3100 -H 0.0.0.0",
+    "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
     "test": "node tests/smoke.mjs"
