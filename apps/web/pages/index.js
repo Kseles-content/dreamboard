@@ -186,7 +186,13 @@ export default function Home() {
     if (!title) return;
     setLoading(true); setError('');
     try {
-      await api('/v1/boards', { method: 'POST', body: JSON.stringify({ title }) });
+      const created = await api('/v1/boards', { method: 'POST', body: JSON.stringify({ title }) });
+      if (created && created.id) {
+        setBoards((prev) => {
+          const exists = prev.some((b) => String(b.id) === String(created.id));
+          return exists ? prev : [created, ...prev];
+        });
+      }
       await trackEvent('create_board', { titleLength: title.length });
       await loadBoards();
     } catch (e2) {
