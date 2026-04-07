@@ -8,10 +8,21 @@ type Board = {
   updatedAt: string;
 };
 
+type Card = {
+  id: string;
+  boardId: string;
+  type: 'text';
+  text: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 @Injectable()
 export class BoardsService {
   private boards: Board[] = [];
+  private cards: Card[] = [];
   private seq = 1;
+  private cardSeq = 1;
 
   findAll() {
     return this.boards;
@@ -60,6 +71,50 @@ export class BoardsService {
     }
 
     const [deleted] = this.boards.splice(idx, 1);
+    this.cards = this.cards.filter((c) => c.boardId !== boardId);
     return { deleted: true, board: deleted };
+  }
+
+  listCards(boardId: string) {
+    this.findOne(boardId);
+    return this.cards.filter((c) => c.boardId === boardId);
+  }
+
+  createCard(boardId: string, payload: { type?: 'text'; text?: string }) {
+    this.findOne(boardId);
+    const now = new Date().toISOString();
+    const card: Card = {
+      id: String(this.cardSeq++),
+      boardId,
+      type: 'text',
+      text: payload.text?.trim() || '',
+      createdAt: now,
+      updatedAt: now,
+    };
+    this.cards.push(card);
+    return { created: card };
+  }
+
+  updateCard(boardId: string, cardId: string, payload: { text?: string }) {
+    this.findOne(boardId);
+    const card = this.cards.find((c) => c.boardId === boardId && c.id === cardId);
+    if (!card) {
+      throw new NotFoundException(`Card ${cardId} not found`);
+    }
+    if (payload.text !== undefined) {
+      card.text = payload.text;
+    }
+    card.updatedAt = new Date().toISOString();
+    return card;
+  }
+
+  removeCard(boardId: string, cardId: string) {
+    this.findOne(boardId);
+    const idx = this.cards.findIndex((c) => c.boardId === boardId && c.id === cardId);
+    if (idx === -1) {
+      throw new NotFoundException(`Card ${cardId} not found`);
+    }
+    const [deleted] = this.cards.splice(idx, 1);
+    return { deleted: true, card: deleted };
   }
 }

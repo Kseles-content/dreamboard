@@ -32,4 +32,31 @@ export class BoardsController {
   remove(@Param('boardId') boardId: string) {
     return this.boardsService.remove(boardId);
   }
+
+  @Get(':boardId/cards')
+  listCards(@Param('boardId') boardId: string) {
+    return this.boardsService.listCards(boardId);
+  }
+
+  @Post(':boardId/cards')
+  createCard(
+    @Param('boardId') boardId: string,
+    @Body() body: { type?: 'text'; text?: string },
+  ) {
+    return this.boardsService.createCard(boardId, body || {});
+  }
+
+  @Patch(':boardId/cards/:cardId')
+  updateCard(
+    @Param('boardId') boardId: string,
+    @Param('cardId') cardId: string,
+    @Body() body: { text?: string },
+  ) {
+    return this.boardsService.updateCard(boardId, cardId, body || {});
+  }
+
+  @Delete(':boardId/cards/:cardId')
+  removeCard(@Param('boardId') boardId: string, @Param('cardId') cardId: string) {
+    return this.boardsService.removeCard(boardId, cardId);
+  }
 }
