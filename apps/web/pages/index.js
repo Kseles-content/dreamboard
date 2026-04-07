@@ -10,6 +10,7 @@ import {
 } from '../lib/history';
 import { AUTOSAVE_DEBOUNCE_MS, createDebouncedAutosave, diffCards } from '../lib/autosave';
 import { captureError, trackEvent } from '../lib/observability';
+import { Api as DreamboardApi, ContentType } from '../src/lib/api/client';
 
 const DEFAULT_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const HISTORY_KEY_PREFIX = 'db_web_history_';
@@ -87,6 +88,12 @@ export default function Home() {
   }, [activeBoardId, history]);
 
   const authed = useMemo(() => Boolean(token), [token]);
+  const typedApi = useMemo(() => new DreamboardApi({
+    baseUrl,
+    baseApiParams: {
+      headers: token ? { authorization: `Bearer ${token}` } : {},
+    },
+  }), [baseUrl, token]);
 
   async function api(path, opts = {}) {
     const headers = { 'content-type': 'application/json', ...(opts.headers || {}) };
@@ -131,13 +138,12 @@ export default function Home() {
     e.preventDefault();
     setLoading(true); setError('');
     try {
-      const auth = await api('/v1/auth/login', {
-        method: 'POST',
-        auth: false,
-        body: JSON.stringify({ email, name }),
-      });
+      const { data: auth } = await typedApi.v1.authLoginCreate(
+        { email, name },
+        { type: ContentType.Json },
+      );
       setToken(auth.accessToken);
-      setRefreshToken(auth.refreshToken);
+      setRefreshToken(auth.refreshToken || '');
       await trackEvent('login', { email });
       await loadBoards(auth.accessToken);
     } catch (e2) {
@@ -149,11 +155,7 @@ export default function Home() {
   async function logout() {
     try {
       if (refreshToken) {
-        await api('/v1/auth/logout', {
-          method: 'POST',
-          auth: false,
-          body: JSON.stringify({ refreshToken }),
-        });
+        await typedApi.v1.authLogoutCreate();
       }
     } catch {}
     setToken('');
@@ -170,11 +172,13 @@ export default function Home() {
     setLoading(true); setError('');
     try {
       const authHeaderToken = tempToken || token;
-      const res = await fetch(`${baseUrl}/v1/boards?limit=50`, {
-        headers: { authorization: `Bearer ${authHeaderToken}` },
-      });
-      if (!res.ok) throw new Error(`HTTP_${res.status}`);
-      const data = await res.json();
+      const client = authHeaderToken
+        ? new DreamboardApi({
+            baseUrl,
+            baseApiParams: { headers: { authorization: `Bearer ${authHeaderToken}` } },
+          })
+        : typedApi;
+      const { data } = await client.v1.boardsList({ limit: 50 });
       setBoards(Array.isArray(data) ? data : (data.items || []));
     } catch (e2) {
       setError(String(e2.message || e2));
@@ -186,7 +190,10 @@ export default function Home() {
     if (!title) return;
     setLoading(true); setError('');
     try {
-      const created = await api('/v1/boards', { method: 'POST', body: JSON.stringify({ title }) });
+      const { data: created } = await typedApi.v1.boardsCreate(
+        { title },
+        { type: ContentType.Json },
+      );
       if (created && created.id) {
         setBoards((prev) => {
           const exists = prev.some((b) => String(b.id) === String(created.id));
@@ -235,10 +242,11 @@ export default function Home() {
         const payload = card.type === 'image'
           ? { type: 'image', objectKey: card.objectKey }
           : { type: 'text', text: card.text };
-        const data = await api(`/v1/boards/${activeBoardId}/cards`, {
-          method: 'POST',
-          body: JSON.stringify(payload),
-        });
+        const { data } = await typedApi.v1.boardsCardsCreate(
+          String(activeBoardId),
+          payload,
+          { type: ContentType.Json },
+        );
         const created = data.created;
         await trackEvent('create_card', { boardId: activeBoardId, type: created.type || card.type || 'text' });
         workingCards = workingCards.map((c) => (c.id === card.id ? created : c));
@@ -247,15 +255,17 @@ export default function Home() {
       for (const card of updates) {
         if (card.type === 'image') continue;
         if (String(card.id).startsWith('tmp_')) continue;
-        await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, {
-          method: 'PATCH',
-          body: JSON.stringify({ text: card.text }),
-        });
+        await typedApi.v1.boardsCardsPartialUpdate(
+          String(activeBoardId),
+          String(card.id),
+          { text: card.text },
+          { type: ContentType.Json },
+        );
       }
 
       for (const card of deletes) {
         if (String(card.id).startsWith('tmp_')) continue;
-        await api(`/v1/boards/${activeBoardId}/cards/${card.id}`, { method: 'DELETE' });
+        await typedApi.v1.boardsCardsDelete(String(activeBoardId), String(card.id));
       }
 
       setSavedCards(workingCards);
@@ -289,7 +299,7 @@ export default function Home() {
     setActiveBoardId(id);
     setLoading(true); setError('');
     try {
-      const data = await api(`/v1/boards/${id}/cards`);
+      const { data } = await typedApi.v1.boardsCardsList(String(id));
       const remoteCards = Array.isArray(data) ? data : (data.items || []);
       setSavedCards(remoteCards);
 
