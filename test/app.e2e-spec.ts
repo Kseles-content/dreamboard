@@ -159,6 +159,156 @@ describe('DreamBoard API (e2e)', () => {
     expect(ids1[1]).toBeLessThan(ids2[0]);
   });
 
+  it('supports versions snapshot, list, restore and VERSION_NOT_FOUND', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'versions@example.com', name: 'Versions User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Versioned board', description: 'initial' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'v1 text' })
+      .expect(201);
+
+    const v1 = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/versions`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .patch(`/v1/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Versioned board changed' })
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'v2 text' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/versions`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    const listPage1 = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/versions?limit=1`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(listPage1.body.items).toHaveLength(1);
+    expect(listPage1.body.nextCursor).toBeTruthy();
+
+    const listPage2 = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/versions?limit=1&cursor=${listPage1.body.nextCursor}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(listPage2.body.items).toHaveLength(1);
+    expect(listPage1.body.items[0].id).toBeGreaterThan(listPage2.body.items[0].id);
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/versions/999999/restore`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(404)
+      .expect((res) => {
+        expect(res.body.code).toBe('VERSION_NOT_FOUND');
+      });
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/versions/${v1.body.id}/restore`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    const restoredBoard = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(restoredBoard.body.title).toBe('Versioned board');
+
+    const restoredCards = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(restoredCards.body.items).toHaveLength(1);
+    expect(restoredCards.body.items[0].text).toBe('v1 text');
+  });
+
+  it('supports share links lifecycle and public view-only access', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'share@example.com', name: 'Share Owner' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const createBoard = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Share board', description: 'public demo' })
+      .expect(201);
+
+    const boardId = createBoard.body.id as number;
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .send({ text: 'public card' })
+      .expect(201);
+
+    const share = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/share-links`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    expect(share.body.token).toBeTruthy();
+    expect(share.body.url).toContain('/share/');
+
+    const listed = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/share-links`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(listed.body.items.length).toBeGreaterThan(0);
+
+    const publicBoard = await request(app.getHttpServer())
+      .get(`/v1/share/${share.body.token}`)
+      .expect(200);
+
+    expect(publicBoard.body.board.title).toBe('Share board');
+    expect(publicBoard.body.board.cards[0].text).toBe('public card');
+
+    await request(app.getHttpServer())
+      .patch('/v1/boards/1')
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .delete(`/v1/boards/${boardId}/share-links/${share.body.id}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .get(`/v1/share/${share.body.token}`)
+      .expect(404)
+      .expect((res) => {
+        expect(res.body.code).toBe('SHARE_LINK_NOT_FOUND');
+      });
+  });
+
   it('refreshes and logs out', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')

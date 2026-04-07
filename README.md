@@ -24,6 +24,13 @@ npm run test:e2e
 - `packages/contracts/json-schema/board-state-v2.schema.json` *(prepared for next stage, not in Day 5 MVP scope)*
 - `docs/day3-interactive-board-spec.md` *(next stage input)*
 - `docs/day4-release-gate.md`
+- `docs/week9-versions.md`
+- `docs/week10-sharing.md`
+- `docs/week11-perf-report.md`
+- `docs/week12-test-matrix.md`
+- `docs/week12-release-checklist.md`
+- `docs/week12-rollback-checklist.md`
+- `docs/week12-proof-pack.md`
 
 ## API
 
@@ -40,6 +47,13 @@ npm run test:e2e
 - `DELETE /v1/boards/:boardId` (soft delete)
 - `POST /v1/boards/:boardId/uploads/intents` (image upload pre-sign intent)
 - `POST /v1/boards/:boardId/uploads/finalize` (mark upload as READY and persist metadata)
+- `GET /v1/boards/:boardId/versions` (stable cursor pagination)
+- `POST /v1/boards/:boardId/versions` (create snapshot from current live state)
+- `POST /v1/boards/:boardId/versions/:versionId/restore` (restore live state from snapshot)
+- `GET /v1/boards/:boardId/share-links` (owner: list share links)
+- `POST /v1/boards/:boardId/share-links` (owner: create public view-only link)
+- `DELETE /v1/boards/:boardId/share-links/:linkId` (owner: revoke link)
+- `GET /v1/share/:token` (public view-only board data, no auth)
 
 Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`
@@ -132,3 +146,56 @@ bash scripts/demo-check.sh
 Week 7 progress: backend supports image-card creation from finalized uploads (`type=image`, `objectKey`).
 
 See: `apps/web/README.md` for runbook and tests.
+
+## Week 11 Export (Web)
+
+In web editor (`apps/web/pages/index.js`):
+- `Export PNG` button
+- `Export JPG` button
+
+Both exports are generated from the current in-editor state (visible cards snapshot).
+
+## Week 11 Observability
+
+Set in `apps/web` environment:
+
+- `NEXT_PUBLIC_SENTRY_DSN` — Sentry DSN (browser error capture)
+- `NEXT_PUBLIC_POSTHOG_KEY` — PostHog project key (event capture)
+- `NEXT_PUBLIC_POSTHOG_HOST` — optional (default `https://app.posthog.com`)
+
+Key tracked events:
+- `login`
+- `create_board`
+- `create_card`
+- `upload_image`
+- `create_share_link`
+- `export_board`
+
+Manual Sentry smoke check:
+- Use `Test Sentry Error` button in web editor.
+
+## Week 11 Performance Baseline
+
+Generate perf report:
+
+```bash
+bash scripts/perf-baseline-week11.sh
+```
+
+Report output:
+- `docs/week11-perf-report.md`
+
+## Week 12 Stabilization (Final RC)
+
+Critical scenario smoke:
+
+```bash
+bash scripts/week12-critical-smoke.sh
+```
+
+Release controls:
+- `docs/week12-release-checklist.md`
+- `docs/week12-rollback-checklist.md`
+
+Final proof pack:
+- `docs/week12-proof-pack.md`
