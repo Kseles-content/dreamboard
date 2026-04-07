@@ -11,7 +11,7 @@ import {
 import { AUTOSAVE_DEBOUNCE_MS, createDebouncedAutosave, diffCards } from '../lib/autosave';
 import { captureError, trackEvent } from '../lib/observability';
 
-const DEFAULT_API = 'http://localhost:3000';
+const DEFAULT_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const HISTORY_KEY_PREFIX = 'db_web_history_';
 const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
