@@ -175,7 +175,7 @@ export default function Home() {
       });
       if (!res.ok) throw new Error(`HTTP_${res.status}`);
       const data = await res.json();
-      setBoards(data.items || []);
+      setBoards(Array.isArray(data) ? data : (data.items || []));
     } catch (e2) {
       setError(String(e2.message || e2));
     } finally { setLoading(false); }
@@ -284,7 +284,7 @@ export default function Home() {
     setLoading(true); setError('');
     try {
       const data = await api(`/v1/boards/${id}/cards`);
-      const remoteCards = data.items || [];
+      const remoteCards = Array.isArray(data) ? data : (data.items || []);
       setSavedCards(remoteCards);
 
       const raw = localStorage.getItem(`${HISTORY_KEY_PREFIX}${id}`);
@@ -347,7 +347,8 @@ export default function Home() {
       const cursor = reset ? null : versionsCursor;
       const q = cursor ? `?limit=5&cursor=${cursor}` : '?limit=5';
       const data = await api(`/v1/boards/${activeBoardId}/versions${q}`);
-      setVersions((prev) => (reset ? (data.items || []) : [...prev, ...(data.items || [])]));
+      const items = Array.isArray(data) ? data : (data.items || []);
+      setVersions((prev) => (reset ? items : [...prev, ...items]));
       setVersionsCursor(data.nextCursor || null);
     } catch (e2) {
       setError(String(e2.message || e2));
@@ -378,7 +379,7 @@ export default function Home() {
     try {
       await api(`/v1/boards/${activeBoardId}/versions/${versionId}/restore`, { method: 'POST' });
       const cardsData = await api(`/v1/boards/${activeBoardId}/cards`);
-      const remoteCards = cardsData.items || [];
+      const remoteCards = Array.isArray(cardsData) ? cardsData : (cardsData.items || []);
       setSavedCards(remoteCards);
       setHistory(createHistory(remoteCards));
       setDirty(false);
@@ -396,7 +397,7 @@ export default function Home() {
     setError('');
     try {
       const data = await api(`/v1/boards/${activeBoardId}/share-links`);
-      setShareLinks(data.items || []);
+      setShareLinks(Array.isArray(data) ? data : (data.items || []));
     } catch (e2) {
       setError(String(e2.message || e2));
     } finally {
