@@ -33,7 +33,7 @@ export class BoardsController {
   listBoards(
     @Req() req: RequestWithId,
     @Query() query: ListBoardsQueryDto,
-  ): Promise<{ items: BoardEntity[]; nextCursor: number | null }> {
+  ): Promise<Array<{ id: string; title: string; description: string | null; createdAt: string; updatedAt: string }>> {
     return this.boardsService.listBoards(req.user!.sub, query.limit ?? 20, query.cursor);
   }
 
@@ -43,7 +43,7 @@ export class BoardsController {
   }
 
   @Post()
-  createBoard(@Body() input: CreateBoardDto, @Req() req: RequestWithId): Promise<BoardEntity> {
+  createBoard(@Body() input: CreateBoardDto, @Req() req: RequestWithId): Promise<{ id: string; title: string; description: string | null; createdAt: string; updatedAt: string }> {
     return this.boardsService.createBoard(input, req.user!.sub, req.requestId);
   }
 
@@ -52,12 +52,12 @@ export class BoardsController {
     @Param('boardId', ParseIntPipe) id: number,
     @Body() input: UpdateBoardDto,
     @Req() req: RequestWithId,
-  ): Promise<BoardEntity> {
+  ): Promise<{ id: string; title: string; description: string | null; createdAt: string; updatedAt: string }> {
     return this.boardsService.updateBoard(id, input, req.user!.sub);
   }
 
   @Delete(':boardId')
-  deleteBoard(@Param('boardId', ParseIntPipe) id: number, @Req() req: RequestWithId): Promise<{ success: true }> {
+  deleteBoard(@Param('boardId', ParseIntPipe) id: number, @Req() req: RequestWithId): Promise<{ deleted: boolean; board: { id: string; title: string; description: string | null; createdAt: string; updatedAt: string } }> {
     return this.boardsService.deleteBoard(id, req.user!.sub);
   }
 

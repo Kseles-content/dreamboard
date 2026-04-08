@@ -19,10 +19,24 @@ import { BoardVersionEntity } from './board-version.entity';
 import { ShareLinkEntity } from './share-link.entity';
 import { v4 as uuidv4 } from 'uuid';
 
-type TextCard = { id: string; type: 'text'; text: string };
-type ImageCard = { id: string; type: 'image'; imageUrl: string; objectKey: string };
+type CardBase = {
+  id: string;
+  boardId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+type TextCard = CardBase & { type: 'text'; text: string };
+type ImageCard = CardBase & { type: 'image'; imageUrl: string; objectKey: string };
 type Card = TextCard | ImageCard;
 type BoardState = { cards: Card[] };
+
+type ApiBoard = {
+  id: string;
+  title: string;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
 
 const ALLOWED_UPLOAD_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
@@ -40,7 +54,7 @@ export class BoardsService {
     private readonly shareLinksRepository: Repository<ShareLinkEntity>,
   ) {}
 
-  async listBoards(userId: number, limit = 20, cursor?: number): Promise<{ items: BoardEntity[]; nextCursor: number | null }> {
+  async listBoards(userId: number, limit = 20, cursor?: number): Promise<ApiBoard[]> {
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
 
     const where = cursor
@@ -55,9 +69,7 @@ export class BoardsService {
 
     const hasMore = rows.length > normalizedLimit;
     const items = hasMore ? rows.slice(0, normalizedLimit) : rows;
-    const nextCursor = hasMore ? items[items.length - 1].id : null;
-
-    return { items, nextCursor };
+    return items.map((board) => this.toApiBoard(board));
   }
 
   async getBoardById(id: number, userId: number): Promise<BoardEntity> {
@@ -71,7 +83,7 @@ export class BoardsService {
     return board;
   }
 
-  async createBoard(input: CreateBoardDto, userId: number, requestId: string): Promise<BoardEntity> {
+  async createBoard(input: CreateBoardDto, userId: number, requestId: string): Promise<ApiBoard> {
     const boardsCount = await this.boardsRepository.count({ where: { ownerUserId: userId } });
     if (boardsCount >= 50) {
       throw new HttpException(
@@ -91,10 +103,11 @@ export class BoardsService {
       stateJson: JSON.stringify({ cards: [] }),
     });
 
-    return this.boardsRepository.save(entity);
+    const saved = await this.boardsRepository.save(entity);
+    return this.toApiBoard(saved);
   }
 
-  async updateBoard(id: number, input: UpdateBoardDto, userId: number): Promise<BoardEntity> {
+  async updateBoard(id: number, input: UpdateBoardDto, userId: number): Promise<ApiBoard> {
     const board = await this.getBoardById(id, userId);
 
     if (typeof input.title !== 'undefined') {
@@ -105,21 +118,23 @@ export class BoardsService {
       board.description = input.description;
     }
 
-    return this.boardsRepository.save(board);
+    const saved = await this.boardsRepository.save(board);
+    return this.toApiBoard(saved);
   }
 
-  async deleteBoard(id: number, userId: number): Promise<{ success: true }> {
+  async deleteBoard(id: number, userId: number): Promise<{ deleted: boolean; board: ApiBoard }> {
     const board = await this.getBoardById(id, userId);
+    const boardView = this.toApiBoard(board);
     await this.boardsRepository.softDelete({ id: board.id });
-    return { success: true };
+    return { deleted: true, board: boardView };
   }
 
-  async listCards(boardId: number, userId: number): Promise<{ items: Card[] }> {
+  async listCards(boardId: number, userId: number): Promise<Card[]> {
     const board = await this.getBoardById(boardId, userId);
-    return { items: this.readState(board).cards };
+    return this.readState(board).cards;
   }
 
-  async createCard(boardId: number, userId: number, input: CreateCardDto): Promise<{ items: Card[]; created: Card }> {
+  async createCard(boardId: number, userId: number, input: CreateCardDto): Promise<{ created: Card }> {
     const board = await this.getBoardById(boardId, userId);
     const state = this.readState(board);
 
@@ -167,8 +182,12 @@ export class BoardsService {
         );
       }
 
+      const now = new Date().toISOString();
       created = {
         id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        boardId: String(boardId),
+        createdAt: now,
+        updatedAt: now,
         type: 'image',
         objectKey: asset.objectKey,
         imageUrl: asset.publicUrl,
@@ -184,17 +203,25 @@ export class BoardsService {
         );
       }
 
-      created = { id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, type: 'text', text: input.text };
+      const now = new Date().toISOString();
+      created = {
+        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        boardId: String(boardId),
+        createdAt: now,
+        updatedAt: now,
+        type: 'text',
+        text: input.text,
+      };
     }
 
     state.cards.push(created);
     board.stateJson = JSON.stringify(state);
     await this.boardsRepository.save(board);
 
-    return { items: state.cards, created };
+    return { created };
   }
 
-  async updateCard(boardId: number, cardId: string, userId: number, input: UpdateCardDto): Promise<{ items: Card[]; updated: Card }> {
+  async updateCard(boardId: number, cardId: string, userId: number, input: UpdateCardDto): Promise<Card> {
     const board = await this.getBoardById(boardId, userId);
     const state = this.readState(board);
     const card = state.cards.find((c) => c.id === cardId);
@@ -214,26 +241,28 @@ export class BoardsService {
     }
 
     card.text = input.text;
+    card.updatedAt = new Date().toISOString();
     board.stateJson = JSON.stringify(state);
     await this.boardsRepository.save(board);
 
-    return { items: state.cards, updated: card };
+    return card;
   }
 
-  async deleteCard(boardId: number, cardId: string, userId: number): Promise<{ items: Card[]; success: true }> {
+  async deleteCard(boardId: number, cardId: string, userId: number): Promise<{ deleted: boolean; card: Card }> {
     const board = await this.getBoardById(boardId, userId);
     const state = this.readState(board);
-    const before = state.cards.length;
-    state.cards = state.cards.filter((c) => c.id !== cardId);
+    const card = state.cards.find((c) => c.id === cardId);
 
-    if (state.cards.length === before) {
+    if (!card) {
       throw new NotFoundException(`Card ${cardId} not found`);
     }
 
+    state.cards = state.cards.filter((c) => c.id !== cardId);
+
     board.stateJson = JSON.stringify(state);
     await this.boardsRepository.save(board);
 
-    return { items: state.cards, success: true };
+    return { deleted: true, card };
   }
 
   async createUploadIntent(boardId: number, userId: number, input: CreateUploadIntentDto) {
@@ -536,10 +565,27 @@ export class BoardsService {
             .map((card) => {
               if (!card || typeof card !== 'object') return null;
               if (card.type === 'image' && typeof card.id === 'string' && typeof card.imageUrl === 'string' && typeof card.objectKey === 'string') {
-                return { id: card.id, type: 'image', imageUrl: card.imageUrl, objectKey: card.objectKey } as ImageCard;
+                const now = new Date().toISOString();
+                return {
+                  id: card.id,
+                  boardId: typeof card.boardId === 'string' ? card.boardId : String(board.id),
+                  createdAt: typeof card.createdAt === 'string' ? card.createdAt : now,
+                  updatedAt: typeof card.updatedAt === 'string' ? card.updatedAt : now,
+                  type: 'image',
+                  imageUrl: card.imageUrl,
+                  objectKey: card.objectKey,
+                } as ImageCard;
               }
               if (typeof card.id === 'string' && typeof card.text === 'string') {
-                return { id: card.id, type: 'text', text: card.text } as TextCard;
+                const now = new Date().toISOString();
+                return {
+                  id: card.id,
+                  boardId: typeof card.boardId === 'string' ? card.boardId : String(board.id),
+                  createdAt: typeof card.createdAt === 'string' ? card.createdAt : now,
+                  updatedAt: typeof card.updatedAt === 'string' ? card.updatedAt : now,
+                  type: 'text',
+                  text: card.text,
+                } as TextCard;
               }
               return null;
             })
@@ -576,5 +622,15 @@ export class BoardsService {
   private buildPublicShareUrl(token: string): string {
     const webBase = (process.env.PUBLIC_WEB_BASE_URL ?? 'http://localhost:3001').replace(/\/$/, '');
     return `${webBase}/share/${token}`;
+  }
+
+  private toApiBoard(board: BoardEntity): ApiBoard {
+    return {
+      id: String(board.id),
+      title: board.title,
+      description: board.description,
+      createdAt: board.createdAt.toISOString(),
+      updatedAt: board.updatedAt.toISOString(),
+    };
   }
 }

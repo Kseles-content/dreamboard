@@ -143,18 +143,19 @@ describe('DreamBoard API (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(page1.body.items).toHaveLength(2);
-    expect(page1.body.nextCursor).toBeTruthy();
+    expect(page1.body).toHaveLength(2);
+    const cursor = page1.body[1]?.id;
+    expect(cursor).toBeTruthy();
 
     const page2 = await request(app.getHttpServer())
-      .get(`/v1/boards?limit=2&cursor=${page1.body.nextCursor}`)
+      .get(`/v1/boards?limit=2&cursor=${cursor}`)
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(page2.body.items).toHaveLength(2);
+    expect(page2.body).toHaveLength(2);
 
-    const ids1 = page1.body.items.map((b: { id: number }) => b.id);
-    const ids2 = page2.body.items.map((b: { id: number }) => b.id);
+    const ids1 = page1.body.map((b: { id: string }) => Number(b.id));
+    const ids2 = page2.body.map((b: { id: string }) => Number(b.id));
 
     expect(ids1[1]).toBeLessThan(ids2[0]);
   });
@@ -244,8 +245,8 @@ describe('DreamBoard API (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(restoredCards.body.items).toHaveLength(1);
-    expect(restoredCards.body.items[0].text).toBe('v1 text');
+    expect(restoredCards.body).toHaveLength(1);
+    expect(restoredCards.body[0].text).toBe('v1 text');
   });
 
   it('supports share links lifecycle and public view-only access', async () => {
@@ -383,7 +384,7 @@ describe('DreamBoard API (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
 
-    expect(listed.body.items.some((x: any) => x.type === 'image')).toBe(true);
+    expect(listed.body.some((x: any) => x.type === 'image')).toBe(true);
 
     const unsupported = await request(app.getHttpServer())
       .post(`/v1/boards/${boardId}/uploads/intents`)
@@ -446,7 +447,7 @@ describe('DreamBoard API (e2e)', () => {
       .send({ text: 'same-text' })
       .expect(200);
 
-    expect(first.body.updated.text).toBe('same-text');
-    expect(second.body.updated.text).toBe('same-text');
+    expect(first.body.text).toBe('same-text');
+    expect(second.body.text).toBe('same-text');
   });
 });

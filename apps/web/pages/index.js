@@ -179,7 +179,7 @@ export default function Home() {
           })
         : typedApi;
       const { data } = await client.v1.boardsList({ limit: 50 });
-      setBoards(Array.isArray(data) ? data : (data.items || []));
+      setBoards(data || []);
     } catch (e2) {
       setError(String(e2.message || e2));
     } finally { setLoading(false); }
@@ -299,8 +299,7 @@ export default function Home() {
     setActiveBoardId(id);
     setLoading(true); setError('');
     try {
-      const { data } = await typedApi.v1.boardsCardsList(String(id));
-      const remoteCards = Array.isArray(data) ? data : (data.items || []);
+      const { data: remoteCards } = await typedApi.v1.boardsCardsList(String(id));
       setSavedCards(remoteCards);
 
       const raw = localStorage.getItem(`${HISTORY_KEY_PREFIX}${id}`);
@@ -360,12 +359,10 @@ export default function Home() {
     setVersionsLoading(true);
     setError('');
     try {
-      const cursor = reset ? null : versionsCursor;
-      const q = cursor ? `?limit=5&cursor=${cursor}` : '?limit=5';
-      const data = await api(`/v1/boards/${activeBoardId}/versions${q}`);
-      const items = Array.isArray(data) ? data : (data.items || []);
+      const { data } = await typedApi.v1.boardsVersionsList(String(activeBoardId));
+      const items = data?.items || [];
       setVersions((prev) => (reset ? items : [...prev, ...items]));
-      setVersionsCursor(data.nextCursor || null);
+      setVersionsCursor(data?.nextCursor || null);
     } catch (e2) {
       setError(String(e2.message || e2));
     } finally {
@@ -378,7 +375,7 @@ export default function Home() {
     setVersionsLoading(true);
     setError('');
     try {
-      await api(`/v1/boards/${activeBoardId}/versions`, { method: 'POST' });
+      await typedApi.v1.boardsVersionsCreate(String(activeBoardId));
       await loadVersions({ reset: true });
     } catch (e2) {
       setError(String(e2.message || e2));
@@ -393,9 +390,8 @@ export default function Home() {
     setVersionsLoading(true);
     setError('');
     try {
-      await api(`/v1/boards/${activeBoardId}/versions/${versionId}/restore`, { method: 'POST' });
-      const cardsData = await api(`/v1/boards/${activeBoardId}/cards`);
-      const remoteCards = Array.isArray(cardsData) ? cardsData : (cardsData.items || []);
+      await typedApi.v1.boardsVersionsRestoreCreate(String(activeBoardId), String(versionId));
+      const { data: remoteCards } = await typedApi.v1.boardsCardsList(String(activeBoardId));
       setSavedCards(remoteCards);
       setHistory(createHistory(remoteCards));
       setDirty(false);
@@ -412,8 +408,8 @@ export default function Home() {
     setShareLoading(true);
     setError('');
     try {
-      const data = await api(`/v1/boards/${activeBoardId}/share-links`);
-      setShareLinks(Array.isArray(data) ? data : (data.items || []));
+      const { data } = await typedApi.v1.boardsShareLinksList(String(activeBoardId));
+      setShareLinks(data?.items || []);
     } catch (e2) {
       setError(String(e2.message || e2));
     } finally {
@@ -426,7 +422,7 @@ export default function Home() {
     setShareLoading(true);
     setError('');
     try {
-      await api(`/v1/boards/${activeBoardId}/share-links`, { method: 'POST' });
+      await typedApi.v1.boardsShareLinksCreate(String(activeBoardId));
       await trackEvent('create_share_link', { boardId: activeBoardId });
       await loadShareLinks();
     } catch (e2) {
@@ -443,7 +439,7 @@ export default function Home() {
     setShareLoading(true);
     setError('');
     try {
-      await api(`/v1/boards/${activeBoardId}/share-links/${linkId}`, { method: 'DELETE' });
+      await typedApi.v1.boardsShareLinksDelete(String(activeBoardId), String(linkId));
       await loadShareLinks();
     } catch (e2) {
       setError(String(e2.message || e2));
@@ -558,17 +554,25 @@ export default function Home() {
     setUploadProgress(0);
 
     try {
-      const intent = await api(`/v1/boards/${activeBoardId}/uploads/intents`, {
+      const intentRes = await typedApi.request({
+        path: `/v1/boards/${activeBoardId}/uploads/intents`,
         method: 'POST',
-        body: JSON.stringify({ mimeType: file.type, sizeBytes: file.size, fileName: file.name }),
+        type: ContentType.Json,
+        body: { mimeType: file.type, sizeBytes: file.size, fileName: file.name },
+        format: 'json',
       });
+      const intent = intentRes.data;
 
       await uploadBinary(intent.uploadUrl, file, intent.headers || { 'content-type': file.type });
 
-      const finalized = await api(`/v1/boards/${activeBoardId}/uploads/finalize`, {
+      const finalizedRes = await typedApi.request({
+        path: `/v1/boards/${activeBoardId}/uploads/finalize`,
         method: 'POST',
-        body: JSON.stringify({ objectKey: intent.objectKey }),
+        type: ContentType.Json,
+        body: { objectKey: intent.objectKey },
+        format: 'json',
       });
+      const finalized = finalizedRes.data;
       await trackEvent('upload_image', { boardId: activeBoardId, mimeType: file.type, sizeBytes: file.size });
 
       applyLocalCards([
