@@ -11,6 +11,10 @@ import {
 import { AUTOSAVE_DEBOUNCE_MS, createDebouncedAutosave, diffCards } from '../lib/autosave';
 import { captureError, trackEvent } from '../lib/observability';
 import { Api as DreamboardApi, ContentType } from '../src/lib/api/client';
+import Button from '../components/ui/Button';
+import Input from '../components/ui/Input';
+import Spinner from '../components/ui/Spinner';
+import { Toast, useToast } from '../components/ui/Toast';
 
 const DEFAULT_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
 const HISTORY_KEY_PREFIX = 'db_web_history_';
@@ -50,6 +54,7 @@ export default function Home() {
   const queuedSaveRef = useRef(false);
   const autosaveRef = useRef(null);
   const uploadInputRef = useRef(null);
+  const { toast, showToast, clearToast } = useToast();
 
   const cards = history.present;
   const canUndo = history.past.length > 0;
@@ -87,6 +92,14 @@ export default function Home() {
     localStorage.setItem(`${HISTORY_KEY_PREFIX}${activeBoardId}`, serializeHistory(history));
   }, [activeBoardId, history]);
 
+  useEffect(() => {
+    if (error) showToast(error, 'error');
+  }, [error, showToast]);
+
+  useEffect(() => {
+    if (uploadError) showToast(uploadError, 'warning');
+  }, [uploadError, showToast]);
+
   const authed = useMemo(() => Boolean(token), [token]);
   const typedApi = useMemo(() => new DreamboardApi({
     baseUrl,
@@ -94,25 +107,6 @@ export default function Home() {
       headers: token ? { authorization: `Bearer ${token}` } : {},
     },
   }), [baseUrl, token]);
-
-  async function api(path, opts = {}) {
-    const headers = { 'content-type': 'application/json', ...(opts.headers || {}) };
-    if (opts.auth !== false && token) headers.authorization = `Bearer ${token}`;
-    const res = await fetch(`${baseUrl}${path}`, { ...opts, headers });
-    if (!res.ok) {
-      if (res.status === 401) {
-        setToken('');
-        setRefreshToken('');
-      }
-      let msg = `HTTP_${res.status}`;
-      try {
-        const j = await res.json();
-        msg = j.code ? `${j.code}: ${j.message || ''}` : (j.message || msg);
-      } catch {}
-      throw new Error(msg);
-    }
-    return res.json();
-  }
 
   async function uploadBinary(url, file, headers = {}) {
     return new Promise((resolve, reject) => {
@@ -597,78 +591,81 @@ export default function Home() {
     return <main style={{ padding: 20 }}>
       <h1>DreamBoard Web Login</h1>
       <form onSubmit={login} style={{ display: 'grid', gap: 8, maxWidth: 420 }}>
-        <input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="API Base URL" />
-        <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-        <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-        <button disabled={loading}>{loading ? 'Loading...' : 'Login'}</button>
+        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="API Base URL" />
+        <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
+        <Button type="submit" disabled={loading}>{loading ? 'Loading...' : 'Login'}</Button>
       </form>
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {loading ? <Spinner label="Authorizing..." /> : null}
+      {error && <p style={{ color: 'var(--color-error)' }}>{error}</p>}
+      <div className="ui-toast-wrap">
+        <Toast message={toast?.message} kind={toast?.kind || 'error'} onClose={clearToast} />
+      </div>
     </main>;
   }
 
   return <main style={{ padding: 20, display: 'grid', gap: 16 }}>
     <h1>DreamBoard Web Editor v1 (text + image cards)</h1>
     <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-      <button onClick={loadBoards}>Reload boards</button>
-      <button onClick={createBoard}>Create board</button>
-      <button onClick={logout}>Logout</button>
-      <button onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</button>
-      <button onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</button>
-      <button onClick={retrySave} disabled={!dirty || !activeBoardId}>Save now</button>
-      <button onClick={askImageUpload} disabled={!activeBoardId || uploading}>Upload image</button>
-      <button onClick={() => exportBoard('png')} disabled={!activeBoardId || exporting}>Export PNG</button>
-      <button onClick={() => exportBoard('jpg')} disabled={!activeBoardId || exporting}>Export JPG</button>
-      <button onClick={triggerTestError}>Test Sentry Error</button>
-      <button onClick={() => {
+      <Button variant="secondary" onClick={loadBoards}>Reload boards</Button>
+      <Button onClick={createBoard}>Create board</Button>
+      <Button variant="ghost" onClick={logout}>Logout</Button>
+      <Button variant="ghost" onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</Button>
+      <Button variant="ghost" onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</Button>
+      <Button variant="secondary" onClick={retrySave} disabled={!dirty || !activeBoardId}>Save now</Button>
+      <Button onClick={askImageUpload} disabled={!activeBoardId || uploading}>Upload image</Button>
+      <Button variant="ghost" onClick={() => exportBoard('png')} disabled={!activeBoardId || exporting}>Export PNG</Button>
+      <Button variant="ghost" onClick={() => exportBoard('jpg')} disabled={!activeBoardId || exporting}>Export JPG</Button>
+      <Button variant="danger" onClick={triggerTestError}>Test Sentry Error</Button>
+      <Button variant="secondary" onClick={() => {
         const next = !versionsOpen;
         setVersionsOpen(next);
         if (next && activeBoardId) loadVersions({ reset: true });
-      }} disabled={!activeBoardId}>Versions</button>
-      <button onClick={() => {
+      }} disabled={!activeBoardId}>Versions</Button>
+      <Button variant="secondary" onClick={() => {
         const next = !shareOpen;
         setShareOpen(next);
         if (next && activeBoardId) loadShareLinks();
-      }} disabled={!activeBoardId}>Share</button>
+      }} disabled={!activeBoardId}>Share</Button>
       <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={onImagePicked} />
     </div>
-    {loading && <p>Loading...</p>}
-    {error && <p style={{ color: 'crimson' }}>Error: {error}</p>}
+    {loading ? <Spinner /> : null}
 
     {activeBoardId && <p>
       Save status:{' '}
       {saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'All changes saved'}
-      {saveError ? <span style={{ color: 'crimson' }}> — Save failed: {saveError} <button onClick={retrySave}>Retry</button></span> : null}
+      {saveError ? <span style={{ color: 'var(--color-error)' }}> — Save failed: {saveError} <Button variant="danger" onClick={retrySave}>Retry</Button></span> : null}
     </p>}
 
     {activeBoardId && uploading ? <p>Upload progress: {uploadProgress}%</p> : null}
-    {activeBoardId && uploadError ? <p style={{ color: 'crimson' }}>Upload error: {uploadError}</p> : null}
+    {activeBoardId && uploadError ? <p style={{ color: 'var(--color-error)' }}>Upload error: {uploadError}</p> : null}
 
     {versionsOpen && activeBoardId ? <section>
       <h2>Versions</h2>
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <button onClick={createVersion} disabled={versionsLoading}>Create snapshot</button>
-        <button onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Reload versions</button>
+        <Button onClick={createVersion} disabled={versionsLoading}>Create snapshot</Button>
+        <Button variant="secondary" onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Reload versions</Button>
       </div>
       {versions.length === 0 ? <p>No versions yet</p> : <ul>
         {versions.map((v) => <li key={v.id}>
           #{v.id} — {new Date(v.createdAt).toLocaleString()} {' '}
-          <button onClick={() => restoreVersion(v.id)} disabled={versionsLoading}>Restore</button>
+          <Button variant="ghost" onClick={() => restoreVersion(v.id)} disabled={versionsLoading}>Restore</Button>
         </li>)}
       </ul>}
-      {versionsCursor ? <button onClick={() => loadVersions()} disabled={versionsLoading}>Load more</button> : null}
+      {versionsCursor ? <Button variant="secondary" onClick={() => loadVersions()} disabled={versionsLoading}>Load more</Button> : null}
     </section> : null}
 
     {shareOpen && activeBoardId ? <section>
       <h2>Share links</h2>
       <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-        <button onClick={createShareLink} disabled={shareLoading}>Create share link</button>
-        <button onClick={loadShareLinks} disabled={shareLoading}>Reload links</button>
+        <Button onClick={createShareLink} disabled={shareLoading}>Create share link</Button>
+        <Button variant="secondary" onClick={loadShareLinks} disabled={shareLoading}>Reload links</Button>
       </div>
       {shareLinks.length === 0 ? <p>No share links</p> : <ul>
         {shareLinks.map((s) => <li key={s.id}>
           #{s.id} {s.revokedAt ? '(revoked)' : '(active)'} {' '}
-          <button onClick={() => copyShareUrl(s.url)}>Copy URL</button>{' '}
-          {!s.revokedAt ? <button onClick={() => revokeShareLink(s.id)} disabled={shareLoading}>Revoke</button> : null}
+          <Button variant="ghost" onClick={() => copyShareUrl(s.url)}>Copy URL</Button>{' '}
+          {!s.revokedAt ? <Button variant="danger" onClick={() => revokeShareLink(s.id)} disabled={shareLoading}>Revoke</Button> : null}
           <div style={{ fontSize: 12 }}>{s.url}</div>
         </li>)}
       </ul>}
@@ -677,24 +674,28 @@ export default function Home() {
     <section>
       <h2>Boards list</h2>
       {boards.length === 0 ? <p>Empty: no boards</p> :
-        <ul>{boards.map((b) => <li key={b.id}><button onClick={() => openBoard(b.id)}>Open</button> {b.title}</li>)}</ul>}
+        <ul>{boards.map((b) => <li key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
     </section>
 
     <section>
       <h2>Open board: {activeBoardId || 'none'}</h2>
-      {activeBoardId && <button onClick={addCard}>Add text card</button>}
+      {activeBoardId && <Button onClick={addCard}>Add text card</Button>}
       {!activeBoardId ? <p>Select board first</p> : cards.length === 0 ? <p>Empty: no cards</p> :
         <ul>{cards.map((c) => <li key={c.id} style={{ marginBottom: 10 }}>
           {c.type === 'image'
             ? <div>
               <div><b>Image card</b></div>
-              <img src={c.imageUrl} alt="uploaded" style={{ maxWidth: 260, maxHeight: 180, display: 'block', border: '1px solid #ddd' }} />
+              <img src={c.imageUrl} alt="uploaded" style={{ maxWidth: 260, maxHeight: 180, display: 'block', border: '1px solid var(--color-border)' }} />
             </div>
             : <span>{c.text}</span>}
           {' '}
-          {c.type !== 'image' ? <button onClick={() => editCard(c)}>Edit</button> : null}
-          <button onClick={() => deleteCard(c)}>Delete</button>
+          {c.type !== 'image' ? <Button variant="ghost" onClick={() => editCard(c)}>Edit</Button> : null}
+          <Button variant="danger" onClick={() => deleteCard(c)}>Delete</Button>
         </li>)}</ul>}
     </section>
+
+    <div className="ui-toast-wrap">
+      <Toast message={toast?.message} kind={toast?.kind || 'error'} onClose={clearToast} />
+    </div>
   </main>;
 }
