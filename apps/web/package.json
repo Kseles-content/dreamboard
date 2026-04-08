@@ -3,14 +3,18 @@
   "version": "0.2.0",
   "private": true,
   "scripts": {
-    "dev": "next dev -p 3100",
+    "dev": "next dev -p 3100 -H 0.0.0.0",
     "build": "next build",
     "start": "next start -p 3100",
-    "test": "node tests/smoke.mjs"
+    "test": "node tests/smoke.mjs",
+    "generate:api": "swagger-typescript-api generate --path ../../packages/contracts/openapi/openapi.yaml --output ./src/lib/api --name client.ts"
   },
   "dependencies": {
     "next": "14.2.5",
     "react": "18.3.1",
     "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "swagger-typescript-api": "^13.6.7"
   }
 }

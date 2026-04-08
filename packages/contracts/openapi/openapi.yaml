@@ -1,30 +1,69 @@
 openapi: 3.0.3
 info:
   title: DreamBoard API Contract
-  version: 1.1.0
+  version: 1.2.0
+  description: |
+    Unified API contract for DreamBoard web and backend.
+    Endpoints marked with `x-implemented: false` are planned and documented to prevent client/backend drift.
 servers:
-  - url: https://api.example.com
+  - url: http://localhost:3000
+  - url: http://45.139.77.52:3000
+
+tags:
+  - name: auth
+  - name: boards
+  - name: cards
+  - name: versions
+  - name: share-links
+  - name: uploads
+  - name: export
+
 paths:
   /v1/auth/login:
     post:
+      tags: [auth]
       summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+
   /v1/auth/refresh:
     post:
+      tags: [auth]
       summary: Refresh token
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefreshResponse'
+
   /v1/auth/logout:
     post:
+      tags: [auth]
       summary: Logout
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LogoutResponse'
+
   /v1/boards:
     get:
+      tags: [boards]
       summary: List boards
       parameters:
         - in: query
@@ -36,103 +75,374 @@ paths:
         - in: query
           name: cursor
           schema:
-            type: integer
-            minimum: 0
+            type: string
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Board'
     post:
+      tags: [boards]
       summary: Create board
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBoardRequest'
       responses:
         '201':
           description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+
   /v1/boards/{boardId}:
+    parameters:
+      - $ref: '#/components/parameters/BoardId'
     get:
+      tags: [boards]
       summary: Get board
-      parameters:
-        - in: path
-          name: boardId
-          required: true
-          schema:
-            type: string
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '404':
+          description: Not found
     patch:
+      tags: [boards]
       summary: Update board
-      parameters:
-        - in: path
-          name: boardId
-          required: true
-          schema:
-            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBoardRequest'
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
     delete:
-      summary: Soft-delete board
-      parameters:
-        - in: path
-          name: boardId
-          required: true
-          schema:
-            type: string
+      tags: [boards]
+      summary: Delete board
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteBoardResponse'
+
   /v1/boards/{boardId}/cards:
+    parameters:
+      - $ref: '#/components/parameters/BoardId'
     get:
-      summary: List text cards
+      tags: [cards]
+      summary: List cards
       responses:
         '200':
           description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Card'
     post:
-      summary: Create card (text or image)
+      tags: [cards]
+      summary: Create card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCardRequest'
       responses:
         '201':
           description: Created
-        '400':
-          description: Invalid card payload (e.g. IMAGE_ASSET_NOT_READY)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateCardResponse'
+
+  /v1/boards/{boardId}/cards/{cardId}:
+    parameters:
+      - $ref: '#/components/parameters/BoardId'
+      - $ref: '#/components/parameters/CardId'
+    patch:
+      tags: [cards]
+      summary: Update card
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCardRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Card'
+    delete:
+      tags: [cards]
+      summary: Delete card
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeleteCardResponse'
+
+  /v1/boards/{boardId}/cards/reorder:
+    post:
+      tags: [cards]
+      summary: Reorder cards (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/boards/{boardId}/versions:
+    get:
+      tags: [versions]
+      summary: List versions (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
+    post:
+      tags: [versions]
+      summary: Create snapshot version (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/boards/{boardId}/versions/{versionId}/restore:
+    post:
+      tags: [versions]
+      summary: Restore version (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/boards/{boardId}/share-links:
+    get:
+      tags: [share-links]
+      summary: List share links (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
+    post:
+      tags: [share-links]
+      summary: Create share link (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/boards/{boardId}/share-links/{linkId}:
+    delete:
+      tags: [share-links]
+      summary: Revoke share link (planned)
+      x-implemented: false
+      responses:
+        '501':
+          description: Not implemented in current backend build
 
   /v1/boards/{boardId}/uploads/intents:
     post:
-      summary: Create upload intent for board asset
+      tags: [uploads]
+      summary: Create upload intent (planned)
+      x-implemented: false
       responses:
-        '201':
-          description: Created
-        '400':
-          description: Invalid input (ASSET_TOO_LARGE | UNSUPPORTED_ASSET_TYPE)
+        '501':
+          description: Not implemented in current backend build
 
   /v1/boards/{boardId}/uploads/finalize:
     post:
-      summary: Finalize uploaded board asset
+      tags: [uploads]
+      summary: Finalize upload (planned)
+      x-implemented: false
       responses:
-        '201':
-          description: Created
-        '404':
-          description: Upload intent not found
-  /v1/boards/{boardId}/cards/{cardId}:
-    patch:
-      summary: Update text card
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/boards/{boardId}/export/png:
+    get:
+      tags: [export]
+      summary: Export PNG
+      description: Client-side export in current build (no backend API endpoint).
+      x-implemented: false
       responses:
-        '200':
-          description: OK
-    delete:
-      summary: Delete text card
+        '501':
+          description: Client-side only in current build
+
+  /v1/boards/{boardId}/export/jpg:
+    get:
+      tags: [export]
+      summary: Export JPG
+      description: Client-side export in current build (no backend API endpoint).
+      x-implemented: false
       responses:
-        '200':
-          description: OK
+        '501':
+          description: Client-side only in current build
+
 components:
+  parameters:
+    BoardId:
+      name: boardId
+      in: path
+      required: true
+      schema:
+        type: string
+    CardId:
+      name: cardId
+      in: path
+      required: true
+      schema:
+        type: string
+
   schemas:
-    ErrorEnvelope:
+    LoginRequest:
       type: object
-      required: [code, message, requestId]
       properties:
-        code:
+        email:
           type: string
+        name:
+          type: string
+
+    LoginResponse:
+      type: object
+      required: [accessToken, refreshToken, user]
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          type: object
+          properties:
+            id:
+              type: integer
+            email:
+              type: string
+
+    RefreshResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+
+    LogoutResponse:
+      type: object
+      properties:
         message:
           type: string
-        requestId:
+
+    Board:
+      type: object
+      required: [id, title, createdAt, updatedAt]
+      properties:
+        id:
           type: string
-        details:
+        title:
+          type: string
+        description:
+          type: string
           nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateBoardRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+
+    UpdateBoardRequest:
+      type: object
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+
+    DeleteBoardResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        board:
+          $ref: '#/components/schemas/Board'
+
+    Card:
+      type: object
+      required: [id, boardId, type, text, createdAt, updatedAt]
+      properties:
+        id:
+          type: string
+        boardId:
+          type: string
+        type:
+          type: string
+          enum: [text]
+        text:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateCardRequest:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [text]
+        text:
+          type: string
+
+    CreateCardResponse:
+      type: object
+      properties:
+        created:
+          $ref: '#/components/schemas/Card'
+
+    UpdateCardRequest:
+      type: object
+      properties:
+        text:
+          type: string
+
+    DeleteCardResponse:
+      type: object
+      properties:
+        deleted:
+          type: boolean
+        card:
+          $ref: '#/components/schemas/Card'
