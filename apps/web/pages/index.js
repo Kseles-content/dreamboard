@@ -588,9 +588,9 @@ export default function Home() {
   }
 
   if (!authed) {
-    return <main style={{ padding: 20 }}>
+    return <main className="page-shell login-shell">
       <h1>DreamBoard Web Login</h1>
-      <form onSubmit={login} style={{ display: 'grid', gap: 8, maxWidth: 420 }}>
+      <form onSubmit={login} className="login-form">
         <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="API Base URL" />
         <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
         <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
@@ -604,9 +604,9 @@ export default function Home() {
     </main>;
   }
 
-  return <main style={{ padding: 20, display: 'grid', gap: 16 }}>
+  return <main className="page-shell">
     <h1>DreamBoard Web Editor v1 (text + image cards)</h1>
-    <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+    <div className="toolbar">
       <Button variant="secondary" onClick={loadBoards}>Reload boards</Button>
       <Button onClick={createBoard}>Create board</Button>
       <Button variant="ghost" onClick={logout}>Logout</Button>
@@ -642,7 +642,7 @@ export default function Home() {
 
     {versionsOpen && activeBoardId ? <section>
       <h2>Versions</h2>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <div className="inline-actions">
         <Button onClick={createVersion} disabled={versionsLoading}>Create snapshot</Button>
         <Button variant="secondary" onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Reload versions</Button>
       </div>
@@ -657,7 +657,7 @@ export default function Home() {
 
     {shareOpen && activeBoardId ? <section>
       <h2>Share links</h2>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+      <div className="inline-actions">
         <Button onClick={createShareLink} disabled={shareLoading}>Create share link</Button>
         <Button variant="secondary" onClick={loadShareLinks} disabled={shareLoading}>Reload links</Button>
       </div>
@@ -674,14 +674,14 @@ export default function Home() {
     <section>
       <h2>Boards list</h2>
       {boards.length === 0 ? <p>Empty: no boards</p> :
-        <ul>{boards.map((b) => <li key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
+        <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
     </section>
 
     <section>
       <h2>Open board: {activeBoardId || 'none'}</h2>
       {activeBoardId && <Button onClick={addCard}>Add text card</Button>}
       {!activeBoardId ? <p>Select board first</p> : cards.length === 0 ? <p>Empty: no cards</p> :
-        <ul>{cards.map((c) => <li key={c.id} style={{ marginBottom: 10 }}>
+        <ul className="card-list">{cards.map((c) => <li className="list-item-card" key={c.id}>
           {c.type === 'image'
             ? <div>
               <div><b>Image card</b></div>
