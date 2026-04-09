@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id           Int            @id @default(autoincrement())
+  email        String         @unique
+  name         String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  boards       Board[]
+  refreshTokens RefreshToken[]
+
+  @@map("users")
+}
+
+model Board {
+  id          Int           @id @default(autoincrement())
+  ownerUserId Int
+  owner       User          @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  stateJson   String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  deletedAt   DateTime?
+  versions    BoardVersion[]
+  shareLinks  ShareLink[]
+  uploadAssets UploadAsset[]
+
+  @@index([ownerUserId])
+  @@map("boards")
+}
+
+model BoardVersion {
+  id          Int      @id @default(autoincrement())
+  boardId     Int
+  ownerUserId Int
+  snapshotJson String
+  createdAt   DateTime @default(now())
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, ownerUserId])
+  @@map("board_versions")
+}
+
+model ShareLink {
+  id          Int       @id @default(autoincrement())
+  boardId     Int
+  ownerUserId Int
+  token       String    @unique
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime?
+  board       Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, ownerUserId])
+  @@map("share_links")
+}
+
+model UploadAsset {
+  id          Int      @id @default(autoincrement())
+  boardId     Int
+  ownerUserId Int
+  objectKey   String   @unique
+  mimeType    String
+  sizeBytes   Int
+  fileName    String
+  status      String
+  publicUrl   String?
+  etag        String?
+  finalizedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, ownerUserId])
+  @@map("upload_assets")
+}
+
+model RefreshToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  token     String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("refresh_tokens")
+}

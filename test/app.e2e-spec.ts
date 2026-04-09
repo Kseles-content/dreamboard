@@ -1,16 +1,25 @@
-process.env.DB_PATH = ':memory:';
+process.env.DATABASE_URL = 'postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard';
 process.env.JWT_SECRET = 'test-secret';
 
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
 import { AppModule } from '../src/app.module';
 import { HttpErrorFilter } from '../src/common/http-error.filter';
 
 describe('DreamBoard API (e2e)', () => {
   let app: INestApplication;
+  const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
   beforeAll(async () => {
+    await prisma.refreshToken.deleteMany();
+    await prisma.shareLink.deleteMany();
+    await prisma.boardVersion.deleteMany();
+    await prisma.uploadAsset.deleteMany();
+    await prisma.board.deleteMany();
+    await prisma.user.deleteMany();
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -29,6 +38,7 @@ describe('DreamBoard API (e2e)', () => {
 
   afterAll(async () => {
     await app.close();
+    await prisma.$disconnect();
   });
 
   it('login returns tokens', async () => {

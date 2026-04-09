@@ -5,19 +5,15 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { MoreThan, Repository } from 'typeorm';
-import { BoardEntity } from './board.entity';
+import { Board } from '@prisma/client';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
 import { CreateCardDto } from './dto/create-card.dto';
 import { UpdateCardDto } from './dto/update-card.dto';
 import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
-import { UploadAssetEntity } from './upload-asset.entity';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
-import { BoardVersionEntity } from './board-version.entity';
-import { ShareLinkEntity } from './share-link.entity';
 import { v4 as uuidv4 } from 'uuid';
+import { PrismaService } from '../database/prisma.service';
 
 type CardBase = {
   id: string;
@@ -43,27 +39,18 @@ const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
 
 @Injectable()
 export class BoardsService {
-  constructor(
-    @InjectRepository(BoardEntity)
-    private readonly boardsRepository: Repository<BoardEntity>,
-    @InjectRepository(UploadAssetEntity)
-    private readonly uploadAssetsRepository: Repository<UploadAssetEntity>,
-    @InjectRepository(BoardVersionEntity)
-    private readonly boardVersionsRepository: Repository<BoardVersionEntity>,
-    @InjectRepository(ShareLinkEntity)
-    private readonly shareLinksRepository: Repository<ShareLinkEntity>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async listBoards(userId: number, limit = 20, cursor?: number): Promise<ApiBoard[]> {
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
 
-    const where = cursor
-      ? { ownerUserId: userId, id: MoreThan(cursor) }
-      : { ownerUserId: userId };
-
-    const rows = await this.boardsRepository.find({
-      where,
-      order: { id: 'ASC' },
+    const rows = await this.prisma.board.findMany({
+      where: {
+        ownerUserId: userId,
+        deletedAt: null,
+        ...(cursor ? { id: { gt: cursor } } : {}),
+      },
+      orderBy: { id: 'asc' },
       take: normalizedLimit + 1,
     });
 
@@ -72,8 +59,8 @@ export class BoardsService {
     return items.map((board) => this.toApiBoard(board));
   }
 
-  async getBoardById(id: number, userId: number): Promise<BoardEntity> {
-    const board = await this.boardsRepository.findOne({ where: { id } });
+  async getBoardById(id: number, userId: number): Promise<Board> {
+    const board = await this.prisma.board.findFirst({ where: { id, deletedAt: null } });
     if (!board) {
       throw new NotFoundException(`Board ${id} not found`);
     }
@@ -84,7 +71,7 @@ export class BoardsService {
   }
 
   async createBoard(input: CreateBoardDto, userId: number, requestId: string): Promise<ApiBoard> {
-    const boardsCount = await this.boardsRepository.count({ where: { ownerUserId: userId } });
+    const boardsCount = await this.prisma.board.count({ where: { ownerUserId: userId, deletedAt: null } });
     if (boardsCount >= 50) {
       throw new HttpException(
         {
@@ -96,14 +83,14 @@ export class BoardsService {
       );
     }
 
-    const entity = this.boardsRepository.create({
-      ownerUserId: userId,
-      title: input.title,
-      description: input.description ?? null,
-      stateJson: JSON.stringify({ cards: [] }),
+    const saved = await this.prisma.board.create({
+      data: {
+        ownerUserId: userId,
+        title: input.title,
+        description: input.description ?? null,
+        stateJson: JSON.stringify({ cards: [] }),
+      },
     });
-
-    const saved = await this.boardsRepository.save(entity);
     return this.toApiBoard(saved);
   }
 
@@ -118,14 +105,14 @@ export class BoardsService {
       board.description = input.description;
     }
 
-    const saved = await this.boardsRepository.save(board);
+    const saved = await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
     return this.toApiBoard(saved);
   }
 
   async deleteBoard(id: number, userId: number): Promise<{ deleted: boolean; board: ApiBoard }> {
     const board = await this.getBoardById(id, userId);
     const boardView = this.toApiBoard(board);
-    await this.boardsRepository.softDelete({ id: board.id });
+    await this.prisma.board.update({ where: { id: board.id }, data: { deletedAt: new Date() } });
     return { deleted: true, board: boardView };
   }
 
@@ -163,7 +150,7 @@ export class BoardsService {
         );
       }
 
-      const asset = await this.uploadAssetsRepository.findOne({
+      const asset = await this.prisma.uploadAsset.findFirst({
         where: {
           boardId,
           ownerUserId: userId,
@@ -216,7 +203,7 @@ export class BoardsService {
 
     state.cards.push(created);
     board.stateJson = JSON.stringify(state);
-    await this.boardsRepository.save(board);
+    await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
 
     return { created };
   }
@@ -243,7 +230,7 @@ export class BoardsService {
     card.text = input.text;
     card.updatedAt = new Date().toISOString();
     board.stateJson = JSON.stringify(state);
-    await this.boardsRepository.save(board);
+    await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
 
     return card;
   }
@@ -260,7 +247,7 @@ export class BoardsService {
     state.cards = state.cards.filter((c) => c.id !== cardId);
 
     board.stateJson = JSON.stringify(state);
-    await this.boardsRepository.save(board);
+    await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
 
     return { deleted: true, card };
   }
@@ -297,8 +284,8 @@ export class BoardsService {
     const expiresInSeconds = 15 * 60;
     const publicUrl = `${publicBase}/${objectKey}`;
 
-    await this.uploadAssetsRepository.save(
-      this.uploadAssetsRepository.create({
+    await this.prisma.uploadAsset.create({
+      data: {
         boardId,
         ownerUserId: userId,
         objectKey,
@@ -309,8 +296,8 @@ export class BoardsService {
         publicUrl,
         etag: null,
         finalizedAt: null,
-      }),
-    );
+      },
+    });
 
     return {
       method: 'PUT',
@@ -328,7 +315,7 @@ export class BoardsService {
   async finalizeUpload(boardId: number, userId: number, input: FinalizeUploadDto) {
     await this.getBoardById(boardId, userId);
 
-    const asset = await this.uploadAssetsRepository.findOne({
+    const asset = await this.prisma.uploadAsset.findFirst({
       where: {
         boardId,
         ownerUserId: userId,
@@ -344,7 +331,7 @@ export class BoardsService {
     asset.finalizedAt = new Date();
     asset.etag = input.etag ?? null;
 
-    const saved = await this.uploadAssetsRepository.save(asset);
+    const saved = await this.prisma.uploadAsset.update({ where: { id: asset.id }, data: { status: asset.status, finalizedAt: asset.finalizedAt, etag: asset.etag } });
 
     return {
       id: saved.id,
@@ -362,16 +349,16 @@ export class BoardsService {
     await this.getBoardById(boardId, userId);
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
 
-    const qb = this.boardVersionsRepository
-      .createQueryBuilder('v')
-      .where('v.boardId = :boardId', { boardId })
-      .andWhere('v.ownerUserId = :userId', { userId });
+    const rows = await this.prisma.boardVersion.findMany({
+      where: {
+        boardId,
+        ownerUserId: userId,
+        ...(cursor ? { id: { lt: cursor } } : {}),
+      },
+      orderBy: { id: 'desc' },
+      take: normalizedLimit + 1,
+    });
 
-    if (cursor) {
-      qb.andWhere('v.id < :cursor', { cursor });
-    }
-
-    const rows = await qb.orderBy('v.id', 'DESC').take(normalizedLimit + 1).getMany();
     const hasMore = rows.length > normalizedLimit;
     const items = (hasMore ? rows.slice(0, normalizedLimit) : rows).map((v) => ({
       id: v.id,
@@ -393,13 +380,13 @@ export class BoardsService {
       stateJson: board.stateJson,
     });
 
-    const created = await this.boardVersionsRepository.save(
-      this.boardVersionsRepository.create({
+    const created = await this.prisma.boardVersion.create({
+      data: {
         boardId,
         ownerUserId: userId,
         snapshotJson,
-      }),
-    );
+      },
+    });
 
     return {
       id: created.id,
@@ -411,7 +398,7 @@ export class BoardsService {
   async restoreVersion(boardId: number, versionId: number, userId: number) {
     const board = await this.getBoardById(boardId, userId);
 
-    const version = await this.boardVersionsRepository.findOne({
+    const version = await this.prisma.boardVersion.findFirst({
       where: {
         id: versionId,
         boardId,
@@ -435,7 +422,7 @@ export class BoardsService {
     board.description = snapshot.description;
     board.stateJson = snapshot.stateJson;
 
-    const restored = await this.boardsRepository.save(board);
+    const restored = await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
 
     return {
       restoredVersionId: version.id,
@@ -446,9 +433,9 @@ export class BoardsService {
   async listShareLinks(boardId: number, userId: number) {
     await this.getBoardById(boardId, userId);
 
-    const rows = await this.shareLinksRepository.find({
+    const rows = await this.prisma.shareLink.findMany({
       where: { boardId, ownerUserId: userId },
-      order: { id: 'DESC' },
+      orderBy: { id: 'desc' },
     });
 
     return {
@@ -467,14 +454,14 @@ export class BoardsService {
     await this.getBoardById(boardId, userId);
 
     const token = uuidv4().replace(/-/g, '');
-    const created = await this.shareLinksRepository.save(
-      this.shareLinksRepository.create({
+    const created = await this.prisma.shareLink.create({
+      data: {
         boardId,
         ownerUserId: userId,
         token,
         revokedAt: null,
-      }),
-    );
+      },
+    });
 
     return {
       id: created.id,
@@ -489,7 +476,7 @@ export class BoardsService {
   async revokeShareLink(boardId: number, linkId: number, userId: number) {
     await this.getBoardById(boardId, userId);
 
-    const link = await this.shareLinksRepository.findOne({
+    const link = await this.prisma.shareLink.findFirst({
       where: { id: linkId, boardId, ownerUserId: userId },
     });
 
@@ -498,13 +485,13 @@ export class BoardsService {
     }
 
     link.revokedAt = new Date();
-    await this.shareLinksRepository.save(link);
+    await this.prisma.shareLink.update({ where: { id: link.id }, data: { revokedAt: link.revokedAt } });
 
     return { success: true };
   }
 
   async getPublicBoardByToken(token: string) {
-    const link = await this.shareLinksRepository.findOne({ where: { token } });
+    const link = await this.prisma.shareLink.findFirst({ where: { token } });
 
     if (!link || link.revokedAt) {
       throw new HttpException(
@@ -516,7 +503,7 @@ export class BoardsService {
       );
     }
 
-    const board = await this.boardsRepository.findOne({ where: { id: link.boardId } });
+    const board = await this.prisma.board.findFirst({ where: { id: link.boardId, deletedAt: null } });
     if (!board) {
       throw new HttpException(
         {
@@ -557,7 +544,7 @@ export class BoardsService {
     }
   }
 
-  private readState(board: BoardEntity): BoardState {
+  private readState(board: Board): BoardState {
     try {
       const parsed = board.stateJson ? (JSON.parse(board.stateJson) as { cards?: any[] }) : { cards: [] };
       const cards = Array.isArray(parsed.cards)
@@ -624,7 +611,7 @@ export class BoardsService {
     return `${webBase}/share/${token}`;
   }
 
-  private toApiBoard(board: BoardEntity): ApiBoard {
+  private toApiBoard(board: Board): ApiBoard {
     return {
       id: String(board.id),
       title: board.title,

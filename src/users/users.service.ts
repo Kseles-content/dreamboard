@@ -1,30 +1,25 @@
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { UserEntity } from './user.entity';
+import { User } from '@prisma/client';
+import { PrismaService } from '../database/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 
 @Injectable()
 export class UsersService {
-  constructor(
-    @InjectRepository(UserEntity)
-    private readonly usersRepository: Repository<UserEntity>,
-  ) {}
+  constructor(private readonly prisma: PrismaService) {}
 
-  listUsers(): Promise<UserEntity[]> {
-    return this.usersRepository.find({ order: { id: 'ASC' } });
+  listUsers(): Promise<User[]> {
+    return this.prisma.user.findMany({ orderBy: { id: 'asc' } });
   }
 
-  async createUser(input: CreateUserDto): Promise<UserEntity> {
-    const entity = this.usersRepository.create(input);
-    return this.usersRepository.save(entity);
+  async createUser(input: CreateUserDto): Promise<User> {
+    return this.prisma.user.create({ data: input });
   }
 
-  findById(id: number): Promise<UserEntity | null> {
-    return this.usersRepository.findOne({ where: { id } });
+  findById(id: number): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { id } });
   }
 
-  findByEmail(email: string): Promise<UserEntity | null> {
-    return this.usersRepository.findOne({ where: { email } });
+  findByEmail(email: string): Promise<User | null> {
+    return this.prisma.user.findUnique({ where: { email } });
   }
 }

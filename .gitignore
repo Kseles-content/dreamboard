@@ -17,3 +17,7 @@ apps/mobile/.flutter-plugins-dependencies
 apps/mobile/build/
 apps/web/.env.local
 apps/web/.next/
+
+/generated/prisma
+
+.env

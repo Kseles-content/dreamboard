@@ -11,7 +11,6 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { BoardEntity } from './board.entity';
 import { BoardsService } from './boards.service';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
@@ -38,7 +37,7 @@ export class BoardsController {
   }
 
   @Get(':boardId')
-  getBoardById(@Param('boardId', ParseIntPipe) id: number, @Req() req: RequestWithId): Promise<BoardEntity> {
+  getBoardById(@Param('boardId', ParseIntPipe) id: number, @Req() req: RequestWithId): Promise<any> {
     return this.boardsService.getBoardById(id, req.user!.sub);
   }
 

@@ -1,10 +1,8 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
 import { JwtService } from '@nestjs/jwt';
-import { Repository } from 'typeorm';
 import { randomUUID } from 'crypto';
+import { PrismaService } from '../database/prisma.service';
 import { UsersService } from '../users/users.service';
-import { RefreshTokenEntity } from './refresh-token.entity';
 import { LoginDto } from './dto/login.dto';
 
 @Injectable()
@@ -12,8 +10,7 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
-    @InjectRepository(RefreshTokenEntity)
-    private readonly refreshTokens: Repository<RefreshTokenEntity>,
+    private readonly prisma: PrismaService,
   ) {}
 
   async login(input: LoginDto) {
@@ -36,13 +33,13 @@ export class AuthService {
     const refreshToken = randomUUID() + randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await this.refreshTokens.save(
-      this.refreshTokens.create({
+    await this.prisma.refreshToken.create({
+      data: {
         userId: user.id,
         token: refreshToken,
         expiresAt,
-      }),
-    );
+      },
+    });
 
     return {
       accessToken,
@@ -52,7 +49,7 @@ export class AuthService {
   }
 
   async refresh(refreshToken: string) {
-    const existing = await this.refreshTokens.findOne({ where: { token: refreshToken } });
+    const existing = await this.prisma.refreshToken.findUnique({ where: { token: refreshToken } });
     if (!existing || new Date(existing.expiresAt).getTime() < Date.now()) {
       throw new UnauthorizedException('Invalid refresh token');
     }
@@ -62,7 +59,7 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    await this.refreshTokens.delete({ token: refreshToken });
+    await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
 
     const newAccessToken = await this.jwtService.signAsync(
       { sub: user.id, email: user.email },
@@ -75,13 +72,13 @@ export class AuthService {
     const newRefreshToken = randomUUID() + randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await this.refreshTokens.save(
-      this.refreshTokens.create({
+    await this.prisma.refreshToken.create({
+      data: {
         userId: user.id,
         token: newRefreshToken,
         expiresAt,
-      }),
-    );
+      },
+    });
 
     return {
       accessToken: newAccessToken,
@@ -91,7 +88,7 @@ export class AuthService {
   }
 
   async logout(refreshToken: string) {
-    await this.refreshTokens.delete({ token: refreshToken });
+    await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
     return { success: true };
   }
 }
