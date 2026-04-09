@@ -205,7 +205,11 @@ describe('DreamBoard API (e2e)', () => {
     const v1 = await request(app.getHttpServer())
       .post(`/v1/boards/${boardId}/versions`)
       .set('Authorization', `Bearer ${token}`)
+      .send({ comment: 'baseline snapshot' })
       .expect(201);
+
+    expect(v1.body.authorUserId).toBeTruthy();
+    expect(v1.body.comment).toBe('baseline snapshot');
 
     await request(app.getHttpServer())
       .patch(`/v1/boards/${boardId}`)
@@ -239,6 +243,8 @@ describe('DreamBoard API (e2e)', () => {
 
     expect(listPage2.body.items).toHaveLength(1);
     expect(listPage1.body.items[0].id).toBeGreaterThan(listPage2.body.items[0].id);
+    expect(listPage2.body.items[0].comment).toBe('baseline snapshot');
+    expect(listPage2.body.items[0].authorUserId).toBeTruthy();
 
     await request(app.getHttpServer())
       .post(`/v1/boards/${boardId}/versions/999999/restore`)
@@ -267,6 +273,14 @@ describe('DreamBoard API (e2e)', () => {
 
     expect(restoredCards.body).toHaveLength(1);
     expect(restoredCards.body[0].text).toBe('v1 text');
+
+    const versionAfterRestore = await prisma.version.findUnique({ where: { id: v1.body.id } });
+    expect(versionAfterRestore?.restoredByUserId).toBeTruthy();
+    expect(versionAfterRestore?.restoredAt).toBeTruthy();
+
+    const auditLogs = await prisma.auditLog.findMany({ where: { boardId: Number(boardId) }, orderBy: { id: 'asc' } });
+    expect(auditLogs.some((x) => x.action === 'VERSION_CREATED')).toBe(true);
+    expect(auditLogs.some((x) => x.action === 'VERSION_RESTORED')).toBe(true);
   });
 
   it('supports share links lifecycle and public view-only access', async () => {

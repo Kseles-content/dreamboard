@@ -22,6 +22,7 @@ import { UpdateCardDto } from './dto/update-card.dto';
 import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
 import { ListVersionsQueryDto } from './dto/list-versions-query.dto';
+import { CreateVersionDto } from './dto/create-version.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('v1/boards')
@@ -121,8 +122,12 @@ export class BoardsController {
   }
 
   @Post(':boardId/versions')
-  createVersion(@Param('boardId', ParseIntPipe) boardId: number, @Req() req: RequestWithId) {
-    return this.boardsService.createVersion(boardId, req.user!.sub);
+  createVersion(
+    @Param('boardId', ParseIntPipe) boardId: number,
+    @Req() req: RequestWithId,
+    @Body() input: CreateVersionDto,
+  ) {
+    return this.boardsService.createVersion(boardId, req.user!.sub, input.comment);
   }
 
   @Post(':boardId/versions/:versionId/restore')

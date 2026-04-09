@@ -312,28 +312,63 @@ export class BoardsService {
     const items = (hasMore ? rows.slice(0, normalizedLimit) : rows).map((v) => ({
       id: v.id,
       boardId: v.boardId,
+      authorUserId: v.authorUserId,
+      comment: v.comment,
       createdAt: v.createdAt,
+      restoredByUserId: v.restoredByUserId,
+      restoredAt: v.restoredAt,
     }));
 
     return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
   }
 
-  async createVersion(boardId: number, userId: number) {
+  async createVersion(boardId: number, userId: number, comment?: string) {
     const board = await this.getBoardById(boardId, userId);
     const cards = await this.prisma.card.findMany({ where: { boardId }, orderBy: [{ zIndex: 'asc' }, { createdAt: 'asc' }] });
 
-    const created = await this.prisma.version.create({
-      data: {
-        boardId,
-        snapshot: {
-          title: board.title,
-          description: board.description,
-          cards: cards.map((c) => this.toApiCard(c)),
+    const created = await this.prisma.$transaction(async (tx) => {
+      const version = await tx.version.create({
+        data: {
+          boardId,
+          authorUserId: userId,
+          comment: comment ?? null,
+          snapshot: {
+            title: board.title,
+            description: board.description,
+            cards: cards.map((c) => ({
+              id: c.id,
+              boardId: c.boardId,
+              type: c.type,
+              content: c.content,
+              position: c.position,
+              zIndex: c.zIndex,
+              metadata: c.metadata,
+              createdAt: c.createdAt.toISOString(),
+              updatedAt: c.updatedAt.toISOString(),
+            })),
+          },
         },
-      },
+      });
+
+      await tx.auditLog.create({
+        data: {
+          boardId,
+          userId,
+          action: 'VERSION_CREATED',
+          details: { versionId: version.id, comment: comment ?? null } as Prisma.JsonObject,
+        },
+      });
+
+      return version;
     });
 
-    return { id: created.id, boardId: created.boardId, createdAt: created.createdAt };
+    return {
+      id: created.id,
+      boardId: created.boardId,
+      authorUserId: created.authorUserId,
+      comment: created.comment,
+      createdAt: created.createdAt,
+    };
   }
 
   async restoreVersion(boardId: number, versionId: number, userId: number) {
@@ -351,33 +386,29 @@ export class BoardsService {
       await tx.card.deleteMany({ where: { boardId } });
       if (snapshot.cards.length > 0) {
         await tx.card.createMany({
-          data: snapshot.cards.map((c, idx) =>
-            c.type === 'image'
-              ? {
-                  id: c.id,
-                  boardId,
-                  type: CardType.image,
-                  content: c.imageUrl,
-                  position: idx,
-                  zIndex: idx,
-                  metadata: { objectKey: c.objectKey, imageUrl: c.imageUrl } as Prisma.JsonObject,
-                  createdAt: new Date(c.createdAt),
-                  updatedAt: new Date(c.updatedAt),
-                }
-              : {
-                  id: c.id,
-                  boardId,
-                  type: CardType.text,
-                  content: c.text,
-                  position: idx,
-                  zIndex: idx,
-                  metadata: Prisma.JsonNull,
-                  createdAt: new Date(c.createdAt),
-                  updatedAt: new Date(c.updatedAt),
-                },
-          ),
+          data: snapshot.cards.map((c) => ({
+            id: c.id,
+            boardId,
+            type: c.type,
+            content: c.content,
+            position: c.position,
+            zIndex: c.zIndex,
+            metadata: (c.metadata ?? Prisma.JsonNull) as Prisma.InputJsonValue | Prisma.NullableJsonNullValueInput,
+            createdAt: new Date(c.createdAt),
+            updatedAt: new Date(c.updatedAt),
+          })),
         });
       }
+
+      await tx.version.update({ where: { id: version.id }, data: { restoredByUserId: userId, restoredAt: new Date() } });
+      await tx.auditLog.create({
+        data: {
+          boardId,
+          userId,
+          action: 'VERSION_RESTORED',
+          details: { versionId: version.id } as Prisma.JsonObject,
+        },
+      });
     });
 
     return {
@@ -520,40 +551,108 @@ export class BoardsService {
     };
   }
 
-  private readVersionSnapshot(snapshot: Prisma.JsonValue): { title: string; description: string | null; cards: Card[] } {
-    const empty = { title: 'Untitled board', description: null as string | null, cards: [] as Card[] };
+  private readVersionSnapshot(snapshot: Prisma.JsonValue): {
+    title: string;
+    description: string | null;
+    cards: Array<{
+      id: string;
+      type: CardType;
+      content: string;
+      position: number;
+      zIndex: number;
+      metadata: Prisma.JsonValue | null;
+      createdAt: string;
+      updatedAt: string;
+    }>;
+  } {
+    const empty = {
+      title: 'Untitled board',
+      description: null as string | null,
+      cards: [] as Array<{
+        id: string;
+        type: CardType;
+        content: string;
+        position: number;
+        zIndex: number;
+        metadata: Prisma.JsonValue | null;
+        createdAt: string;
+        updatedAt: string;
+      }>,
+    };
+
     if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return empty;
 
     const s = snapshot as { title?: unknown; description?: unknown; cards?: unknown[] };
-    const cards: Card[] = Array.isArray(s.cards)
+    const cards = Array.isArray(s.cards)
       ? s.cards
-          .map((x) => {
+          .map((x, idx) => {
             if (!x || typeof x !== 'object') return null;
             const c = x as any;
-            if (c.type === 'image' && typeof c.id === 'string' && typeof c.imageUrl === 'string') {
+
+            const legacyType = c.type === 'image' || c.type === 'text' ? c.type : null;
+            const normalizedType =
+              c.type === 'text' || c.type === 'image' || c.type === 'sticker' || c.type === 'link'
+                ? (c.type as CardType)
+                : null;
+
+            if (!normalizedType && !legacyType) return null;
+            if (typeof c.id !== 'string') return null;
+
+            if (legacyType === 'image' && typeof c.imageUrl === 'string') {
               return {
                 id: c.id,
-                boardId: typeof c.boardId === 'string' ? c.boardId : '',
+                type: CardType.image,
+                content: c.imageUrl,
+                position: Number.isFinite(c.position) ? Number(c.position) : idx,
+                zIndex: Number.isFinite(c.zIndex) ? Number(c.zIndex) : idx,
+                metadata: { objectKey: typeof c.objectKey === 'string' ? c.objectKey : '', imageUrl: c.imageUrl } as Prisma.JsonObject,
                 createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString(),
                 updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date().toISOString(),
-                type: 'image' as const,
-                imageUrl: c.imageUrl,
-                objectKey: typeof c.objectKey === 'string' ? c.objectKey : '',
               };
             }
-            if (typeof c.id === 'string' && typeof c.text === 'string') {
+
+            if (legacyType === 'text' && typeof c.text === 'string') {
               return {
                 id: c.id,
-                boardId: typeof c.boardId === 'string' ? c.boardId : '',
+                type: CardType.text,
+                content: c.text,
+                position: Number.isFinite(c.position) ? Number(c.position) : idx,
+                zIndex: Number.isFinite(c.zIndex) ? Number(c.zIndex) : idx,
+                metadata: null,
                 createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString(),
                 updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date().toISOString(),
-                type: 'text' as const,
-                text: c.text,
               };
             }
+
+            if (normalizedType && typeof c.content === 'string') {
+              return {
+                id: c.id,
+                type: normalizedType,
+                content: c.content,
+                position: Number.isFinite(c.position) ? Number(c.position) : idx,
+                zIndex: Number.isFinite(c.zIndex) ? Number(c.zIndex) : idx,
+                metadata: c.metadata ?? null,
+                createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString(),
+                updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date().toISOString(),
+              };
+            }
+
             return null;
           })
-          .filter((x): x is Card => Boolean(x))
+          .filter(
+            (
+              x,
+            ): x is {
+              id: string;
+              type: CardType;
+              content: string;
+              position: number;
+              zIndex: number;
+              metadata: Prisma.JsonValue | null;
+              createdAt: string;
+              updatedAt: string;
+            } => Boolean(x),
+          )
       : [];
 
     return {

@@ -7,30 +7,34 @@ datasource db {
 }
 
 model User {
-  id            Int            @id @default(autoincrement())
-  email         String         @unique
-  name          String
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  boards        Board[]
-  refreshTokens RefreshToken[]
+  id              Int            @id @default(autoincrement())
+  email           String         @unique
+  name            String
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  boards          Board[]
+  refreshTokens   RefreshToken[]
+  versionsCreated Version[]      @relation("VersionAuthor")
+  versionsRestored Version[]     @relation("VersionRestorer")
+  auditLogs       AuditLog[]
 
   @@map("users")
 }
 
 model Board {
-  id          Int         @id @default(autoincrement())
-  ownerId     Int         @map("ownerUserId")
-  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
-  deletedAt   DateTime?
-  cards       Card[]
-  versions    Version[]
-  shareLinks  ShareLink[]
+  id           Int         @id @default(autoincrement())
+  ownerId      Int         @map("ownerUserId")
+  owner        User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  deletedAt    DateTime?
+  cards        Card[]
+  versions     Version[]
+  shareLinks   ShareLink[]
   uploadAssets UploadAsset[]
+  auditLogs    AuditLog[]
 
   @@index([ownerId])
   @@map("boards")
@@ -60,13 +64,21 @@ model Card {
 }
 
 model Version {
-  id        Int      @id @default(autoincrement())
-  boardId   Int
-  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  snapshot  Json     @map("snapshotJson")
-  createdAt DateTime @default(now())
+  id               Int       @id @default(autoincrement())
+  boardId          Int
+  board            Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  snapshot         Json      @map("snapshotJson")
+  authorUserId     Int?
+  author           User?     @relation("VersionAuthor", fields: [authorUserId], references: [id], onDelete: SetNull)
+  comment          String?
+  createdAt        DateTime  @default(now())
+  restoredByUserId Int?
+  restoredBy       User?     @relation("VersionRestorer", fields: [restoredByUserId], references: [id], onDelete: SetNull)
+  restoredAt       DateTime?
 
   @@index([boardId])
+  @@index([authorUserId])
+  @@index([restoredByUserId])
   @@map("board_versions")
 }
 
@@ -111,4 +123,19 @@ model RefreshToken {
 
   @@index([userId])
   @@map("refresh_tokens")
+}
+
+model AuditLog {
+  id        Int      @id @default(autoincrement())
+  boardId   Int
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  action    String
+  details   Json?
+  createdAt DateTime @default(now())
+
+  @@index([boardId, createdAt])
+  @@index([userId, createdAt])
+  @@map("audit_logs")
 }
