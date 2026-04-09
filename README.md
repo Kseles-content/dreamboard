@@ -5,9 +5,10 @@ NestJS backend with stable MVP scope: **Auth + Boards CRUD**.
 ## Run locally
 
 ```bash
+cp .env.example .env
 npm install
 npm run build
-npm run migration:run
+npm run migrate:prod
 npm run start
 ```
 
@@ -31,6 +32,34 @@ npm run test:e2e
 - `docs/week12-release-checklist.md`
 - `docs/week12-rollback-checklist.md`
 - `docs/week12-proof-pack.md`
+
+## S3 / MinIO upload configuration
+
+Set these variables in `.env`:
+
+- `S3_BUCKET`
+- `S3_REGION`
+- `S3_ENDPOINT`
+- `S3_ACCESS_KEY_ID`
+- `S3_SECRET_ACCESS_KEY`
+- `STORAGE_UPLOAD_BASE_URL` (base URL used for presigned upload intents)
+- `STORAGE_PUBLIC_BASE_URL` (base URL for public asset links)
+- `PUBLIC_WEB_BASE_URL`
+
+Upload flow:
+1. `POST /v1/boards/:boardId/uploads/intents` creates DB record in `upload_assets` with `INTENT_CREATED` and returns upload URL.
+2. Client uploads binary directly to storage via returned URL.
+3. `POST /v1/boards/:boardId/uploads/finalize` marks asset as `READY`.
+
+Cleanup orphan/stale uploads:
+
+```bash
+npm run cleanup:uploads
+```
+
+This removes:
+- stale intents (`INTENT_CREATED` older than 24h and not finalized)
+- READY assets that are not referenced by any image card
 
 ## API
 
