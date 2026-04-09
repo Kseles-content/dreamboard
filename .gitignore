@@ -21,3 +21,4 @@ apps/web/.next/
 /generated/prisma
 
 .env
+!.env.example

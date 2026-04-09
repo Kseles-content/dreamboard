@@ -1,5 +1,13 @@
 process.env.DATABASE_URL = 'postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard';
 process.env.JWT_SECRET = 'test-secret';
+process.env.S3_BUCKET = 'test-bucket';
+process.env.S3_REGION = 'us-east-1';
+process.env.S3_ENDPOINT = 'https://s3.test.local';
+process.env.S3_ACCESS_KEY_ID = 'test-key';
+process.env.S3_SECRET_ACCESS_KEY = 'test-secret-key';
+process.env.STORAGE_UPLOAD_BASE_URL = 'https://uploads.test.local';
+process.env.STORAGE_PUBLIC_BASE_URL = 'https://cdn.test.local';
+process.env.PUBLIC_WEB_BASE_URL = 'http://localhost:3100';
 
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import { Test } from '@nestjs/testing';

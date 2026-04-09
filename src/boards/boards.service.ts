@@ -5,6 +5,7 @@ import {
   HttpException,
   HttpStatus,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Board } from '@prisma/client';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
@@ -39,7 +40,10 @@ const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
 
 @Injectable()
 export class BoardsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
+  ) {}
 
   async listBoards(userId: number, limit = 20, cursor?: number): Promise<ApiBoard[]> {
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
@@ -279,8 +283,8 @@ export class BoardsService {
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const objectKey = `boards/${boardId}/uploads/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}.${extension}`;
 
-    const uploadBase = (process.env.STORAGE_UPLOAD_BASE_URL ?? 'https://uploads.local').replace(/\/$/, '');
-    const publicBase = (process.env.STORAGE_PUBLIC_BASE_URL ?? 'https://cdn.local').replace(/\/$/, '');
+    const uploadBase = (this.configService.getOrThrow<string>('storage.uploadBaseUrl')).replace(/\/$/, '');
+    const publicBase = (this.configService.getOrThrow<string>('storage.publicBaseUrl')).replace(/\/$/, '');
     const expiresInSeconds = 15 * 60;
     const publicUrl = `${publicBase}/${objectKey}`;
 
@@ -607,7 +611,7 @@ export class BoardsService {
   }
 
   private buildPublicShareUrl(token: string): string {
-    const webBase = (process.env.PUBLIC_WEB_BASE_URL ?? 'http://localhost:3001').replace(/\/$/, '');
+    const webBase = (this.configService.getOrThrow<string>('storage.publicWebBaseUrl')).replace(/\/$/, '');
     return `${webBase}/share/${token}`;
   }
 

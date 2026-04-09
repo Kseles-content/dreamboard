@@ -5,10 +5,11 @@ import { AuthModule } from './auth/auth.module';
 import { RequestIdMiddleware } from './middleware/request-id.middleware';
 import { HealthController } from './health.controller';
 import { PrismaModule } from './database/prisma.module';
+import { ConfigModule } from './config/config.module';
 
 @Module({
   controllers: [HealthController],
-  imports: [PrismaModule, UsersModule, BoardsModule, AuthModule],
+  imports: [ConfigModule, PrismaModule, UsersModule, BoardsModule, AuthModule],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {

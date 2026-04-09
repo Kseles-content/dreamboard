@@ -1,4 +1,5 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
@@ -11,6 +12,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly prisma: PrismaService,
+    private readonly configService: ConfigService,
   ) {}
 
   async login(input: LoginDto) {
@@ -25,7 +27,7 @@ export class AuthService {
     const accessToken = await this.jwtService.signAsync(
       { sub: user.id, email: user.email },
       {
-        secret: process.env.JWT_SECRET ?? 'dev-secret',
+        secret: this.configService.getOrThrow<string>('auth.jwtSecret'),
         expiresIn: '15m',
       },
     );
@@ -64,7 +66,7 @@ export class AuthService {
     const newAccessToken = await this.jwtService.signAsync(
       { sub: user.id, email: user.email },
       {
-        secret: process.env.JWT_SECRET ?? 'dev-secret',
+        secret: this.configService.getOrThrow<string>('auth.jwtSecret'),
         expiresIn: '15m',
       },
     );
