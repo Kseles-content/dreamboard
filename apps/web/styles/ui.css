@@ -7,6 +7,18 @@ body {
   line-height: var(--line-height-normal);
 }
 
+a {
+  color: var(--color-primary);
+}
+
+a:focus-visible,
+.ui-button:focus-visible,
+.ui-input:focus-visible,
+[role="button"]:focus-visible {
+  outline: 3px solid rgba(37, 99, 235, 0.45);
+  outline-offset: 2px;
+}
+
 .ui-button {
   border: 1px solid transparent;
   border-radius: var(--radius-sm);

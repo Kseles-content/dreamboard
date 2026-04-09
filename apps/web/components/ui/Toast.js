@@ -9,7 +9,12 @@ export function Toast({ message, kind = 'info', timeoutMs = 3500, onClose }) {
 
   if (!message) return null;
 
-  return <div className={`ui-toast ui-toast--${kind}`}>{message}</div>;
+  const live = kind === 'error' ? 'assertive' : 'polite';
+  return (
+    <div className={`ui-toast ui-toast--${kind}`} role="status" aria-live={live} aria-atomic="true">
+      {message}
+    </div>
+  );
 }
 
 export function useToast() {

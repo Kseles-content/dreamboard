@@ -93,11 +93,11 @@ export default function Home() {
   }, [activeBoardId, history]);
 
   useEffect(() => {
-    if (error) showToast(error, 'error');
+    if (error) showToast(`Ошибка API: ${error}`, 'error');
   }, [error, showToast]);
 
   useEffect(() => {
-    if (uploadError) showToast(uploadError, 'warning');
+    if (uploadError) showToast(`Ошибка загрузки: ${uploadError}`, 'warning');
   }, [uploadError, showToast]);
 
   const authed = useMemo(() => Boolean(token), [token]);
@@ -195,6 +195,7 @@ export default function Home() {
         });
       }
       await trackEvent('create_board', { titleLength: title.length });
+      showToast('Доска создана', 'success');
       await loadBoards();
     } catch (e2) {
       await captureError(e2, { action: 'create_board' });
@@ -266,6 +267,8 @@ export default function Home() {
       setHistory((prev) => ({ ...prev, present: workingCards }));
       setDirty(false);
       setSaveError('');
+      if (creates.length > 0) showToast(`Добавлено карточек: ${creates.length}`, 'success');
+      if (deletes.length > 0) showToast(`Удалено карточек: ${deletes.length}`, 'success');
     } catch (e2) {
       await captureError(e2, { action: 'persist_cards', boardId: activeBoardId });
       setSaveError(String(e2.message || e2));
@@ -278,7 +281,7 @@ export default function Home() {
         autosaveRef.current?.schedule();
       }
     }
-  }, [activeBoardId, history.present, savedCards]);
+  }, [activeBoardId, history.present, savedCards, showToast]);
 
   useEffect(() => {
     autosaveRef.current?.cancel?.();
@@ -370,6 +373,7 @@ export default function Home() {
     setError('');
     try {
       await typedApi.v1.boardsVersionsCreate(String(activeBoardId));
+      showToast('Версия сохранена', 'success');
       await loadVersions({ reset: true });
     } catch (e2) {
       setError(String(e2.message || e2));
@@ -385,6 +389,7 @@ export default function Home() {
     setError('');
     try {
       await typedApi.v1.boardsVersionsRestoreCreate(String(activeBoardId), String(versionId));
+      showToast('Версия восстановлена', 'success');
       const { data: remoteCards } = await typedApi.v1.boardsCardsList(String(activeBoardId));
       setSavedCards(remoteCards);
       setHistory(createHistory(remoteCards));
@@ -418,6 +423,7 @@ export default function Home() {
     try {
       await typedApi.v1.boardsShareLinksCreate(String(activeBoardId));
       await trackEvent('create_share_link', { boardId: activeBoardId });
+      showToast('Ссылка для шаринга создана', 'success');
       await loadShareLinks();
     } catch (e2) {
       await captureError(e2, { action: 'create_share_link', boardId: activeBoardId });
@@ -434,6 +440,7 @@ export default function Home() {
     setError('');
     try {
       await typedApi.v1.boardsShareLinksDelete(String(activeBoardId), String(linkId));
+      showToast('Ссылка отозвана', 'success');
       await loadShareLinks();
     } catch (e2) {
       setError(String(e2.message || e2));
@@ -558,6 +565,7 @@ export default function Home() {
       const intent = intentRes.data;
 
       await uploadBinary(intent.uploadUrl, file, intent.headers || { 'content-type': file.type });
+      showToast('Изображение загружено', 'success');
 
       const finalizedRes = await typedApi.request({
         path: `/v1/boards/${activeBoardId}/uploads/finalize`,
@@ -597,7 +605,7 @@ export default function Home() {
         <Button type="submit" disabled={loading}>{loading ? 'Loading...' : 'Login'}</Button>
       </form>
       {loading ? <Spinner label="Authorizing..." /> : null}
-      {error && <p style={{ color: 'var(--color-error)' }}>{error}</p>}
+      {error && <p role="alert" aria-live="assertive" style={{ color: 'var(--color-error)' }}>{error}</p>}
       <div className="ui-toast-wrap">
         <Toast message={toast?.message} kind={toast?.kind || 'error'} onClose={clearToast} />
       </div>
@@ -631,14 +639,14 @@ export default function Home() {
     </div>
     {loading ? <Spinner /> : null}
 
-    {activeBoardId && <p>
+    {activeBoardId && <p role="status" aria-live="polite">
       Save status:{' '}
       {saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'All changes saved'}
-      {saveError ? <span style={{ color: 'var(--color-error)' }}> — Save failed: {saveError} <Button variant="danger" onClick={retrySave}>Retry</Button></span> : null}
+      {saveError ? <span style={{ color: 'var(--color-error)' }}> — Save failed: {saveError} <Button variant="danger" onClick={retrySave} aria-label="Повторить сохранение">Retry</Button></span> : null}
     </p>}
 
-    {activeBoardId && uploading ? <p>Upload progress: {uploadProgress}%</p> : null}
-    {activeBoardId && uploadError ? <p style={{ color: 'var(--color-error)' }}>Upload error: {uploadError}</p> : null}
+    {activeBoardId && uploading ? <p role="status" aria-live="polite">Upload progress: {uploadProgress}%</p> : null}
+    {activeBoardId && uploadError ? <p role="alert" aria-live="assertive" style={{ color: 'var(--color-error)' }}>Upload error: {uploadError}</p> : null}
 
     {versionsOpen && activeBoardId ? <section>
       <h2>Versions</h2>
@@ -646,10 +654,10 @@ export default function Home() {
         <Button onClick={createVersion} disabled={versionsLoading}>Create snapshot</Button>
         <Button variant="secondary" onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Reload versions</Button>
       </div>
-      {versions.length === 0 ? <p>No versions yet</p> : <ul>
-        {versions.map((v) => <li key={v.id}>
+      {versions.length === 0 ? <p>Нет версий</p> : <ul className="versions-list">
+        {versions.map((v) => <li className="list-item-card" key={v.id}>
           #{v.id} — {new Date(v.createdAt).toLocaleString()} {' '}
-          <Button variant="ghost" onClick={() => restoreVersion(v.id)} disabled={versionsLoading}>Restore</Button>
+          <Button variant="ghost" onClick={() => restoreVersion(v.id)} disabled={versionsLoading} aria-label={`Восстановить версию ${v.id}`}>Restore</Button>
         </li>)}
       </ul>}
       {versionsCursor ? <Button variant="secondary" onClick={() => loadVersions()} disabled={versionsLoading}>Load more</Button> : null}
@@ -661,11 +669,11 @@ export default function Home() {
         <Button onClick={createShareLink} disabled={shareLoading}>Create share link</Button>
         <Button variant="secondary" onClick={loadShareLinks} disabled={shareLoading}>Reload links</Button>
       </div>
-      {shareLinks.length === 0 ? <p>No share links</p> : <ul>
-        {shareLinks.map((s) => <li key={s.id}>
+      {shareLinks.length === 0 ? <p>Нет share-ссылок</p> : <ul className="share-list">
+        {shareLinks.map((s) => <li className="list-item-card" key={s.id}>
           #{s.id} {s.revokedAt ? '(revoked)' : '(active)'} {' '}
-          <Button variant="ghost" onClick={() => copyShareUrl(s.url)}>Copy URL</Button>{' '}
-          {!s.revokedAt ? <Button variant="danger" onClick={() => revokeShareLink(s.id)} disabled={shareLoading}>Revoke</Button> : null}
+          <Button variant="ghost" onClick={() => copyShareUrl(s.url)} aria-label={`Скопировать ссылку ${s.id}`}>Copy URL</Button>{' '}
+          {!s.revokedAt ? <Button variant="danger" onClick={() => revokeShareLink(s.id)} disabled={shareLoading} aria-label={`Отозвать ссылку ${s.id}`}>Revoke</Button> : null}
           <div style={{ fontSize: 12 }}>{s.url}</div>
         </li>)}
       </ul>}
@@ -673,14 +681,14 @@ export default function Home() {
 
     <section>
       <h2>Boards list</h2>
-      {boards.length === 0 ? <p>Empty: no boards</p> :
+      {boards.length === 0 ? <p>Нет досок</p> :
         <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
     </section>
 
     <section>
       <h2>Open board: {activeBoardId || 'none'}</h2>
       {activeBoardId && <Button onClick={addCard}>Add text card</Button>}
-      {!activeBoardId ? <p>Select board first</p> : cards.length === 0 ? <p>Empty: no cards</p> :
+      {!activeBoardId ? <p>Сначала выберите доску</p> : cards.length === 0 ? <p>Нет карточек</p> :
         <ul className="card-list">{cards.map((c) => <li className="list-item-card" key={c.id}>
           {c.type === 'image'
             ? <div>
@@ -689,8 +697,8 @@ export default function Home() {
             </div>
             : <span>{c.text}</span>}
           {' '}
-          {c.type !== 'image' ? <Button variant="ghost" onClick={() => editCard(c)}>Edit</Button> : null}
-          <Button variant="danger" onClick={() => deleteCard(c)}>Delete</Button>
+          {c.type !== 'image' ? <Button variant="ghost" onClick={() => editCard(c)} aria-label={`Редактировать карточку ${c.id}`}>Edit</Button> : null}
+          <Button variant="danger" onClick={() => deleteCard(c)} aria-label={`Удалить карточку ${c.id}`}>Delete</Button>
         </li>)}</ul>}
     </section>
 
