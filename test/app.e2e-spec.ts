@@ -24,7 +24,8 @@ describe('DreamBoard API (e2e)', () => {
   beforeAll(async () => {
     await prisma.refreshToken.deleteMany();
     await prisma.shareLink.deleteMany();
-    await prisma.boardVersion.deleteMany();
+    await prisma.version.deleteMany();
+    await prisma.card.deleteMany();
     await prisma.uploadAsset.deleteMany();
     await prisma.board.deleteMany();
     await prisma.user.deleteMany();

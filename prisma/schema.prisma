@@ -7,64 +7,86 @@ datasource db {
 }
 
 model User {
-  id           Int            @id @default(autoincrement())
-  email        String         @unique
-  name         String
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
-  boards       Board[]
+  id            Int            @id @default(autoincrement())
+  email         String         @unique
+  name          String
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  boards        Board[]
   refreshTokens RefreshToken[]
 
   @@map("users")
 }
 
 model Board {
-  id          Int           @id @default(autoincrement())
-  ownerUserId Int
-  owner       User          @relation(fields: [ownerUserId], references: [id], onDelete: Cascade)
+  id          Int         @id @default(autoincrement())
+  ownerId     Int         @map("ownerUserId")
+  owner       User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   title       String
   description String?
-  stateJson   String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   deletedAt   DateTime?
-  versions    BoardVersion[]
+  cards       Card[]
+  versions    Version[]
   shareLinks  ShareLink[]
   uploadAssets UploadAsset[]
 
-  @@index([ownerUserId])
+  @@index([ownerId])
   @@map("boards")
 }
 
-model BoardVersion {
-  id          Int      @id @default(autoincrement())
-  boardId     Int
-  ownerUserId Int
-  snapshotJson String
-  createdAt   DateTime @default(now())
-  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+enum CardType {
+  text
+  image
+  sticker
+  link
+}
 
-  @@index([boardId, ownerUserId])
+model Card {
+  id        String   @id
+  boardId   Int
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  type      CardType
+  content   String
+  position  Int      @default(0)
+  zIndex    Int      @default(0)
+  metadata  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([boardId])
+  @@map("cards")
+}
+
+model Version {
+  id        Int      @id @default(autoincrement())
+  boardId   Int
+  board     Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  snapshot  Json     @map("snapshotJson")
+  createdAt DateTime @default(now())
+
+  @@index([boardId])
   @@map("board_versions")
 }
 
 model ShareLink {
-  id          Int       @id @default(autoincrement())
-  boardId     Int
-  ownerUserId Int
-  token       String    @unique
-  createdAt   DateTime  @default(now())
-  revokedAt   DateTime?
-  board       Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  id        Int       @id @default(autoincrement())
+  boardId   Int
+  board     Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  token     String    @unique
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
 
-  @@index([boardId, ownerUserId])
+  @@index([boardId])
   @@map("share_links")
 }
 
 model UploadAsset {
   id          Int      @id @default(autoincrement())
   boardId     Int
-  ownerUserId Int
+  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
   objectKey   String   @unique
   mimeType    String
   sizeBytes   Int
@@ -74,20 +96,18 @@ model UploadAsset {
   etag        String?
   finalizedAt DateTime?
   createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  board       Board    @relation(fields: [boardId], references: [id], onDelete: Cascade)
 
-  @@index([boardId, ownerUserId])
+  @@index([boardId])
   @@map("upload_assets")
 }
 
 model RefreshToken {
   id        Int      @id @default(autoincrement())
   userId    Int
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   token     String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@map("refresh_tokens")

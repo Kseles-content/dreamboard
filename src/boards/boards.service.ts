@@ -6,7 +6,7 @@ import {
   HttpStatus,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Board } from '@prisma/client';
+import { Board, CardType, Prisma } from '@prisma/client';
 import { CreateBoardDto } from './dto/create-board.dto';
 import { UpdateBoardDto } from './dto/update-board.dto';
 import { CreateCardDto } from './dto/create-card.dto';
@@ -22,10 +22,10 @@ type CardBase = {
   createdAt: string;
   updatedAt: string;
 };
+
 type TextCard = CardBase & { type: 'text'; text: string };
 type ImageCard = CardBase & { type: 'image'; imageUrl: string; objectKey: string };
 type Card = TextCard | ImageCard;
-type BoardState = { cards: Card[] };
 
 type ApiBoard = {
   id: string;
@@ -47,10 +47,9 @@ export class BoardsService {
 
   async listBoards(userId: number, limit = 20, cursor?: number): Promise<ApiBoard[]> {
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
-
     const rows = await this.prisma.board.findMany({
       where: {
-        ownerUserId: userId,
+        ownerId: userId,
         deletedAt: null,
         ...(cursor ? { id: { gt: cursor } } : {}),
       },
@@ -65,17 +64,13 @@ export class BoardsService {
 
   async getBoardById(id: number, userId: number): Promise<Board> {
     const board = await this.prisma.board.findFirst({ where: { id, deletedAt: null } });
-    if (!board) {
-      throw new NotFoundException(`Board ${id} not found`);
-    }
-    if (board.ownerUserId !== userId) {
-      throw new ForbiddenException('No access to this board');
-    }
+    if (!board) throw new NotFoundException(`Board ${id} not found`);
+    if (board.ownerId !== userId) throw new ForbiddenException('No access to this board');
     return board;
   }
 
   async createBoard(input: CreateBoardDto, userId: number, requestId: string): Promise<ApiBoard> {
-    const boardsCount = await this.prisma.board.count({ where: { ownerUserId: userId, deletedAt: null } });
+    const boardsCount = await this.prisma.board.count({ where: { ownerId: userId, deletedAt: null } });
     if (boardsCount >= 50) {
       throw new HttpException(
         {
@@ -89,47 +84,55 @@ export class BoardsService {
 
     const saved = await this.prisma.board.create({
       data: {
-        ownerUserId: userId,
+        ownerId: userId,
         title: input.title,
         description: input.description ?? null,
-        stateJson: JSON.stringify({ cards: [] }),
       },
     });
+
     return this.toApiBoard(saved);
   }
 
   async updateBoard(id: number, input: UpdateBoardDto, userId: number): Promise<ApiBoard> {
     const board = await this.getBoardById(id, userId);
 
-    if (typeof input.title !== 'undefined') {
-      board.title = input.title;
-    }
+    const saved = await this.prisma.board.update({
+      where: { id: board.id },
+      data: {
+        ...(typeof input.title !== 'undefined' ? { title: input.title } : {}),
+        ...(typeof input.description !== 'undefined' ? { description: input.description } : {}),
+      },
+    });
 
-    if (typeof input.description !== 'undefined') {
-      board.description = input.description;
-    }
-
-    const saved = await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
     return this.toApiBoard(saved);
   }
 
   async deleteBoard(id: number, userId: number): Promise<{ deleted: boolean; board: ApiBoard }> {
     const board = await this.getBoardById(id, userId);
     const boardView = this.toApiBoard(board);
-    await this.prisma.board.update({ where: { id: board.id }, data: { deletedAt: new Date() } });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.card.deleteMany({ where: { boardId: id } });
+      await tx.version.deleteMany({ where: { boardId: id } });
+      await tx.shareLink.deleteMany({ where: { boardId: id } });
+      await tx.uploadAsset.deleteMany({ where: { boardId: id } });
+      await tx.board.update({ where: { id }, data: { deletedAt: new Date() } });
+    });
+
     return { deleted: true, board: boardView };
   }
 
   async listCards(boardId: number, userId: number): Promise<Card[]> {
-    const board = await this.getBoardById(boardId, userId);
-    return this.readState(board).cards;
+    await this.getBoardById(boardId, userId);
+    const cards = await this.prisma.card.findMany({ where: { boardId }, orderBy: [{ zIndex: 'asc' }, { createdAt: 'asc' }] });
+    return cards.map((c) => this.toApiCard(c));
   }
 
   async createCard(boardId: number, userId: number, input: CreateCardDto): Promise<{ created: Card }> {
-    const board = await this.getBoardById(boardId, userId);
-    const state = this.readState(board);
+    await this.getBoardById(boardId, userId);
 
-    if (state.cards.length >= 200) {
+    const cardCount = await this.prisma.card.count({ where: { boardId } });
+    if (cardCount >= 200) {
       throw new HttpException(
         {
           code: 'CARD_LIMIT_REACHED',
@@ -139,121 +142,87 @@ export class BoardsService {
       );
     }
 
-    const type = input.type ?? 'text';
-
-    let created: Card;
+    const type = (input.type ?? 'text') as 'text' | 'image';
+    const now = new Date();
 
     if (type === 'image') {
       if (!input.objectKey) {
-        throw new HttpException(
-          {
-            code: 'IMAGE_OBJECT_KEY_REQUIRED',
-            message: 'objectKey is required for image card',
-          },
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException({ code: 'IMAGE_OBJECT_KEY_REQUIRED', message: 'objectKey is required for image card' }, HttpStatus.BAD_REQUEST);
       }
 
       const asset = await this.prisma.uploadAsset.findFirst({
-        where: {
-          boardId,
-          ownerUserId: userId,
-          objectKey: input.objectKey,
-          status: 'READY',
-        },
+        where: { boardId, objectKey: input.objectKey, status: 'READY' },
       });
 
       if (!asset || !asset.publicUrl) {
-        throw new HttpException(
-          {
-            code: 'IMAGE_ASSET_NOT_READY',
-            message: 'Image asset is not finalized',
-          },
-          HttpStatus.BAD_REQUEST,
-        );
+        throw new HttpException({ code: 'IMAGE_ASSET_NOT_READY', message: 'Image asset is not finalized' }, HttpStatus.BAD_REQUEST);
       }
 
-      const now = new Date().toISOString();
-      created = {
-        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        boardId: String(boardId),
-        createdAt: now,
-        updatedAt: now,
-        type: 'image',
-        objectKey: asset.objectKey,
-        imageUrl: asset.publicUrl,
-      };
-    } else {
-      if (!input.text) {
-        throw new HttpException(
-          {
-            code: 'TEXT_REQUIRED',
-            message: 'text is required for text card',
-          },
-          HttpStatus.BAD_REQUEST,
-        );
-      }
+      const created = await this.prisma.card.create({
+        data: {
+          id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+          boardId,
+          type: CardType.image,
+          content: asset.publicUrl,
+          position: cardCount,
+          zIndex: cardCount,
+          metadata: { objectKey: asset.objectKey, imageUrl: asset.publicUrl } as Prisma.JsonObject,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
 
-      const now = new Date().toISOString();
-      created = {
-        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        boardId: String(boardId),
-        createdAt: now,
-        updatedAt: now,
-        type: 'text',
-        text: input.text,
-      };
+      return { created: this.toApiCard(created) };
     }
 
-    state.cards.push(created);
-    board.stateJson = JSON.stringify(state);
-    await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
+    if (!input.text) {
+      throw new HttpException({ code: 'TEXT_REQUIRED', message: 'text is required for text card' }, HttpStatus.BAD_REQUEST);
+    }
 
-    return { created };
+    const created = await this.prisma.card.create({
+      data: {
+        id: `c_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        boardId,
+        type: CardType.text,
+        content: input.text,
+        position: cardCount,
+        zIndex: cardCount,
+        metadata: Prisma.JsonNull,
+        createdAt: now,
+        updatedAt: now,
+      },
+    });
+
+    return { created: this.toApiCard(created) };
   }
 
   async updateCard(boardId: number, cardId: string, userId: number, input: UpdateCardDto): Promise<Card> {
-    const board = await this.getBoardById(boardId, userId);
-    const state = this.readState(board);
-    const card = state.cards.find((c) => c.id === cardId);
+    await this.getBoardById(boardId, userId);
+    const card = await this.prisma.card.findFirst({ where: { id: cardId, boardId } });
+    if (!card) throw new NotFoundException(`Card ${cardId} not found`);
 
-    if (!card) {
-      throw new NotFoundException(`Card ${cardId} not found`);
-    }
-
-    if (card.type !== 'text') {
+    if (card.type !== CardType.text) {
       throw new HttpException(
-        {
-          code: 'CARD_TYPE_MISMATCH',
-          message: 'Only text card can be updated via text endpoint',
-        },
+        { code: 'CARD_TYPE_MISMATCH', message: 'Only text card can be updated via text endpoint' },
         HttpStatus.BAD_REQUEST,
       );
     }
 
-    card.text = input.text;
-    card.updatedAt = new Date().toISOString();
-    board.stateJson = JSON.stringify(state);
-    await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
+    const updated = await this.prisma.card.update({
+      where: { id: card.id },
+      data: { content: input.text, updatedAt: new Date() },
+    });
 
-    return card;
+    return this.toApiCard(updated);
   }
 
   async deleteCard(boardId: number, cardId: string, userId: number): Promise<{ deleted: boolean; card: Card }> {
-    const board = await this.getBoardById(boardId, userId);
-    const state = this.readState(board);
-    const card = state.cards.find((c) => c.id === cardId);
+    await this.getBoardById(boardId, userId);
+    const card = await this.prisma.card.findFirst({ where: { id: cardId, boardId } });
+    if (!card) throw new NotFoundException(`Card ${cardId} not found`);
 
-    if (!card) {
-      throw new NotFoundException(`Card ${cardId} not found`);
-    }
-
-    state.cards = state.cards.filter((c) => c.id !== cardId);
-
-    board.stateJson = JSON.stringify(state);
-    await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
-
-    return { deleted: true, card };
+    await this.prisma.card.delete({ where: { id: card.id } });
+    return { deleted: true, card: this.toApiCard(card) };
   }
 
   async createUploadIntent(boardId: number, userId: number, input: CreateUploadIntentDto) {
@@ -261,20 +230,14 @@ export class BoardsService {
 
     if (input.sizeBytes > MAX_ASSET_SIZE_BYTES) {
       throw new HttpException(
-        {
-          code: 'ASSET_TOO_LARGE',
-          message: `Asset is too large: max ${MAX_ASSET_SIZE_BYTES} bytes`,
-        },
+        { code: 'ASSET_TOO_LARGE', message: `Asset is too large: max ${MAX_ASSET_SIZE_BYTES} bytes` },
         HttpStatus.BAD_REQUEST,
       );
     }
 
     if (!ALLOWED_UPLOAD_MIME_TYPES.has(input.mimeType)) {
       throw new HttpException(
-        {
-          code: 'UNSUPPORTED_ASSET_TYPE',
-          message: `Unsupported mimeType: ${input.mimeType}`,
-        },
+        { code: 'UNSUPPORTED_ASSET_TYPE', message: `Unsupported mimeType: ${input.mimeType}` },
         HttpStatus.BAD_REQUEST,
       );
     }
@@ -283,15 +246,13 @@ export class BoardsService {
     const safeName = input.fileName.replace(/[^a-zA-Z0-9._-]/g, '_');
     const objectKey = `boards/${boardId}/uploads/${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${safeName}.${extension}`;
 
-    const uploadBase = (this.configService.getOrThrow<string>('storage.uploadBaseUrl')).replace(/\/$/, '');
-    const publicBase = (this.configService.getOrThrow<string>('storage.publicBaseUrl')).replace(/\/$/, '');
-    const expiresInSeconds = 15 * 60;
+    const uploadBase = this.configService.getOrThrow<string>('storage.uploadBaseUrl').replace(/\/$/, '');
+    const publicBase = this.configService.getOrThrow<string>('storage.publicBaseUrl').replace(/\/$/, '');
     const publicUrl = `${publicBase}/${objectKey}`;
 
     await this.prisma.uploadAsset.create({
       data: {
         boardId,
-        ownerUserId: userId,
         objectKey,
         mimeType: input.mimeType,
         sizeBytes: input.sizeBytes,
@@ -308,34 +269,22 @@ export class BoardsService {
       objectKey,
       uploadUrl: `${uploadBase}/${objectKey}?signature=demo`,
       publicUrl,
-      headers: {
-        'content-type': input.mimeType,
-      },
+      headers: { 'content-type': input.mimeType },
       maxSizeBytes: MAX_ASSET_SIZE_BYTES,
-      expiresInSeconds,
+      expiresInSeconds: 15 * 60,
     };
   }
 
   async finalizeUpload(boardId: number, userId: number, input: FinalizeUploadDto) {
     await this.getBoardById(boardId, userId);
 
-    const asset = await this.prisma.uploadAsset.findFirst({
-      where: {
-        boardId,
-        ownerUserId: userId,
-        objectKey: input.objectKey,
-      },
+    const asset = await this.prisma.uploadAsset.findFirst({ where: { boardId, objectKey: input.objectKey } });
+    if (!asset) throw new NotFoundException('Upload intent not found');
+
+    const saved = await this.prisma.uploadAsset.update({
+      where: { id: asset.id },
+      data: { status: 'READY', finalizedAt: new Date(), etag: input.etag ?? null },
     });
-
-    if (!asset) {
-      throw new NotFoundException('Upload intent not found');
-    }
-
-    asset.status = 'READY';
-    asset.finalizedAt = new Date();
-    asset.etag = input.etag ?? null;
-
-    const saved = await this.prisma.uploadAsset.update({ where: { id: asset.id }, data: { status: asset.status, finalizedAt: asset.finalizedAt, etag: asset.etag } });
 
     return {
       id: saved.id,
@@ -353,12 +302,8 @@ export class BoardsService {
     await this.getBoardById(boardId, userId);
     const normalizedLimit = Math.min(Math.max(limit, 1), 100);
 
-    const rows = await this.prisma.boardVersion.findMany({
-      where: {
-        boardId,
-        ownerUserId: userId,
-        ...(cursor ? { id: { lt: cursor } } : {}),
-      },
+    const rows = await this.prisma.version.findMany({
+      where: { boardId, ...(cursor ? { id: { lt: cursor } } : {}) },
       orderBy: { id: 'desc' },
       take: normalizedLimit + 1,
     });
@@ -370,84 +315,88 @@ export class BoardsService {
       createdAt: v.createdAt,
     }));
 
-    return {
-      items,
-      nextCursor: hasMore ? items[items.length - 1].id : null,
-    };
+    return { items, nextCursor: hasMore ? items[items.length - 1].id : null };
   }
 
   async createVersion(boardId: number, userId: number) {
     const board = await this.getBoardById(boardId, userId);
-    const snapshotJson = JSON.stringify({
-      title: board.title,
-      description: board.description,
-      stateJson: board.stateJson,
-    });
+    const cards = await this.prisma.card.findMany({ where: { boardId }, orderBy: [{ zIndex: 'asc' }, { createdAt: 'asc' }] });
 
-    const created = await this.prisma.boardVersion.create({
+    const created = await this.prisma.version.create({
       data: {
         boardId,
-        ownerUserId: userId,
-        snapshotJson,
+        snapshot: {
+          title: board.title,
+          description: board.description,
+          cards: cards.map((c) => this.toApiCard(c)),
+        },
       },
     });
 
-    return {
-      id: created.id,
-      boardId: created.boardId,
-      createdAt: created.createdAt,
-    };
+    return { id: created.id, boardId: created.boardId, createdAt: created.createdAt };
   }
 
   async restoreVersion(boardId: number, versionId: number, userId: number) {
     const board = await this.getBoardById(boardId, userId);
-
-    const version = await this.prisma.boardVersion.findFirst({
-      where: {
-        id: versionId,
-        boardId,
-        ownerUserId: userId,
-      },
-    });
+    const version = await this.prisma.version.findFirst({ where: { id: versionId, boardId } });
 
     if (!version) {
-      throw new HttpException(
-        {
-          code: 'VERSION_NOT_FOUND',
-          message: `Version ${versionId} not found`,
-        },
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException({ code: 'VERSION_NOT_FOUND', message: `Version ${versionId} not found` }, HttpStatus.NOT_FOUND);
     }
 
-    const snapshot = this.readVersionSnapshot(version.snapshotJson);
+    const snapshot = this.readVersionSnapshot(version.snapshot);
 
-    board.title = snapshot.title;
-    board.description = snapshot.description;
-    board.stateJson = snapshot.stateJson;
-
-    const restored = await this.prisma.board.update({ where: { id: board.id }, data: { title: board.title, description: board.description, stateJson: board.stateJson } });
+    await this.prisma.$transaction(async (tx) => {
+      await tx.board.update({ where: { id: board.id }, data: { title: snapshot.title, description: snapshot.description } });
+      await tx.card.deleteMany({ where: { boardId } });
+      if (snapshot.cards.length > 0) {
+        await tx.card.createMany({
+          data: snapshot.cards.map((c, idx) =>
+            c.type === 'image'
+              ? {
+                  id: c.id,
+                  boardId,
+                  type: CardType.image,
+                  content: c.imageUrl,
+                  position: idx,
+                  zIndex: idx,
+                  metadata: { objectKey: c.objectKey, imageUrl: c.imageUrl } as Prisma.JsonObject,
+                  createdAt: new Date(c.createdAt),
+                  updatedAt: new Date(c.updatedAt),
+                }
+              : {
+                  id: c.id,
+                  boardId,
+                  type: CardType.text,
+                  content: c.text,
+                  position: idx,
+                  zIndex: idx,
+                  metadata: Prisma.JsonNull,
+                  createdAt: new Date(c.createdAt),
+                  updatedAt: new Date(c.updatedAt),
+                },
+          ),
+        });
+      }
+    });
 
     return {
       restoredVersionId: version.id,
-      board: restored,
+      board: await this.prisma.board.findFirst({ where: { id: board.id } }),
     };
   }
 
   async listShareLinks(boardId: number, userId: number) {
     await this.getBoardById(boardId, userId);
 
-    const rows = await this.prisma.shareLink.findMany({
-      where: { boardId, ownerUserId: userId },
-      orderBy: { id: 'desc' },
-    });
-
+    const rows = await this.prisma.shareLink.findMany({ where: { boardId }, orderBy: { id: 'desc' } });
     return {
       items: rows.map((x) => ({
         id: x.id,
         boardId: x.boardId,
         token: x.token,
         url: this.buildPublicShareUrl(x.token),
+        expiresAt: x.expiresAt,
         createdAt: x.createdAt,
         revokedAt: x.revokedAt,
       })),
@@ -461,8 +410,8 @@ export class BoardsService {
     const created = await this.prisma.shareLink.create({
       data: {
         boardId,
-        ownerUserId: userId,
         token,
+        expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         revokedAt: null,
       },
     });
@@ -472,6 +421,7 @@ export class BoardsService {
       boardId: created.boardId,
       token: created.token,
       url: this.buildPublicShareUrl(created.token),
+      expiresAt: created.expiresAt,
       createdAt: created.createdAt,
       revokedAt: created.revokedAt,
     };
@@ -480,52 +430,32 @@ export class BoardsService {
   async revokeShareLink(boardId: number, linkId: number, userId: number) {
     await this.getBoardById(boardId, userId);
 
-    const link = await this.prisma.shareLink.findFirst({
-      where: { id: linkId, boardId, ownerUserId: userId },
-    });
+    const link = await this.prisma.shareLink.findFirst({ where: { id: linkId, boardId } });
+    if (!link) throw new NotFoundException(`Share link ${linkId} not found`);
 
-    if (!link) {
-      throw new NotFoundException(`Share link ${linkId} not found`);
-    }
-
-    link.revokedAt = new Date();
-    await this.prisma.shareLink.update({ where: { id: link.id }, data: { revokedAt: link.revokedAt } });
-
+    await this.prisma.shareLink.update({ where: { id: link.id }, data: { revokedAt: new Date() } });
     return { success: true };
   }
 
   async getPublicBoardByToken(token: string) {
-    const link = await this.prisma.shareLink.findFirst({ where: { token } });
-
-    if (!link || link.revokedAt) {
-      throw new HttpException(
-        {
-          code: 'SHARE_LINK_NOT_FOUND',
-          message: 'Share link not found',
-        },
-        HttpStatus.NOT_FOUND,
-      );
+    const link = await this.prisma.shareLink.findUnique({ where: { token } });
+    if (!link || link.revokedAt || (link.expiresAt && link.expiresAt.getTime() < Date.now())) {
+      throw new HttpException({ code: 'SHARE_LINK_NOT_FOUND', message: 'Share link not found' }, HttpStatus.NOT_FOUND);
     }
 
     const board = await this.prisma.board.findFirst({ where: { id: link.boardId, deletedAt: null } });
     if (!board) {
-      throw new HttpException(
-        {
-          code: 'SHARE_LINK_NOT_FOUND',
-          message: 'Share link not found',
-        },
-        HttpStatus.NOT_FOUND,
-      );
+      throw new HttpException({ code: 'SHARE_LINK_NOT_FOUND', message: 'Share link not found' }, HttpStatus.NOT_FOUND);
     }
 
-    const state = this.readState(board);
+    const cards = await this.prisma.card.findMany({ where: { boardId: board.id }, orderBy: [{ zIndex: 'asc' }, { createdAt: 'asc' }] });
 
     return {
       board: {
         id: board.id,
         title: board.title,
         description: board.description,
-        cards: state.cards,
+        cards: cards.map((c) => this.toApiCard(c)),
         updatedAt: board.updatedAt,
       },
       share: {
@@ -548,73 +478,6 @@ export class BoardsService {
     }
   }
 
-  private readState(board: Board): BoardState {
-    try {
-      const parsed = board.stateJson ? (JSON.parse(board.stateJson) as { cards?: any[] }) : { cards: [] };
-      const cards = Array.isArray(parsed.cards)
-        ? parsed.cards
-            .map((card) => {
-              if (!card || typeof card !== 'object') return null;
-              if (card.type === 'image' && typeof card.id === 'string' && typeof card.imageUrl === 'string' && typeof card.objectKey === 'string') {
-                const now = new Date().toISOString();
-                return {
-                  id: card.id,
-                  boardId: typeof card.boardId === 'string' ? card.boardId : String(board.id),
-                  createdAt: typeof card.createdAt === 'string' ? card.createdAt : now,
-                  updatedAt: typeof card.updatedAt === 'string' ? card.updatedAt : now,
-                  type: 'image',
-                  imageUrl: card.imageUrl,
-                  objectKey: card.objectKey,
-                } as ImageCard;
-              }
-              if (typeof card.id === 'string' && typeof card.text === 'string') {
-                const now = new Date().toISOString();
-                return {
-                  id: card.id,
-                  boardId: typeof card.boardId === 'string' ? card.boardId : String(board.id),
-                  createdAt: typeof card.createdAt === 'string' ? card.createdAt : now,
-                  updatedAt: typeof card.updatedAt === 'string' ? card.updatedAt : now,
-                  type: 'text',
-                  text: card.text,
-                } as TextCard;
-              }
-              return null;
-            })
-            .filter((c): c is Card => c !== null)
-        : [];
-      return { cards };
-    } catch {
-      return { cards: [] };
-    }
-  }
-
-  private readVersionSnapshot(snapshotJson: string): { title: string; description: string | null; stateJson: string | null } {
-    try {
-      const parsed = JSON.parse(snapshotJson) as {
-        title?: unknown;
-        description?: unknown;
-        stateJson?: unknown;
-      };
-
-      return {
-        title: typeof parsed.title === 'string' && parsed.title.trim().length > 0 ? parsed.title : 'Untitled board',
-        description: typeof parsed.description === 'string' ? parsed.description : null,
-        stateJson: typeof parsed.stateJson === 'string' ? parsed.stateJson : JSON.stringify({ cards: [] }),
-      };
-    } catch {
-      return {
-        title: 'Untitled board',
-        description: null,
-        stateJson: JSON.stringify({ cards: [] }),
-      };
-    }
-  }
-
-  private buildPublicShareUrl(token: string): string {
-    const webBase = (this.configService.getOrThrow<string>('storage.publicWebBaseUrl')).replace(/\/$/, '');
-    return `${webBase}/share/${token}`;
-  }
-
   private toApiBoard(board: Board): ApiBoard {
     return {
       id: String(board.id),
@@ -623,5 +486,85 @@ export class BoardsService {
       createdAt: board.createdAt.toISOString(),
       updatedAt: board.updatedAt.toISOString(),
     };
+  }
+
+  private toApiCard(card: {
+    id: string;
+    boardId: number;
+    type: CardType;
+    content: string;
+    metadata: Prisma.JsonValue | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }): Card {
+    if (card.type === CardType.image) {
+      const meta = (card.metadata ?? {}) as { objectKey?: string; imageUrl?: string };
+      return {
+        id: card.id,
+        boardId: String(card.boardId),
+        createdAt: card.createdAt.toISOString(),
+        updatedAt: card.updatedAt.toISOString(),
+        type: 'image',
+        imageUrl: meta.imageUrl ?? card.content,
+        objectKey: meta.objectKey ?? '',
+      };
+    }
+
+    return {
+      id: card.id,
+      boardId: String(card.boardId),
+      createdAt: card.createdAt.toISOString(),
+      updatedAt: card.updatedAt.toISOString(),
+      type: 'text',
+      text: card.content,
+    };
+  }
+
+  private readVersionSnapshot(snapshot: Prisma.JsonValue): { title: string; description: string | null; cards: Card[] } {
+    const empty = { title: 'Untitled board', description: null as string | null, cards: [] as Card[] };
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return empty;
+
+    const s = snapshot as { title?: unknown; description?: unknown; cards?: unknown[] };
+    const cards: Card[] = Array.isArray(s.cards)
+      ? s.cards
+          .map((x) => {
+            if (!x || typeof x !== 'object') return null;
+            const c = x as any;
+            if (c.type === 'image' && typeof c.id === 'string' && typeof c.imageUrl === 'string') {
+              return {
+                id: c.id,
+                boardId: typeof c.boardId === 'string' ? c.boardId : '',
+                createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString(),
+                updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date().toISOString(),
+                type: 'image' as const,
+                imageUrl: c.imageUrl,
+                objectKey: typeof c.objectKey === 'string' ? c.objectKey : '',
+              };
+            }
+            if (typeof c.id === 'string' && typeof c.text === 'string') {
+              return {
+                id: c.id,
+                boardId: typeof c.boardId === 'string' ? c.boardId : '',
+                createdAt: typeof c.createdAt === 'string' ? c.createdAt : new Date().toISOString(),
+                updatedAt: typeof c.updatedAt === 'string' ? c.updatedAt : new Date().toISOString(),
+                type: 'text' as const,
+                text: c.text,
+              };
+            }
+            return null;
+          })
+          .filter((x): x is Card => Boolean(x))
+      : [];
+
+    return {
+      title: typeof s.title === 'string' && s.title.trim().length > 0 ? s.title : empty.title,
+      description: typeof s.description === 'string' ? s.description : null,
+      cards,
+    };
+  }
+
+  private buildPublicShareUrl(token: string): string {
+    const webBase = this.configService.getOrThrow<string>('storage.publicWebBaseUrl').replace(/\/$/, '');
+    return `${webBase}/share/${token}`;
   }
 }
