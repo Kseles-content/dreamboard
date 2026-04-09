@@ -7,6 +7,11 @@ import { httpLoggingMiddleware } from './middleware/http-logging.middleware';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
+  app.enableCors({
+    origin: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id'],
+  });
   app.use(httpLoggingMiddleware);
   app.useGlobalPipes(
     new ValidationPipe({

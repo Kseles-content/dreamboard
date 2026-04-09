@@ -1,3 +1,4 @@
+process.env.NODE_ENV = 'test';
 process.env.DATABASE_URL = 'postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard';
 process.env.JWT_SECRET = 'test-secret';
 process.env.S3_BUCKET = 'test-bucket';
@@ -329,25 +330,88 @@ describe('DreamBoard API (e2e)', () => {
       });
   });
 
-  it('refreshes and logs out', async () => {
+  it('refreshes with rotation and rejects old refresh token', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
       .send({ email: 'refresh@example.com', name: 'Ref' })
       .expect(201);
 
-    const refreshToken = login.body.refreshToken as string;
+    const oldRefreshToken = login.body.refreshToken as string;
 
     const refreshed = await request(app.getHttpServer())
       .post('/v1/auth/refresh')
-      .send({ refreshToken })
+      .send({ refreshToken: oldRefreshToken })
       .expect(201);
 
     expect(refreshed.body.accessToken).toBeTruthy();
+    expect(refreshed.body.refreshToken).toBeTruthy();
+    expect(refreshed.body.refreshToken).not.toBe(oldRefreshToken);
+
+    await request(app.getHttpServer())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: oldRefreshToken })
+      .expect(401);
 
     await request(app.getHttpServer())
       .post('/v1/auth/logout')
       .send({ refreshToken: refreshed.body.refreshToken })
       .expect(201);
+  });
+
+  it('revoke-all invalidates all refresh tokens for user', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'revokeall@example.com', name: 'Revoke All' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+    const refresh1 = login.body.refreshToken as string;
+
+    const second = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'revokeall@example.com', name: 'Revoke All' })
+      .expect(201);
+
+    const refresh2 = second.body.refreshToken as string;
+
+    const revoked = await request(app.getHttpServer())
+      .post('/v1/auth/revoke-all')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(201);
+
+    expect(revoked.body.revoked).toBeGreaterThanOrEqual(2);
+
+    await request(app.getHttpServer())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: refresh1 })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken: refresh2 })
+      .expect(401);
+  });
+
+  it('revokes specific refresh token by id', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'revokesingle@example.com', name: 'Revoke Single' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+    const refreshToken = login.body.refreshToken as string;
+    const refreshTokenId = login.body.refreshTokenId as number;
+
+    await request(app.getHttpServer())
+      .post('/v1/auth/revoke-token')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ tokenId: refreshTokenId })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post('/v1/auth/refresh')
+      .send({ refreshToken })
+      .expect(401);
   });
 
   it('creates upload intent for board image', async () => {

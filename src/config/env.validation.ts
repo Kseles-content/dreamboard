@@ -3,7 +3,7 @@ import * as Joi from 'joi';
 export const envValidationSchema = Joi.object({
   NODE_ENV: Joi.string().valid('development', 'test', 'production').default('development'),
   PORT: Joi.number().port().default(3000),
-  DATABASE_URL: Joi.string().uri({ scheme: ['postgresql', 'postgres'] }).required(),
+  DATABASE_URL: Joi.string().pattern(/^postgres(ql)?:\/\//).required(),
   JWT_SECRET: Joi.string().min(8).required(),
   S3_BUCKET: Joi.string().min(1).required(),
   S3_REGION: Joi.string().min(1).required(),

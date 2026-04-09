@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
@@ -24,30 +24,7 @@ export class AuthService {
       });
     }
 
-    const accessToken = await this.jwtService.signAsync(
-      { sub: user.id, email: user.email },
-      {
-        secret: this.configService.getOrThrow<string>('auth.jwtSecret'),
-        expiresIn: '15m',
-      },
-    );
-
-    const refreshToken = randomUUID() + randomUUID();
-    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-
-    await this.prisma.refreshToken.create({
-      data: {
-        userId: user.id,
-        token: refreshToken,
-        expiresAt,
-      },
-    });
-
-    return {
-      accessToken,
-      refreshToken,
-      tokenType: 'Bearer',
-    };
+    return this.issueTokenPair(user.id, user.email);
   }
 
   async refresh(refreshToken: string) {
@@ -61,36 +38,80 @@ export class AuthService {
       throw new UnauthorizedException('User not found');
     }
 
-    await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+    return this.prisma.$transaction(async (tx) => {
+      await tx.refreshToken.delete({ where: { token: refreshToken } });
 
-    const newAccessToken = await this.jwtService.signAsync(
-      { sub: user.id, email: user.email },
+      const accessToken = await this.jwtService.signAsync(
+        { sub: user.id, email: user.email },
+        {
+          secret: this.configService.getOrThrow<string>('auth.jwtSecret'),
+          expiresIn: '15m',
+        },
+      );
+
+      const newRefreshToken = randomUUID() + randomUUID();
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const created = await tx.refreshToken.create({
+        data: {
+          userId: user.id,
+          token: newRefreshToken,
+          expiresAt,
+        },
+      });
+
+      return {
+        accessToken,
+        refreshToken: newRefreshToken,
+        refreshTokenId: created.id,
+        tokenType: 'Bearer',
+      };
+    });
+  }
+
+  async logout(refreshToken: string) {
+    await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
+    return { success: true };
+  }
+
+  async revokeAll(userId: number) {
+    const result = await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    return { revoked: result.count };
+  }
+
+  async revokeTokenById(userId: number, tokenId: number) {
+    const token = await this.prisma.refreshToken.findFirst({ where: { id: tokenId, userId } });
+    if (!token) {
+      throw new NotFoundException('Refresh token not found');
+    }
+    await this.prisma.refreshToken.delete({ where: { id: tokenId } });
+    return { revoked: true, tokenId };
+  }
+
+  private async issueTokenPair(userId: number, email: string) {
+    const accessToken = await this.jwtService.signAsync(
+      { sub: userId, email },
       {
         secret: this.configService.getOrThrow<string>('auth.jwtSecret'),
         expiresIn: '15m',
       },
     );
 
-    const newRefreshToken = randomUUID() + randomUUID();
+    const refreshToken = randomUUID() + randomUUID();
     const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
 
-    await this.prisma.refreshToken.create({
+    const created = await this.prisma.refreshToken.create({
       data: {
-        userId: user.id,
-        token: newRefreshToken,
+        userId,
+        token: refreshToken,
         expiresAt,
       },
     });
 
     return {
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
+      accessToken,
+      refreshToken,
+      refreshTokenId: created.id,
       tokenType: 'Bearer',
     };
-  }
-
-  async logout(refreshToken: string) {
-    await this.prisma.refreshToken.deleteMany({ where: { token: refreshToken } });
-    return { success: true };
   }
 }
