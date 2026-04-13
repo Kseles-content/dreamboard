@@ -163,6 +163,12 @@ npm run test:e2e
 bash scripts/demo-check.sh
 ```
 
+7) Heartbeat audit snapshot (commit + PR + checks + demo)
+
+```bash
+bash scripts/heartbeat-audit.sh
+```
+
 ## Week 2 status
 
 ✅ Auth + Boards реализованы, тесты проходят, CI зелёный, демо доступно через scripts/demo-check.sh
