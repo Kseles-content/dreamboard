@@ -11,7 +11,6 @@ process.env.STORAGE_PUBLIC_BASE_URL = 'https://cdn.test.local';
 process.env.PUBLIC_WEB_BASE_URL = 'http://localhost:3100';
 
 import { INestApplication, ValidationPipe } from '@nestjs/common';
-import { execSync } from 'node:child_process';
 import { Test } from '@nestjs/testing';
 import * as request from 'supertest';
 import { PrismaClient } from '@prisma/client';
@@ -24,8 +23,6 @@ describe('DreamBoard API (e2e)', () => {
   const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }) });
 
   beforeAll(async () => {
-    execSync('npm run migrate:prod', { stdio: 'inherit' });
-
     await prisma.refreshToken.deleteMany();
     await prisma.shareLink.deleteMany();
     await prisma.version.deleteMany();

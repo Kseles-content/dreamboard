@@ -63,7 +63,13 @@ jobs:
           node-version: 22
       - name: Install root dependencies
         run: npm ci
+      - name: Apply Prisma migrations (e2e DB)
+        env:
+          DATABASE_URL: postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard
+        run: npm run migrate:prod
       - name: E2E tests
+        env:
+          DATABASE_URL: postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard
         run: npm run test:e2e -- --runInBand
 
   web-build:
