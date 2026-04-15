@@ -433,6 +433,10 @@ components:
               type: integer
             email:
               type: string
+            onboardedAt:
+              type: string
+              format: date-time
+              nullable: true
 
     RefreshResponse:
       type: object

@@ -7,16 +7,17 @@ datasource db {
 }
 
 model User {
-  id              Int            @id @default(autoincrement())
-  email           String         @unique
-  name            String
-  createdAt       DateTime       @default(now())
-  updatedAt       DateTime       @updatedAt
-  boards          Board[]
-  refreshTokens   RefreshToken[]
-  versionsCreated Version[]      @relation("VersionAuthor")
-  versionsRestored Version[]     @relation("VersionRestorer")
-  auditLogs       AuditLog[]
+  id               Int            @id @default(autoincrement())
+  email            String         @unique
+  name             String
+  onboardedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  boards           Board[]
+  refreshTokens    RefreshToken[]
+  versionsCreated  Version[]      @relation("VersionAuthor")
+  versionsRestored Version[]      @relation("VersionRestorer")
+  auditLogs        AuditLog[]
 
   @@map("users")
 }

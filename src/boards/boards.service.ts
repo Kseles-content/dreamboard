@@ -164,6 +164,11 @@ export class BoardsService {
         });
       }
 
+      await tx.user.updateMany({
+        where: { id: userId, onboardedAt: null },
+        data: { onboardedAt: new Date() },
+      });
+
       return board;
     });
 

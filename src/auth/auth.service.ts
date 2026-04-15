@@ -24,7 +24,7 @@ export class AuthService {
       });
     }
 
-    return this.issueTokenPair(user.id, user.email);
+    return this.issueTokenPair(user.id, user.email, user.onboardedAt);
   }
 
   async refresh(refreshToken: string) {
@@ -87,7 +87,7 @@ export class AuthService {
     return { revoked: true, tokenId };
   }
 
-  private async issueTokenPair(userId: number, email: string) {
+  private async issueTokenPair(userId: number, email: string, onboardedAt: Date | null) {
     const accessToken = await this.jwtService.signAsync(
       { sub: userId, email },
       {
@@ -112,6 +112,11 @@ export class AuthService {
       refreshToken,
       refreshTokenId: created.id,
       tokenType: 'Bearer',
+      user: {
+        id: userId,
+        email,
+        onboardedAt: onboardedAt ? onboardedAt.toISOString() : null,
+      },
     };
   }
 }

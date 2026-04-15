@@ -113,6 +113,13 @@ describe('DreamBoard API (e2e)', () => {
 
     const boardId = create.body.id as number;
 
+    const cardsBefore = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(cardsBefore.body).toHaveLength(0);
+
     await request(app.getHttpServer())
       .patch(`/v1/boards/${boardId}`)
       .set('Authorization', `Bearer ${token}`)
@@ -190,6 +197,9 @@ describe('DreamBoard API (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(unpinned.body.isPinned).toBe(false);
+
+    const user = await prisma.user.findUnique({ where: { email: 'templates@example.com' } });
+    expect(user?.onboardedAt).toBeTruthy();
   });
 
   it('returns BOARD_LIMIT_REACHED after 50 boards with machine code', async () => {

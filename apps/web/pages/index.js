@@ -14,6 +14,7 @@ import { Api as DreamboardApi, ContentType } from '../src/lib/api/client';
 import Button from '../components/ui/Button';
 import Input from '../components/ui/Input';
 import Spinner from '../components/ui/Spinner';
+import Modal from '../components/ui/Modal';
 import { Toast, useToast } from '../components/ui/Toast';
 
 const DEFAULT_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
@@ -30,6 +31,13 @@ export default function Home() {
 
   const [boards, setBoards] = useState([]);
   const [activeBoardId, setActiveBoardId] = useState(null);
+  const [currentUser, setCurrentUser] = useState(null);
+  const [templates, setTemplates] = useState([]);
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [emptyBoardTitle, setEmptyBoardTitle] = useState('');
+  const [templateConfirmOpen, setTemplateConfirmOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [history, setHistory] = useState(createHistory([]));
   const [savedCards, setSavedCards] = useState([]);
 
@@ -68,14 +76,15 @@ export default function Home() {
       setToken(parsed.token || '');
       setRefreshToken(parsed.refreshToken || '');
       setBaseUrl(parsed.baseUrl || DEFAULT_API);
+      setCurrentUser(parsed.user || null);
     } catch {}
   }, []);
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem('db_web_auth', JSON.stringify({ token, refreshToken, baseUrl }));
+      localStorage.setItem('db_web_auth', JSON.stringify({ token, refreshToken, baseUrl, user: currentUser }));
     }
-  }, [token, refreshToken, baseUrl]);
+  }, [token, refreshToken, baseUrl, currentUser]);
 
   useEffect(() => {
     const onBeforeUnload = (e) => {
@@ -101,6 +110,11 @@ export default function Home() {
   }, [uploadError, showToast]);
 
   const authed = useMemo(() => Boolean(token), [token]);
+
+  useEffect(() => {
+    if (!authed) return;
+    loadTemplates();
+  }, [authed]);
   const typedApi = useMemo(() => new DreamboardApi({
     baseUrl,
     baseApiParams: {
@@ -138,8 +152,13 @@ export default function Home() {
       );
       setToken(auth.accessToken);
       setRefreshToken(auth.refreshToken || '');
+      setCurrentUser(auth.user || null);
       await trackEvent('login', { email });
       await loadBoards(auth.accessToken);
+      if (!auth.user?.onboardedAt) {
+        await loadTemplates();
+        setShowOnboarding(true);
+      }
     } catch (e2) {
       await captureError(e2, { action: 'login' });
       setError(String(e2.message || e2));
@@ -157,6 +176,9 @@ export default function Home() {
     setBoards([]);
     setActiveBoardId(null);
     setHistory(createHistory([]));
+    setCurrentUser(null);
+    setTemplates([]);
+    setShowOnboarding(false);
     setSavedCards([]);
     setDirty(false);
     localStorage.removeItem('db_web_auth');
@@ -179,23 +201,97 @@ export default function Home() {
     } finally { setLoading(false); }
   }
 
+  async function loadTemplates() {
+    try {
+      const res = await typedApi.request({
+        path: '/v1/templates',
+        method: 'GET',
+        format: 'json',
+      });
+      setTemplates(res.data?.items || []);
+    } catch (e) {
+      await captureError(e, { action: 'load_templates' });
+      setTemplates([]);
+    }
+  }
+
+  async function startOnboardingScenario(scenario) {
+    setOnboardingLoading(true);
+    try {
+      const match = templates.find((t) => {
+        const id = String(t.id || '').toLowerCase();
+        if (scenario === 'goal') return id.includes('tpl-goal-');
+        if (scenario === 'moodboard') return id.includes('tpl-moodboard-');
+        return id.includes('tpl-sprint-');
+      });
+      if (!match) throw new Error('TEMPLATE_FOR_SCENARIO_NOT_FOUND');
+
+      const createdRes = await typedApi.request({
+        path: '/v1/boards/from-template',
+        method: 'POST',
+        type: ContentType.Json,
+        body: { templateId: match.id },
+        format: 'json',
+      });
+
+      const created = createdRes.data;
+      setCurrentUser((prev) => ({ ...(prev || {}), onboardedAt: new Date().toISOString() }));
+      setShowOnboarding(false);
+      await loadBoards();
+      if (created?.id) await openBoard(Number(created.id));
+      showToast('Онбординг завершён, доска создана', 'success');
+    } catch (e) {
+      await captureError(e, { action: 'onboarding_start', scenario });
+      showToast('Не удалось создать доску из шаблона', 'error');
+    } finally {
+      setOnboardingLoading(false);
+    }
+  }
+
+  async function createBoardFromTemplate(template) {
+    if (!template?.id) return;
+    setLoading(true);
+    setError('');
+    try {
+      const createdRes = await typedApi.request({
+        path: '/v1/boards/from-template',
+        method: 'POST',
+        type: ContentType.Json,
+        body: { templateId: template.id },
+        format: 'json',
+      });
+      const created = createdRes.data;
+      setTemplateConfirmOpen(false);
+      setSelectedTemplate(null);
+      await loadBoards();
+      if (created?.id) await openBoard(Number(created.id));
+      showToast('Доска из шаблона создана', 'success');
+    } catch (e) {
+      await captureError(e, { action: 'create_board_from_template', templateId: template.id });
+      setError(String(e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function createBoard() {
-    const title = prompt('Board title');
-    if (!title) return;
     setLoading(true); setError('');
+    const title = emptyBoardTitle.trim();
     try {
       const { data: created } = await typedApi.v1.boardsCreate(
-        { title },
+        title ? { title } : { title: 'Untitled board' },
         { type: ContentType.Json },
       );
+      setEmptyBoardTitle('');
       if (created && created.id) {
         setBoards((prev) => {
           const exists = prev.some((b) => String(b.id) === String(created.id));
           return exists ? prev : [created, ...prev];
         });
+        await openBoard(Number(created.id));
       }
       await trackEvent('create_board', { titleLength: title.length });
-      showToast('Доска создана', 'success');
+      showToast('Пустая доска создана', 'success');
       await loadBoards();
     } catch (e2) {
       await captureError(e2, { action: 'create_board' });
@@ -616,7 +712,6 @@ export default function Home() {
     <h1>DreamBoard Web Editor v1 (text + image cards)</h1>
     <div className="toolbar">
       <Button variant="secondary" onClick={loadBoards}>Reload boards</Button>
-      <Button onClick={createBoard}>Create board</Button>
       <Button variant="ghost" onClick={logout}>Logout</Button>
       <Button variant="ghost" onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</Button>
       <Button variant="ghost" onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</Button>
@@ -680,6 +775,44 @@ export default function Home() {
     </section> : null}
 
     <section>
+      <h2>Home Dashboard</h2>
+      <div className="list-item-card" style={{ marginBottom: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Create empty board</h3>
+        <div className="inline-actions">
+          <Input
+            placeholder="Board name (optional)"
+            value={emptyBoardTitle}
+            onChange={(e) => setEmptyBoardTitle(e.target.value)}
+          />
+          <Button onClick={createBoard}>Create empty board</Button>
+        </div>
+      </div>
+
+      <div className="list-item-card">
+        <h3 style={{ marginTop: 0 }}>Start with template</h3>
+        {templates.length === 0 ? <p>Шаблоны загружаются...</p> : (
+          <ul className="board-list">
+            {templates.slice(0, 8).map((tpl) => (
+              <li className="list-item-card" key={tpl.id}>
+                <div style={{ fontWeight: 600 }}>{tpl.name}</div>
+                <div style={{ fontSize: 13, opacity: 0.85 }}>{tpl.description || 'Без описания'}</div>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setSelectedTemplate(tpl);
+                    setTemplateConfirmOpen(true);
+                  }}
+                >
+                  Use template
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+
+    <section>
       <h2>Boards list</h2>
       {boards.length === 0 ? <p>Нет досок</p> :
         <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
@@ -688,7 +821,16 @@ export default function Home() {
     <section>
       <h2>Open board: {activeBoardId || 'none'}</h2>
       {activeBoardId && <Button onClick={addCard}>Add text card</Button>}
-      {!activeBoardId ? <p>Сначала выберите доску</p> : cards.length === 0 ? <p>Нет карточек</p> :
+      {!activeBoardId ? <p>Сначала выберите доску</p> : cards.length === 0 ? (
+        <div className="list-item-card" style={{ marginTop: 12, textAlign: 'center', padding: 24 }}>
+          <div style={{ fontSize: 36, marginBottom: 8 }}>🗂️</div>
+          <p style={{ marginBottom: 12 }}>У этой доски пока нет карточек</p>
+          <Button onClick={() => applyLocalCards([
+            ...cards,
+            { id: `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, type: 'text', text: 'Первая карточка' },
+          ])}>Добавить первую карточку</Button>
+        </div>
+      ) : (
         <ul className="card-list">{cards.map((c) => <li className="list-item-card" key={c.id}>
           {c.type === 'image'
             ? <div>
@@ -699,8 +841,46 @@ export default function Home() {
           {' '}
           {c.type !== 'image' ? <Button variant="ghost" onClick={() => editCard(c)} aria-label={`Редактировать карточку ${c.id}`}>Edit</Button> : null}
           <Button variant="danger" onClick={() => deleteCard(c)} aria-label={`Удалить карточку ${c.id}`}>Delete</Button>
-        </li>)}</ul>}
+        </li>)}</ul>
+      )}
     </section>
+
+    <Modal open={showOnboarding} onClose={() => {}} title="Выбери стартовый сценарий">
+      <p style={{ marginTop: 0 }}>Создадим первую доску из готового шаблона:</p>
+      <div style={{ display: 'grid', gap: 8 }}>
+        <Button disabled={onboardingLoading} onClick={() => startOnboardingScenario('goal')}>Goal board (доска для целей)</Button>
+        <Button disabled={onboardingLoading} onClick={() => startOnboardingScenario('moodboard')}>Moodboard (визуальная доска)</Button>
+        <Button disabled={onboardingLoading} onClick={() => startOnboardingScenario('sprint')}>Sprint board (доска для спринта)</Button>
+      </div>
+      {onboardingLoading ? <p style={{ marginTop: 8 }}>Создаю доску…</p> : null}
+    </Modal>
+
+    <Modal
+      open={templateConfirmOpen}
+      onClose={() => {
+        setTemplateConfirmOpen(false);
+        setSelectedTemplate(null);
+      }}
+      title="Создать доску из шаблона?"
+    >
+      <p style={{ marginTop: 0 }}>
+        {selectedTemplate ? `Шаблон: ${selectedTemplate.name}` : 'Выбран шаблон'}
+      </p>
+      <div className="inline-actions">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setTemplateConfirmOpen(false);
+            setSelectedTemplate(null);
+          }}
+        >
+          Cancel
+        </Button>
+        <Button onClick={() => createBoardFromTemplate(selectedTemplate)}>
+          Confirm
+        </Button>
+      </div>
+    </Modal>
 
     <div className="ui-toast-wrap">
       <Toast message={toast?.message} kind={toast?.kind || 'error'} onClose={clearToast} />
