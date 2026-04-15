@@ -256,12 +256,19 @@ Set in `apps/web` environment:
 - `NEXT_PUBLIC_POSTHOG_HOST` — optional (default `https://app.posthog.com`)
 
 Key tracked events:
-- `login`
-- `create_board`
-- `create_card`
+- `onboarding_started`
+- `onboarding_completed` (`templateId`)
+- `template_selected` (`templateId`)
+- `board_created` (`source=template|empty`)
+- `first_card_added` (`cardType`)
+- `share_link_created`
+- `export_clicked` (`format=png|jpg`)
+- `resume_clicked`
 - `upload_image`
-- `create_share_link`
-- `export_board`
+
+Debug verification:
+- If `NEXT_PUBLIC_POSTHOG_KEY` is not set, events are printed as `[posthog-disabled] <event>` in browser console.
+- If key is set, events are sent to `${NEXT_PUBLIC_POSTHOG_HOST || 'https://app.posthog.com'}/capture/`.
 
 Manual Sentry smoke check:
 - Use `Test Sentry Error` button in web editor.

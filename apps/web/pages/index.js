@@ -66,6 +66,7 @@ export default function Home() {
   const queuedSaveRef = useRef(false);
   const autosaveRef = useRef(null);
   const uploadInputRef = useRef(null);
+  const onboardingStartedTrackedRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
   const cards = history.present;
@@ -176,6 +177,10 @@ export default function Home() {
       await loadBoards(auth.accessToken);
       if (!auth.user?.onboardedAt) {
         await loadTemplates();
+        if (!onboardingStartedTrackedRef.current) {
+          onboardingStartedTrackedRef.current = true;
+          await trackEvent('onboarding_started', { source: 'login' });
+        }
         setShowOnboarding(true);
       }
     } catch (e2) {
@@ -198,6 +203,7 @@ export default function Home() {
     setCurrentUser(null);
     setTemplates([]);
     setShowOnboarding(false);
+    onboardingStartedTrackedRef.current = false;
     setSavedCards([]);
     setDirty(false);
     localStorage.removeItem('db_web_auth');
@@ -258,6 +264,8 @@ export default function Home() {
       });
       if (!match) throw new Error('TEMPLATE_FOR_SCENARIO_NOT_FOUND');
 
+      await trackEvent('template_selected', { templateId: match.id, source: 'onboarding', scenario });
+
       const createdRes = await typedApi.request({
         path: '/v1/boards/from-template',
         method: 'POST',
@@ -269,6 +277,8 @@ export default function Home() {
       const created = createdRes.data;
       setCurrentUser((prev) => ({ ...(prev || {}), onboardedAt: new Date().toISOString() }));
       setShowOnboarding(false);
+      await trackEvent('board_created', { source: 'template', templateId: match.id });
+      await trackEvent('onboarding_completed', { templateId: match.id, scenario });
       await loadBoards();
       if (created?.id) await openBoard(Number(created.id));
       showToast('Онбординг завершён, доска создана', 'success');
@@ -295,6 +305,7 @@ export default function Home() {
       const created = createdRes.data;
       setTemplateConfirmOpen(false);
       setSelectedTemplate(null);
+      await trackEvent('board_created', { source: 'template', templateId: template.id });
       await loadBoards();
       if (created?.id) await openBoard(Number(created.id));
       showToast('Доска из шаблона создана', 'success');
@@ -322,7 +333,7 @@ export default function Home() {
         });
         await openBoard(Number(created.id));
       }
-      await trackEvent('create_board', { titleLength: title.length });
+      await trackEvent('board_created', { source: 'empty', titleLength: title.length });
       showToast('Пустая доска создана', 'success');
       await loadBoards();
     } catch (e2) {
@@ -371,8 +382,12 @@ export default function Home() {
           { type: ContentType.Json },
         );
         const created = data.created;
-        await trackEvent('create_card', { boardId: activeBoardId, type: created.type || card.type || 'text' });
         workingCards = workingCards.map((c) => (c.id === card.id ? created : c));
+      }
+
+      if (baseCards.length === 0 && creates.length > 0) {
+        const firstType = creates[0]?.type || 'text';
+        await trackEvent('first_card_added', { boardId: activeBoardId, cardType: firstType });
       }
 
       for (const card of updates) {
@@ -551,7 +566,7 @@ export default function Home() {
     setError('');
     try {
       await typedApi.v1.boardsShareLinksCreate(String(activeBoardId));
-      await trackEvent('create_share_link', { boardId: activeBoardId });
+      await trackEvent('share_link_created', { boardId: activeBoardId });
       showToast('Ссылка для шаринга создана', 'success');
       await loadShareLinks();
     } catch (e2) {
@@ -645,7 +660,7 @@ export default function Home() {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
-      await trackEvent('export_board', { format, boardId: activeBoardId });
+      await trackEvent('export_clicked', { format, boardId: activeBoardId });
     } catch (e) {
       await captureError(e, { action: 'export_board', format, boardId: activeBoardId });
       setError(String(e.message || e));
@@ -818,7 +833,10 @@ export default function Home() {
               Last opened: {new Date(resumeBoard.lastOpenedAt).toLocaleString()}
             </div>
           </div>
-          <Button onClick={() => openBoard(Number(resumeBoard.id))}>Continue</Button>
+          <Button onClick={async () => {
+            await trackEvent('resume_clicked', { boardId: Number(resumeBoard.id) });
+            await openBoard(Number(resumeBoard.id));
+          }}>Continue</Button>
         </div>
       ) : null}
       <div className="list-item-card" style={{ marginBottom: 12 }}>
@@ -843,7 +861,8 @@ export default function Home() {
                 <div style={{ fontSize: 13, opacity: 0.85 }}>{tpl.description || 'Без описания'}</div>
                 <Button
                   variant="secondary"
-                  onClick={() => {
+                  onClick={async () => {
+                    await trackEvent('template_selected', { templateId: tpl.id, source: 'dashboard' });
                     setSelectedTemplate(tpl);
                     setTemplateConfirmOpen(true);
                   }}
