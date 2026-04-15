@@ -12,6 +12,7 @@ servers:
 tags:
   - name: auth
   - name: boards
+  - name: templates
   - name: cards
   - name: versions
   - name: share-links
@@ -102,6 +103,61 @@ paths:
               schema:
                 $ref: '#/components/schemas/Board'
 
+  /v1/boards/recent:
+    get:
+      tags: [boards]
+      summary: List recently opened boards (UX Sprint Day 1)
+      description: Returns recent boards ordered by last opened timestamp; supports lightweight search by title.
+      x-implemented: false
+      parameters:
+        - in: query
+          name: limit
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 50
+            default: 20
+        - in: query
+          name: q
+          description: Case-insensitive search against board title.
+          schema:
+            type: string
+            maxLength: 120
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecentBoardsResponse'
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/boards/from-template:
+    post:
+      tags: [boards, templates]
+      summary: Create board from template (UX Sprint Day 1)
+      x-implemented: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBoardFromTemplateRequest'
+      responses:
+        '201':
+          description: Created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '404':
+          description: Template not found
+        '409':
+          description: Template is not active
+        '501':
+          description: Not implemented in current backend build
+
   /v1/boards/{boardId}:
     parameters:
       - $ref: '#/components/parameters/BoardId'
@@ -143,6 +199,53 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeleteBoardResponse'
+
+  /v1/boards/{boardId}/pin:
+    parameters:
+      - $ref: '#/components/parameters/BoardId'
+    post:
+      tags: [boards]
+      summary: Pin or unpin board on Home Dashboard (UX Sprint Day 1)
+      x-implemented: false
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PinBoardRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PinBoardResponse'
+        '404':
+          description: Board not found
+        '501':
+          description: Not implemented in current backend build
+
+  /v1/templates:
+    get:
+      tags: [templates]
+      summary: List board templates for onboarding/template picker (UX Sprint Day 1)
+      x-implemented: false
+      parameters:
+        - in: query
+          name: scenario
+          description: Optional filter by onboarding scenario.
+          schema:
+            type: string
+            enum: [goal, moodboard, sprint]
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TemplatesResponse'
+        '501':
+          description: Not implemented in current backend build
 
   /v1/boards/{boardId}/cards:
     parameters:
@@ -446,3 +549,108 @@ components:
           type: boolean
         card:
           $ref: '#/components/schemas/Card'
+
+    BoardListItem:
+      allOf:
+        - $ref: '#/components/schemas/Board'
+        - type: object
+          properties:
+            isPinned:
+              type: boolean
+              default: false
+            lastOpenedAt:
+              type: string
+              format: date-time
+              nullable: true
+            pinUpdatedAt:
+              type: string
+              format: date-time
+              nullable: true
+
+    RecentBoardsResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/BoardListItem'
+        nextCursor:
+          type: string
+          nullable: true
+
+    PinBoardRequest:
+      type: object
+      required: [pinned]
+      properties:
+        pinned:
+          type: boolean
+          description: true to pin board, false to unpin.
+
+    PinBoardResponse:
+      type: object
+      required: [boardId, pinned]
+      properties:
+        boardId:
+          type: string
+        pinned:
+          type: boolean
+        pinUpdatedAt:
+          type: string
+          format: date-time
+          nullable: true
+
+    Template:
+      type: object
+      required: [id, slug, name, scenario, isActive, preview]
+      properties:
+        id:
+          type: string
+        slug:
+          type: string
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        scenario:
+          type: string
+          enum: [goal, moodboard, sprint]
+        isActive:
+          type: boolean
+        preview:
+          type: object
+          required: [coverImageUrl, estimatedSetupMinutes]
+          properties:
+            coverImageUrl:
+              type: string
+              format: uri
+            estimatedSetupMinutes:
+              type: integer
+              minimum: 1
+            tags:
+              type: array
+              items:
+                type: string
+
+    TemplatesResponse:
+      type: object
+      required: [items]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Template'
+
+    CreateBoardFromTemplateRequest:
+      type: object
+      required: [templateId]
+      properties:
+        templateId:
+          type: string
+        title:
+          type: string
+          description: Optional custom title. Falls back to template name.
+        description:
+          type: string
+          nullable: true
