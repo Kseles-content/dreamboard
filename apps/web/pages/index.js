@@ -110,6 +110,11 @@ export default function Home() {
   }, [uploadError, showToast]);
 
   const authed = useMemo(() => Boolean(token), [token]);
+  const resumeBoard = useMemo(() => {
+    const withLastOpened = boards.filter((b) => Boolean(b.lastOpenedAt));
+    if (withLastOpened.length === 0) return null;
+    return withLastOpened.sort((a, b) => new Date(b.lastOpenedAt).getTime() - new Date(a.lastOpenedAt).getTime())[0];
+  }, [boards]);
 
   useEffect(() => {
     if (!authed) return;
@@ -392,6 +397,7 @@ export default function Home() {
     setActiveBoardId(id);
     setLoading(true); setError('');
     try {
+      await typedApi.v1.boardsDetail(String(id));
       const { data: remoteCards } = await typedApi.v1.boardsCardsList(String(id));
       setSavedCards(remoteCards);
 
@@ -776,6 +782,18 @@ export default function Home() {
 
     <section>
       <h2>Home Dashboard</h2>
+      {resumeBoard ? (
+        <div className="list-item-card" style={{ marginBottom: 12 }}>
+          <h3 style={{ marginTop: 0 }}>Continue where you left off</h3>
+          <div style={{ marginBottom: 8 }}>
+            <b>{resumeBoard.title}</b>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Last opened: {new Date(resumeBoard.lastOpenedAt).toLocaleString()}
+            </div>
+          </div>
+          <Button onClick={() => openBoard(Number(resumeBoard.id))}>Continue</Button>
+        </div>
+      ) : null}
       <div className="list-item-card" style={{ marginBottom: 12 }}>
         <h3 style={{ marginTop: 0 }}>Create empty board</h3>
         <div className="inline-actions">

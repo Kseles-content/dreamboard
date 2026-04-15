@@ -111,7 +111,17 @@ describe('DreamBoard API (e2e)', () => {
       .send({ title: 'Roadmap', description: 'Q2 goals' })
       .expect(201);
 
-    const boardId = create.body.id as number;
+    const boardId = Number(create.body.id);
+    expect(create.body.lastOpenedAt).toBeTruthy();
+
+    await prisma.board.update({ where: { id: boardId }, data: { lastOpenedAt: new Date('2000-01-01T00:00:00Z') } });
+
+    const boardAfterOpen = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(new Date(boardAfterOpen.body.lastOpenedAt).getTime()).toBeGreaterThan(new Date('2000-01-01T00:00:00Z').getTime());
 
     const cardsBefore = await request(app.getHttpServer())
       .get(`/v1/boards/${boardId}/cards`)

@@ -91,6 +91,7 @@ export class BoardsService {
         ownerId: userId,
         title: input.title,
         description: input.description ?? null,
+        lastOpenedAt: new Date(),
       },
     });
 

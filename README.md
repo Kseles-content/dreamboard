@@ -216,6 +216,13 @@ bash scripts/heartbeat-audit.sh
 - Selecting a template opens confirmation modal; confirmation creates board via `POST /v1/boards/from-template` and opens it.
 - Home Dashboard has **Create empty board** flow with optional board title; created board opens immediately.
 
+## Day 6 Resume flow
+
+- Backend updates `lastOpenedAt` on every `GET /v1/boards/:boardId`.
+- Backend sets `lastOpenedAt` on `POST /v1/boards` (new empty boards are immediately resumable).
+- Home Dashboard shows **Continue where you left off** when at least one board has `lastOpenedAt`.
+- Continue button opens the latest board by `lastOpenedAt`.
+
 Week 7 progress: backend supports image-card creation from finalized uploads (`type=image`, `objectKey`).
 
 See: `apps/web/README.md` for runbook and tests.
