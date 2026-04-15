@@ -190,6 +190,9 @@ describe('DreamBoard API (e2e)', () => {
       .set('Authorization', `Bearer ${token}`)
       .expect(200);
     expect(unpinned.body.isPinned).toBe(false);
+
+    const user = await prisma.user.findUnique({ where: { email: 'templates@example.com' } });
+    expect(user?.onboardedAt).toBeTruthy();
   });
 
   it('returns BOARD_LIMIT_REACHED after 50 boards with machine code', async () => {

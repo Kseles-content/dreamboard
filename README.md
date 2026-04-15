@@ -48,6 +48,8 @@ Key tables and fields:
   - `description` (`string`, nullable)
   - `snapshot` (`json`) — initial board state payload
   - `createdAt`, `updatedAt`
+- `users`
+  - `onboardedAt` (`timestamp`, nullable) — set when user completes onboarding via template creation
 
 Template seed data:
 
@@ -88,13 +90,17 @@ This removes:
 ## API
 
 ### Auth
-- `POST /v1/auth/login`
+- `POST /v1/auth/login` (returns token pair + `user.onboardedAt`)
 - `POST /v1/auth/refresh`
 - `POST /v1/auth/logout`
 
 ### Boards (JWT required)
 - `GET /v1/boards` (cursor pagination: `?limit=<n>&cursor=<id>`)
+- `GET /v1/boards/recent` (top 10 by `lastOpenedAt`, excludes null)
 - `POST /v1/boards`
+- `POST /v1/boards/from-template`
+- `POST /v1/boards/:boardId/pin`
+- `DELETE /v1/boards/:boardId/pin`
 - `GET /v1/boards/:boardId`
 - `PATCH /v1/boards/:boardId`
 - `DELETE /v1/boards/:boardId` (soft delete)
@@ -107,6 +113,7 @@ This removes:
 - `POST /v1/boards/:boardId/share-links` (owner: create public view-only link)
 - `DELETE /v1/boards/:boardId/share-links/:linkId` (owner: revoke link)
 - `GET /v1/share/:token` (public view-only board data, no auth)
+- `GET /v1/templates` (list templates for onboarding)
 
 Limit: max 50 boards per user. On overflow API returns:
 - `code: BOARD_LIMIT_REACHED`
