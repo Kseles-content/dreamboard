@@ -210,6 +210,12 @@ bash scripts/heartbeat-audit.sh
 
 ✅ Web editor now includes autosave (800ms debounce), undo/redo history (depth 50), dirty-state + before-unload warning, and save-retry UX.
 
+## Day 5 UX additions
+
+- Home Dashboard now has **Start with template** block (shows up to 8 templates with title/description).
+- Selecting a template opens confirmation modal; confirmation creates board via `POST /v1/boards/from-template` and opens it.
+- Home Dashboard has **Create empty board** flow with optional board title; created board opens immediately.
+
 Week 7 progress: backend supports image-card creation from finalized uploads (`type=image`, `objectKey`).
 
 See: `apps/web/README.md` for runbook and tests.

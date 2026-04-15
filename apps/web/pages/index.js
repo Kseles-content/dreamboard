@@ -35,6 +35,9 @@ export default function Home() {
   const [templates, setTemplates] = useState([]);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardingLoading, setOnboardingLoading] = useState(false);
+  const [emptyBoardTitle, setEmptyBoardTitle] = useState('');
+  const [templateConfirmOpen, setTemplateConfirmOpen] = useState(false);
+  const [selectedTemplate, setSelectedTemplate] = useState(null);
   const [history, setHistory] = useState(createHistory([]));
   const [savedCards, setSavedCards] = useState([]);
 
@@ -107,6 +110,11 @@ export default function Home() {
   }, [uploadError, showToast]);
 
   const authed = useMemo(() => Boolean(token), [token]);
+
+  useEffect(() => {
+    if (!authed) return;
+    loadTemplates();
+  }, [authed]);
   const typedApi = useMemo(() => new DreamboardApi({
     baseUrl,
     baseApiParams: {
@@ -240,23 +248,50 @@ export default function Home() {
     }
   }
 
+  async function createBoardFromTemplate(template) {
+    if (!template?.id) return;
+    setLoading(true);
+    setError('');
+    try {
+      const createdRes = await typedApi.request({
+        path: '/v1/boards/from-template',
+        method: 'POST',
+        type: ContentType.Json,
+        body: { templateId: template.id },
+        format: 'json',
+      });
+      const created = createdRes.data;
+      setTemplateConfirmOpen(false);
+      setSelectedTemplate(null);
+      await loadBoards();
+      if (created?.id) await openBoard(Number(created.id));
+      showToast('Доска из шаблона создана', 'success');
+    } catch (e) {
+      await captureError(e, { action: 'create_board_from_template', templateId: template.id });
+      setError(String(e.message || e));
+    } finally {
+      setLoading(false);
+    }
+  }
+
   async function createBoard() {
-    const title = prompt('Board title');
-    if (!title) return;
     setLoading(true); setError('');
+    const title = emptyBoardTitle.trim();
     try {
       const { data: created } = await typedApi.v1.boardsCreate(
-        { title },
+        title ? { title } : { title: 'Untitled board' },
         { type: ContentType.Json },
       );
+      setEmptyBoardTitle('');
       if (created && created.id) {
         setBoards((prev) => {
           const exists = prev.some((b) => String(b.id) === String(created.id));
           return exists ? prev : [created, ...prev];
         });
+        await openBoard(Number(created.id));
       }
       await trackEvent('create_board', { titleLength: title.length });
-      showToast('Доска создана', 'success');
+      showToast('Пустая доска создана', 'success');
       await loadBoards();
     } catch (e2) {
       await captureError(e2, { action: 'create_board' });
@@ -677,7 +712,6 @@ export default function Home() {
     <h1>DreamBoard Web Editor v1 (text + image cards)</h1>
     <div className="toolbar">
       <Button variant="secondary" onClick={loadBoards}>Reload boards</Button>
-      <Button onClick={createBoard}>Create board</Button>
       <Button variant="ghost" onClick={logout}>Logout</Button>
       <Button variant="ghost" onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</Button>
       <Button variant="ghost" onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</Button>
@@ -741,6 +775,44 @@ export default function Home() {
     </section> : null}
 
     <section>
+      <h2>Home Dashboard</h2>
+      <div className="list-item-card" style={{ marginBottom: 12 }}>
+        <h3 style={{ marginTop: 0 }}>Create empty board</h3>
+        <div className="inline-actions">
+          <Input
+            placeholder="Board name (optional)"
+            value={emptyBoardTitle}
+            onChange={(e) => setEmptyBoardTitle(e.target.value)}
+          />
+          <Button onClick={createBoard}>Create empty board</Button>
+        </div>
+      </div>
+
+      <div className="list-item-card">
+        <h3 style={{ marginTop: 0 }}>Start with template</h3>
+        {templates.length === 0 ? <p>Шаблоны загружаются...</p> : (
+          <ul className="board-list">
+            {templates.slice(0, 8).map((tpl) => (
+              <li className="list-item-card" key={tpl.id}>
+                <div style={{ fontWeight: 600 }}>{tpl.name}</div>
+                <div style={{ fontSize: 13, opacity: 0.85 }}>{tpl.description || 'Без описания'}</div>
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    setSelectedTemplate(tpl);
+                    setTemplateConfirmOpen(true);
+                  }}
+                >
+                  Use template
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
+
+    <section>
       <h2>Boards list</h2>
       {boards.length === 0 ? <p>Нет досок</p> :
         <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
@@ -781,6 +853,33 @@ export default function Home() {
         <Button disabled={onboardingLoading} onClick={() => startOnboardingScenario('sprint')}>Sprint board (доска для спринта)</Button>
       </div>
       {onboardingLoading ? <p style={{ marginTop: 8 }}>Создаю доску…</p> : null}
+    </Modal>
+
+    <Modal
+      open={templateConfirmOpen}
+      onClose={() => {
+        setTemplateConfirmOpen(false);
+        setSelectedTemplate(null);
+      }}
+      title="Создать доску из шаблона?"
+    >
+      <p style={{ marginTop: 0 }}>
+        {selectedTemplate ? `Шаблон: ${selectedTemplate.name}` : 'Выбран шаблон'}
+      </p>
+      <div className="inline-actions">
+        <Button
+          variant="secondary"
+          onClick={() => {
+            setTemplateConfirmOpen(false);
+            setSelectedTemplate(null);
+          }}
+        >
+          Cancel
+        </Button>
+        <Button onClick={() => createBoardFromTemplate(selectedTemplate)}>
+          Confirm
+        </Button>
+      </div>
     </Modal>
 
     <div className="ui-toast-wrap">
