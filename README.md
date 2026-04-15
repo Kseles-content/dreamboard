@@ -95,7 +95,7 @@ This removes:
 - `POST /v1/auth/logout`
 
 ### Boards (JWT required)
-- `GET /v1/boards` (cursor pagination: `?limit=<n>&cursor=<id>`)
+- `GET /v1/boards` (supports `limit`, `cursor`, `query`, `updatedSince`, `pinned`)
 - `GET /v1/boards/recent` (top 10 by `lastOpenedAt`, excludes null)
 - `POST /v1/boards`
 - `POST /v1/boards/from-template`
@@ -222,6 +222,18 @@ bash scripts/heartbeat-audit.sh
 - Backend sets `lastOpenedAt` on `POST /v1/boards` (new empty boards are immediately resumable).
 - Home Dashboard shows **Continue where you left off** when at least one board has `lastOpenedAt`.
 - Continue button opens the latest board by `lastOpenedAt`.
+
+## Day 7 Search v1
+
+- Backend supports combined filters in `GET /v1/boards`:
+  - `query` (title contains, case-insensitive)
+  - `updatedSince` (ISO date filter by `updatedAt >=`)
+  - `pinned` (`true` / `false`)
+  - pagination: `limit` + `cursor`
+- Home Dashboard includes:
+  - debounced title search input (300ms)
+  - `Pinned only` filter
+  - `Updated last 7 days` filter
 
 Week 7 progress: backend supports image-card creation from finalized uploads (`type=image`, `objectKey`).
 

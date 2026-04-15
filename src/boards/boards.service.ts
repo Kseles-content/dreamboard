@@ -48,13 +48,23 @@ export class BoardsService {
     private readonly configService: ConfigService,
   ) {}
 
-  async listBoards(userId: number, limit = 20, cursor?: number): Promise<ApiBoard[]> {
-    const normalizedLimit = Math.min(Math.max(limit, 1), 100);
+  async listBoards(
+    userId: number,
+    options: { limit?: number; cursor?: number; query?: string; updatedSince?: string; pinned?: string } = {},
+  ): Promise<ApiBoard[]> {
+    const normalizedLimit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+    const query = options.query?.trim();
+    const pinned = typeof options.pinned === 'string' ? options.pinned === 'true' : undefined;
+    const updatedSince = options.updatedSince ? new Date(options.updatedSince) : undefined;
+
     const rows = await this.prisma.board.findMany({
       where: {
         ownerId: userId,
         deletedAt: null,
-        ...(cursor ? { id: { gt: cursor } } : {}),
+        ...(options.cursor ? { id: { gt: options.cursor } } : {}),
+        ...(query ? { title: { contains: query, mode: 'insensitive' } } : {}),
+        ...(typeof pinned === 'boolean' ? { isPinned: pinned } : {}),
+        ...(updatedSince && !Number.isNaN(updatedSince.getTime()) ? { updatedAt: { gte: updatedSince } } : {}),
       },
       orderBy: { id: 'asc' },
       take: normalizedLimit + 1,

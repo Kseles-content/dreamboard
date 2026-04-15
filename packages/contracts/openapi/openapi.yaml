@@ -76,7 +76,24 @@ paths:
         - in: query
           name: cursor
           schema:
+            type: integer
+        - in: query
+          name: query
+          description: Case-insensitive title search (partial match).
+          schema:
             type: string
+            maxLength: 120
+        - in: query
+          name: updatedSince
+          description: Filter boards updated at or after this ISO timestamp.
+          schema:
+            type: string
+            format: date-time
+        - in: query
+          name: pinned
+          description: Filter by pinned state.
+          schema:
+            type: boolean
       responses:
         '200':
           description: OK

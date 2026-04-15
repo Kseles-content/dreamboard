@@ -38,6 +38,10 @@ export default function Home() {
   const [emptyBoardTitle, setEmptyBoardTitle] = useState('');
   const [templateConfirmOpen, setTemplateConfirmOpen] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState(null);
+  const [searchInput, setSearchInput] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [filterPinnedOnly, setFilterPinnedOnly] = useState(false);
+  const [filterUpdated7Days, setFilterUpdated7Days] = useState(false);
   const [history, setHistory] = useState(createHistory([]));
   const [savedCards, setSavedCards] = useState([]);
 
@@ -120,6 +124,16 @@ export default function Home() {
     if (!authed) return;
     loadTemplates();
   }, [authed]);
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(searchInput), 300);
+    return () => clearTimeout(t);
+  }, [searchInput]);
+
+  useEffect(() => {
+    if (!authed) return;
+    loadBoards();
+  }, [authed, debouncedSearch, filterPinnedOnly, filterUpdated7Days]);
   const typedApi = useMemo(() => new DreamboardApi({
     baseUrl,
     baseApiParams: {
@@ -199,8 +213,21 @@ export default function Home() {
             baseApiParams: { headers: { authorization: `Bearer ${authHeaderToken}` } },
           })
         : typedApi;
-      const { data } = await client.v1.boardsList({ limit: 50 });
-      setBoards(data || []);
+
+      const query = {
+        limit: 50,
+        ...(debouncedSearch.trim() ? { query: debouncedSearch.trim() } : {}),
+        ...(filterPinnedOnly ? { pinned: true } : {}),
+        ...(filterUpdated7Days ? { updatedSince: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString() } : {}),
+      };
+
+      const res = await client.request({
+        path: '/v1/boards',
+        method: 'GET',
+        query,
+        format: 'json',
+      });
+      setBoards(res.data || []);
     } catch (e2) {
       setError(String(e2.message || e2));
     } finally { setLoading(false); }
@@ -832,6 +859,31 @@ export default function Home() {
 
     <section>
       <h2>Boards list</h2>
+      <div className="list-item-card" style={{ marginBottom: 12 }}>
+        <div className="inline-actions" style={{ alignItems: 'center' }}>
+          <Input
+            placeholder="Search by title..."
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+          />
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={filterPinnedOnly}
+              onChange={(e) => setFilterPinnedOnly(e.target.checked)}
+            />
+            Pinned only
+          </label>
+          <label style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input
+              type="checkbox"
+              checked={filterUpdated7Days}
+              onChange={(e) => setFilterUpdated7Days(e.target.checked)}
+            />
+            Updated last 7 days
+          </label>
+        </div>
+      </div>
       {boards.length === 0 ? <p>Нет досок</p> :
         <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
     </section>

@@ -36,7 +36,13 @@ export class BoardsController {
     @Req() req: RequestWithId,
     @Query() query: ListBoardsQueryDto,
   ): Promise<Array<{ id: string; title: string; description: string | null; createdAt: string; updatedAt: string }>> {
-    return this.boardsService.listBoards(req.user!.sub, query.limit ?? 20, query.cursor);
+    return this.boardsService.listBoards(req.user!.sub, {
+      limit: query.limit ?? 20,
+      cursor: query.cursor,
+      query: query.query,
+      updatedSince: query.updatedSince,
+      pinned: query.pinned,
+    });
   }
 
   @Get('recent')

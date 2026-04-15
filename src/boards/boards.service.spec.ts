@@ -48,7 +48,7 @@ describe('BoardsService', () => {
       { id: 3, title: 'C', description: null, createdAt: new Date(), updatedAt: new Date() },
     ]);
 
-    const result = await service.listBoards(7, 2, 1);
+    const result = await service.listBoards(7, { limit: 2, cursor: 1 });
 
     expect(prisma.board.findMany).toHaveBeenCalledWith({
       where: { ownerId: 7, deletedAt: null, id: { gt: 1 } },

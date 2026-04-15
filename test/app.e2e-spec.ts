@@ -280,6 +280,46 @@ describe('DreamBoard API (e2e)', () => {
     expect(ids1[1]).toBeLessThan(ids2[0]);
   });
 
+  it('supports title search + updatedSince + pinned filters together', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'search@example.com', name: 'Search User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const alpha = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Alpha Roadmap' })
+      .expect(201);
+
+    const beta = await request(app.getHttpServer())
+      .post('/v1/boards')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ title: 'Beta Notes' })
+      .expect(201);
+
+    await request(app.getHttpServer())
+      .post(`/v1/boards/${alpha.body.id}/pin`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    await prisma.board.update({
+      where: { id: Number(beta.body.id) },
+      data: { updatedAt: new Date('2020-01-01T00:00:00Z') },
+    });
+
+    const filtered = await request(app.getHttpServer())
+      .get(`/v1/boards?query=alpha&pinned=true&updatedSince=${encodeURIComponent('2024-01-01T00:00:00.000Z')}`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(filtered.body).toHaveLength(1);
+    expect(filtered.body[0].title).toContain('Alpha');
+    expect(filtered.body[0].isPinned).toBe(true);
+  });
+
   it('supports versions snapshot, list, restore and VERSION_NOT_FOUND', async () => {
     const login = await request(app.getHttpServer())
       .post('/v1/auth/login')
