@@ -298,3 +298,8 @@ Release controls:
 
 Final proof pack:
 - `docs/week12-proof-pack.md`
+
+## Day 10 Release Documentation
+
+- Final report: `docs/day10-final-release-report.md`
+- Rollout/monitoring checklist: `docs/day10-rollout-monitoring-checklist.md`
