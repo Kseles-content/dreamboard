@@ -9,6 +9,7 @@ cp .env.example .env
 npm install
 npm run build
 npm run migrate:prod
+npm run seed
 npm run start
 ```
 
@@ -32,6 +33,29 @@ npm run test:e2e
 - `docs/week12-release-checklist.md`
 - `docs/week12-rollback-checklist.md`
 - `docs/week12-proof-pack.md`
+
+## Database structure (Day 2 foundation)
+
+Key tables and fields:
+
+- `boards`
+  - `lastOpenedAt` (`timestamp`, nullable)
+  - `isPinned` (`boolean`, default `false`)
+  - `templateId` (`string`, nullable FK -> `templates.id`)
+- `templates`
+  - `id` (`string`, PK)
+  - `name` (`string`)
+  - `description` (`string`, nullable)
+  - `snapshot` (`json`) — initial board state payload
+  - `createdAt`, `updatedAt`
+
+Template seed data:
+
+```bash
+npm run seed
+```
+
+Current seed volume: 8 starter templates (goal / moodboard / sprint scenarios).
 
 ## S3 / MinIO upload configuration
 

@@ -27,6 +27,10 @@ model Board {
   owner        User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   title        String
   description  String?
+  lastOpenedAt DateTime?
+  isPinned     Boolean     @default(false)
+  templateId   String?
+  template     Template?   @relation(fields: [templateId], references: [id], onDelete: SetNull)
   createdAt    DateTime    @default(now())
   updatedAt    DateTime    @updatedAt
   deletedAt    DateTime?
@@ -37,6 +41,8 @@ model Board {
   auditLogs    AuditLog[]
 
   @@index([ownerId])
+  @@index([isPinned, lastOpenedAt])
+  @@index([templateId])
   @@map("boards")
 }
 
@@ -61,6 +67,18 @@ model Card {
 
   @@index([boardId])
   @@map("cards")
+}
+
+model Template {
+  id          String   @id
+  name        String
+  description String?
+  snapshot    Json
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  boards      Board[]
+
+  @@map("templates")
 }
 
 model Version {
