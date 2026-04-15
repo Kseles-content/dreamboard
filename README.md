@@ -166,6 +166,7 @@ bash scripts/demo-check.sh
 7) Heartbeat audit snapshot (commit + PR + checks + demo)
 
 ```bash
+# optional: export GH_TOKEN to include PR/check status in output
 bash scripts/heartbeat-audit.sh
 ```
 

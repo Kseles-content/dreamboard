@@ -8,9 +8,7 @@ LAST_COMMIT_SHA="$(git log -1 --pretty=format:'%H' || true)"
 LAST_COMMIT_AT="$(git log -1 --pretty=format:'%ci' || true)"
 LAST_COMMIT_SUBJECT="$(git log -1 --pretty=format:'%s' || true)"
 
-ORIGIN_URL="$(git remote get-url origin 2>/dev/null || true)"
-GH_TOKEN_FROM_REMOTE="$(printf '%s' "$ORIGIN_URL" | sed -n 's#https://\([^@]*\)@github.com/.*#\1#p')"
-GH_TOKEN_EFFECTIVE="${GH_TOKEN:-$GH_TOKEN_FROM_REMOTE}"
+GH_TOKEN_EFFECTIVE="${GH_TOKEN:-}"
 
 PR_JSON='[]'
 if [[ -n "$GH_TOKEN_EFFECTIVE" ]]; then

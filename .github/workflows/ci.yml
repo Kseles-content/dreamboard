@@ -42,6 +42,20 @@ jobs:
 
   api-e2e-tests:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dreamboard
+          POSTGRES_PASSWORD: dreamboard123
+          POSTGRES_DB: dreamboard
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U dreamboard -d dreamboard"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -49,7 +63,13 @@ jobs:
           node-version: 22
       - name: Install root dependencies
         run: npm ci
+      - name: Apply Prisma migrations (e2e DB)
+        env:
+          DATABASE_URL: postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard
+        run: npm run migrate:prod
       - name: E2E tests
+        env:
+          DATABASE_URL: postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard
         run: npm run test:e2e -- --runInBand
 
   web-build:
