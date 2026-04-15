@@ -31,6 +31,9 @@ type ApiBoard = {
   id: string;
   title: string;
   description: string | null;
+  isPinned: boolean;
+  lastOpenedAt: string | null;
+  templateId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -66,7 +69,8 @@ export class BoardsService {
     const board = await this.prisma.board.findFirst({ where: { id, deletedAt: null } });
     if (!board) throw new NotFoundException(`Board ${id} not found`);
     if (board.ownerId !== userId) throw new ForbiddenException('No access to this board');
-    return board;
+
+    return this.prisma.board.update({ where: { id: board.id }, data: { lastOpenedAt: new Date() } });
   }
 
   async createBoard(input: CreateBoardDto, userId: number, requestId: string): Promise<ApiBoard> {
@@ -91,6 +95,79 @@ export class BoardsService {
     });
 
     return this.toApiBoard(saved);
+  }
+
+  async listRecentBoards(userId: number): Promise<ApiBoard[]> {
+    const rows = await this.prisma.board.findMany({
+      where: {
+        ownerId: userId,
+        deletedAt: null,
+        lastOpenedAt: { not: null },
+      },
+      orderBy: { lastOpenedAt: 'desc' },
+      take: 10,
+    });
+
+    return rows.map((board) => this.toApiBoard(board));
+  }
+
+  async setBoardPinned(boardId: number, userId: number, pinned: boolean): Promise<ApiBoard> {
+    const board = await this.getBoardById(boardId, userId);
+    const saved = await this.prisma.board.update({
+      where: { id: board.id },
+      data: { isPinned: pinned },
+    });
+    return this.toApiBoard(saved);
+  }
+
+  async listTemplates(_userId: number) {
+    const templates = await this.prisma.template.findMany({ orderBy: { createdAt: 'asc' } });
+    return { items: templates };
+  }
+
+  async createBoardFromTemplate(
+    input: { templateId: string; title?: string },
+    userId: number,
+    requestId: string,
+  ): Promise<ApiBoard> {
+    const template = await this.prisma.template.findUnique({ where: { id: input.templateId } });
+    if (!template) {
+      throw new HttpException(
+        { code: 'TEMPLATE_NOT_FOUND', message: `Template ${input.templateId} not found`, requestId },
+        HttpStatus.NOT_FOUND,
+      );
+    }
+
+    const parsed = this.parseTemplateSnapshot(template.snapshot);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const board = await tx.board.create({
+        data: {
+          ownerId: userId,
+          title: input.title?.trim() || parsed.title || template.name,
+          description: template.description ?? null,
+          templateId: template.id,
+          lastOpenedAt: new Date(),
+        },
+      });
+
+      if (parsed.cards.length > 0) {
+        await tx.card.createMany({
+          data: parsed.cards.map((c, index) => ({
+            id: `c_${Date.now()}_${index}_${Math.random().toString(36).slice(2, 8)}`,
+            boardId: board.id,
+            type: c.type,
+            content: c.content,
+            position: c.position ?? index,
+            zIndex: c.zIndex ?? index,
+            metadata: c.metadata ?? Prisma.JsonNull,
+          })),
+        });
+      }
+
+      return board;
+    });
+
+    return this.toApiBoard(created);
   }
 
   async updateBoard(id: number, input: UpdateBoardDto, userId: number): Promise<ApiBoard> {
@@ -514,6 +591,9 @@ export class BoardsService {
       id: String(board.id),
       title: board.title,
       description: board.description,
+      isPinned: board.isPinned,
+      lastOpenedAt: board.lastOpenedAt ? board.lastOpenedAt.toISOString() : null,
+      templateId: board.templateId ?? null,
       createdAt: board.createdAt.toISOString(),
       updatedAt: board.updatedAt.toISOString(),
     };
@@ -658,6 +738,52 @@ export class BoardsService {
     return {
       title: typeof s.title === 'string' && s.title.trim().length > 0 ? s.title : empty.title,
       description: typeof s.description === 'string' ? s.description : null,
+      cards,
+    };
+  }
+
+  private parseTemplateSnapshot(snapshot: Prisma.JsonValue): {
+    title: string;
+    cards: Array<{
+      type: CardType;
+      content: string;
+      position: number;
+      zIndex: number;
+      metadata: Prisma.JsonValue | null;
+    }>;
+  } {
+    const fallback = { title: 'Untitled board', cards: [] as Array<{ type: CardType; content: string; position: number; zIndex: number; metadata: Prisma.JsonValue | null }> };
+    if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot)) return fallback;
+
+    const s = snapshot as { title?: unknown; cards?: unknown[] };
+    const cards = Array.isArray(s.cards)
+      ? s.cards
+          .map((x, i) => {
+            if (!x || typeof x !== 'object') return null;
+            const c = x as any;
+            const rawType = typeof c.type === 'string' ? c.type : 'text';
+            const allowed = ['text', 'image', 'sticker', 'link'];
+            const type = (allowed.includes(rawType) ? rawType : 'text') as CardType;
+            const content = typeof c.content === 'string' ? c.content : typeof c.text === 'string' ? c.text : '';
+            if (!content) return null;
+            return {
+              type,
+              content,
+              position: Number.isFinite(c.position) ? Number(c.position) : i,
+              zIndex: Number.isFinite(c.zIndex) ? Number(c.zIndex) : i,
+              metadata: c.metadata ?? null,
+            };
+          })
+          .filter(
+            (
+              x,
+            ): x is { type: CardType; content: string; position: number; zIndex: number; metadata: Prisma.JsonValue | null } =>
+              Boolean(x),
+          )
+      : [];
+
+    return {
+      title: typeof s.title === 'string' && s.title.trim().length > 0 ? s.title : fallback.title,
       cards,
     };
   }

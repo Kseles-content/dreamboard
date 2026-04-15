@@ -30,6 +30,33 @@ describe('DreamBoard API (e2e)', () => {
     await prisma.uploadAsset.deleteMany();
     await prisma.board.deleteMany();
     await prisma.user.deleteMany();
+    await prisma.template.upsert({
+      where: { id: 'tpl-sprint-weekly-planning' },
+      update: {
+        name: 'Weekly Sprint Planning',
+        description: 'Seed template for e2e',
+        snapshot: {
+          title: 'Weekly Sprint',
+          cards: [
+            { type: 'text', content: 'Backlog Candidates', position: 0, zIndex: 0 },
+            { type: 'text', content: 'Sprint Goal', position: 1, zIndex: 1 },
+          ],
+        },
+      },
+      create: {
+        id: 'tpl-sprint-weekly-planning',
+        name: 'Weekly Sprint Planning',
+        description: 'Seed template for e2e',
+        snapshot: {
+          title: 'Weekly Sprint',
+          cards: [
+            { type: 'text', content: 'Backlog Candidates', position: 0, zIndex: 0 },
+            { type: 'text', content: 'Sprint Goal', position: 1, zIndex: 1 },
+          ],
+        },
+      },
+    });
+
     const moduleRef = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -110,6 +137,59 @@ describe('DreamBoard API (e2e)', () => {
       .expect(404);
 
     expect(deleted.body.code).toBe('NOT_FOUND');
+  });
+
+  it('supports templates list, create-from-template, pin/unpin and recent boards', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/v1/auth/login')
+      .send({ email: 'templates@example.com', name: 'Template User' })
+      .expect(201);
+
+    const token = login.body.accessToken as string;
+
+    const templates = await request(app.getHttpServer())
+      .get('/v1/templates')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(Array.isArray(templates.body.items)).toBe(true);
+    expect(templates.body.items.length).toBeGreaterThan(0);
+
+    const created = await request(app.getHttpServer())
+      .post('/v1/boards/from-template')
+      .set('Authorization', `Bearer ${token}`)
+      .send({ templateId: 'tpl-sprint-weekly-planning', title: 'Template board e2e' })
+      .expect(201);
+
+    const boardId = Number(created.body.id);
+    expect(created.body.title).toBe('Template board e2e');
+
+    const cards = await request(app.getHttpServer())
+      .get(`/v1/boards/${boardId}/cards`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(cards.body.length).toBeGreaterThanOrEqual(2);
+
+    const pinned = await request(app.getHttpServer())
+      .post(`/v1/boards/${boardId}/pin`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(pinned.body.isPinned).toBe(true);
+
+    const recent = await request(app.getHttpServer())
+      .get('/v1/boards/recent')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(Array.isArray(recent.body)).toBe(true);
+    expect(recent.body.some((b: any) => Number(b.id) === boardId)).toBe(true);
+
+    const unpinned = await request(app.getHttpServer())
+      .delete(`/v1/boards/${boardId}/pin`)
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    expect(unpinned.body.isPinned).toBe(false);
   });
 
   it('returns BOARD_LIMIT_REACHED after 50 boards with machine code', async () => {

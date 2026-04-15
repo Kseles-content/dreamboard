@@ -107,16 +107,15 @@ paths:
     get:
       tags: [boards]
       summary: List recently opened boards (UX Sprint Day 1)
-      description: Returns recent boards ordered by last opened timestamp; supports lightweight search by title.
-      x-implemented: false
+      description: Returns recent boards ordered by lastOpenedAt DESC; only boards with non-null lastOpenedAt.
       parameters:
         - in: query
           name: limit
           schema:
             type: integer
             minimum: 1
-            maximum: 50
-            default: 20
+            maximum: 10
+            default: 10
         - in: query
           name: q
           description: Case-insensitive search against board title.
@@ -129,15 +128,14 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RecentBoardsResponse'
-        '501':
-          description: Not implemented in current backend build
+                type: array
+                items:
+                  $ref: '#/components/schemas/Board'
 
   /v1/boards/from-template:
     post:
       tags: [boards, templates]
-      summary: Create board from template (UX Sprint Day 1)
-      x-implemented: false
+      summary: Create board from template
       requestBody:
         required: true
         content:
@@ -153,10 +151,6 @@ paths:
                 $ref: '#/components/schemas/Board'
         '404':
           description: Template not found
-        '409':
-          description: Template is not active
-        '501':
-          description: Not implemented in current backend build
 
   /v1/boards/{boardId}:
     parameters:
@@ -205,38 +199,33 @@ paths:
       - $ref: '#/components/parameters/BoardId'
     post:
       tags: [boards]
-      summary: Pin or unpin board on Home Dashboard (UX Sprint Day 1)
-      x-implemented: false
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PinBoardRequest'
+      summary: Pin board on Home Dashboard
       responses:
         '200':
           description: OK
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PinBoardResponse'
+                $ref: '#/components/schemas/Board'
         '404':
           description: Board not found
-        '501':
-          description: Not implemented in current backend build
+    delete:
+      tags: [boards]
+      summary: Unpin board on Home Dashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Board'
+        '404':
+          description: Board not found
 
   /v1/templates:
     get:
       tags: [templates]
-      summary: List board templates for onboarding/template picker (UX Sprint Day 1)
-      x-implemented: false
-      parameters:
-        - in: query
-          name: scenario
-          description: Optional filter by onboarding scenario.
-          schema:
-            type: string
-            enum: [goal, moodboard, sprint]
+      summary: List board templates for onboarding/template picker
       responses:
         '200':
           description: OK
@@ -244,8 +233,6 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TemplatesResponse'
-        '501':
-          description: Not implemented in current backend build
 
   /v1/boards/{boardId}/cards:
     parameters:
@@ -461,13 +448,22 @@ components:
 
     Board:
       type: object
-      required: [id, title, createdAt, updatedAt]
+      required: [id, title, createdAt, updatedAt, isPinned]
       properties:
         id:
           type: string
         title:
           type: string
         description:
+          type: string
+          nullable: true
+        isPinned:
+          type: boolean
+        lastOpenedAt:
+          type: string
+          format: date-time
+          nullable: true
+        templateId:
           type: string
           nullable: true
         createdAt:
@@ -602,36 +598,24 @@ components:
 
     Template:
       type: object
-      required: [id, slug, name, scenario, isActive, preview]
+      required: [id, name, snapshot, createdAt, updatedAt]
       properties:
         id:
-          type: string
-        slug:
           type: string
         name:
           type: string
         description:
           type: string
           nullable: true
-        scenario:
-          type: string
-          enum: [goal, moodboard, sprint]
-        isActive:
-          type: boolean
-        preview:
+        snapshot:
           type: object
-          required: [coverImageUrl, estimatedSetupMinutes]
-          properties:
-            coverImageUrl:
-              type: string
-              format: uri
-            estimatedSetupMinutes:
-              type: integer
-              minimum: 1
-            tags:
-              type: array
-              items:
-                type: string
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
 
     TemplatesResponse:
       type: object
@@ -650,7 +634,4 @@ components:
           type: string
         title:
           type: string
-          description: Optional custom title. Falls back to template name.
-        description:
-          type: string
-          nullable: true
+          description: Optional custom title. Falls back to template/snapshot title.

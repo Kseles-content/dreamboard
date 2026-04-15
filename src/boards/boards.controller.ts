@@ -3,6 +3,7 @@ import {
   Controller,
   Delete,
   Get,
+  HttpCode,
   Param,
   ParseIntPipe,
   Patch,
@@ -23,6 +24,7 @@ import { CreateUploadIntentDto } from './dto/create-upload-intent.dto';
 import { FinalizeUploadDto } from './dto/finalize-upload.dto';
 import { ListVersionsQueryDto } from './dto/list-versions-query.dto';
 import { CreateVersionDto } from './dto/create-version.dto';
+import { CreateBoardFromTemplateDto } from './dto/create-board-from-template.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('v1/boards')
@@ -35,6 +37,16 @@ export class BoardsController {
     @Query() query: ListBoardsQueryDto,
   ): Promise<Array<{ id: string; title: string; description: string | null; createdAt: string; updatedAt: string }>> {
     return this.boardsService.listBoards(req.user!.sub, query.limit ?? 20, query.cursor);
+  }
+
+  @Get('recent')
+  listRecentBoards(@Req() req: RequestWithId) {
+    return this.boardsService.listRecentBoards(req.user!.sub);
+  }
+
+  @Post('from-template')
+  createBoardFromTemplate(@Body() input: CreateBoardFromTemplateDto, @Req() req: RequestWithId) {
+    return this.boardsService.createBoardFromTemplate(input, req.user!.sub, req.requestId);
   }
 
   @Get(':boardId')
@@ -59,6 +71,17 @@ export class BoardsController {
   @Delete(':boardId')
   deleteBoard(@Param('boardId', ParseIntPipe) id: number, @Req() req: RequestWithId): Promise<{ deleted: boolean; board: { id: string; title: string; description: string | null; createdAt: string; updatedAt: string } }> {
     return this.boardsService.deleteBoard(id, req.user!.sub);
+  }
+
+  @Post(':boardId/pin')
+  @HttpCode(200)
+  pinBoard(@Param('boardId', ParseIntPipe) boardId: number, @Req() req: RequestWithId) {
+    return this.boardsService.setBoardPinned(boardId, req.user!.sub, true);
+  }
+
+  @Delete(':boardId/pin')
+  unpinBoard(@Param('boardId', ParseIntPipe) boardId: number, @Req() req: RequestWithId) {
+    return this.boardsService.setBoardPinned(boardId, req.user!.sub, false);
   }
 
   @Get(':boardId/cards')
