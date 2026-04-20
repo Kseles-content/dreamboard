@@ -2,16 +2,44 @@
 
 NestJS backend with stable MVP scope: **Auth + Boards CRUD**.
 
-## Run locally
+## Quick start (1-2 commands)
+
+### Option A: Docker Compose (db + api + web)
 
 ```bash
 cp .env.example .env
-npm install
+docker-compose up
+```
+
+Services:
+- Web: `http://localhost:3100`
+- API: `http://localhost:3000`
+- Postgres: `localhost:5433`
+
+### Option B: Local dev bootstrap script
+
+```bash
+cp .env.example .env
+bash scripts/quick-start.sh
+```
+
+The script checks dependencies (`node`, `npm`, `docker`), starts PostgreSQL via compose, installs deps, runs migrations + seed, and starts API/Web dev servers.
+
+## Production setup
+
+Minimal production flow:
+
+```bash
+cp .env.example .env
+# set real secrets/urls in .env
+npm ci
 npm run build
 npm run migrate:prod
 npm run seed
 npm run start
 ```
+
+For containerized runtime, `docker-compose up` can also be used as a baseline deployment profile.
 
 ## Test
 

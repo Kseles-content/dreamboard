@@ -1,0 +1,61 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: dreamboard-db
+    environment:
+      POSTGRES_DB: dreamboard
+      POSTGRES_USER: dreamboard
+      POSTGRES_PASSWORD: dreamboard123
+    ports:
+      - "${DB_PORT:-5433}:5432"
+    volumes:
+      - dreamboard_pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dreamboard -d dreamboard"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  api:
+    image: node:22-bullseye
+    container_name: dreamboard-api
+    working_dir: /app
+    depends_on:
+      db:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://dreamboard:dreamboard123@db:5432/dreamboard
+      NODE_ENV: development
+      PORT: 3000
+    command: >
+      bash -lc "npm install && npm run migrate:prod && npm run seed && npm run start:dev"
+    volumes:
+      - ./:/app
+    ports:
+      - "3000:3000"
+
+  web:
+    image: node:22-bullseye
+    container_name: dreamboard-web
+    working_dir: /app/apps/web
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: development
+      NEXT_PUBLIC_API_URL: http://localhost:3000
+      NEXT_PUBLIC_SENTRY_DSN: ${NEXT_PUBLIC_SENTRY_DSN:-}
+      NEXT_PUBLIC_POSTHOG_KEY: ${NEXT_PUBLIC_POSTHOG_KEY:-}
+      NEXT_PUBLIC_POSTHOG_HOST: ${NEXT_PUBLIC_POSTHOG_HOST:-https://app.posthog.com}
+    command: >
+      bash -lc "npm install && npm run dev"
+    volumes:
+      - ./:/app
+    ports:
+      - "3100:3100"
+
+volumes:
+  dreamboard_pg_data:
