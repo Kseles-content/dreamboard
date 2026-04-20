@@ -41,11 +41,42 @@ npm run start
 
 For containerized runtime, `docker-compose up` can also be used as a baseline deployment profile.
 
+## Environment variables
+
+Main variables are documented in `.env.example`.
+
+Core required vars:
+- `DATABASE_URL`
+- `JWT_SECRET`
+- `S3_BUCKET`, `S3_REGION`, `S3_ENDPOINT`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`
+- `STORAGE_UPLOAD_BASE_URL`, `STORAGE_PUBLIC_BASE_URL`, `PUBLIC_WEB_BASE_URL`
+- `NEXT_PUBLIC_API_URL` (for web)
+
+## Development commands
+
+Backend:
+
+```bash
+npm install
+npm run migrate:prod
+npm run seed
+npm run start:dev
+```
+
+Web:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
 ## Test
 
 ```bash
 npm test
 npm run test:e2e
+bash scripts/smoke-test.sh
 ```
 
 ## Contracts / Specs
@@ -154,7 +185,7 @@ Limit: max 50 boards per user. On overflow API returns:
 
 ```bash
 npm install
-npm run migration:run
+npm run migrate:prod
 npm run start
 ```
 
