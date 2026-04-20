@@ -29,6 +29,11 @@ DreamBoard v1.0 is ready for handoff with stable core functionality, automated t
 - Testing guide: `docs/testing.md`
 - Known issues: `docs/known-issues.md`
 
+## Demo feedback status
+- Demo checklist completed: `docs/demo-checklist.md`
+- Feedback log: `docs/feedback-v1.0.md`
+- P0 blockers: **0**
+
 ## Known issues
 See: `docs/known-issues.md` (P2/P3 only, non-blocking for release).
 
