@@ -71,6 +71,21 @@ jobs:
         env:
           DATABASE_URL: postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard
         run: npm run test:e2e -- --runInBand
+      - name: API smoke test
+        env:
+          DATABASE_URL: postgresql://dreamboard:dreamboard123@localhost:5433/dreamboard
+          NODE_ENV: test
+          PORT: 3000
+          JWT_SECRET: ci-smoke-secret
+          S3_BUCKET: dreamboard-assets
+          S3_REGION: us-east-1
+          S3_ENDPOINT: https://s3.test.local
+          S3_ACCESS_KEY_ID: test-key
+          S3_SECRET_ACCESS_KEY: test-secret
+          STORAGE_UPLOAD_BASE_URL: https://uploads.test.local
+          STORAGE_PUBLIC_BASE_URL: https://cdn.test.local
+          PUBLIC_WEB_BASE_URL: http://localhost:3100
+        run: bash scripts/smoke-test.sh
 
   web-build:
     runs-on: ubuntu-latest
