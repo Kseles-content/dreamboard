@@ -191,6 +191,22 @@ export default function Home() {
     });
   }
 
+  async function normalizeApiError(e, context = {}) {
+    if (e && typeof e === 'object' && 'status' in e) {
+      const status = Number(e.status);
+      if (status === 401) {
+        await logout();
+        return 'Сессия истекла. Войдите снова.';
+      }
+      try {
+        const payload = await e.clone().json();
+        if (payload?.message) return String(payload.message);
+      } catch {}
+      return `API error: HTTP ${status}`;
+    }
+    return String(e?.message || e);
+  }
+
   async function login(e) {
     e.preventDefault();
     setLoading(true); setError('');
@@ -214,7 +230,7 @@ export default function Home() {
       }
     } catch (e2) {
       await captureError(e2, { action: 'login' });
-      setError(String(e2.message || e2));
+      setError(await normalizeApiError(e2, { action: 'login' }));
     } finally { setLoading(false); }
   }
 
@@ -264,7 +280,7 @@ export default function Home() {
       });
       setBoards(res.data || []);
     } catch (e2) {
-      setError(String(e2.message || e2));
+      setError(await normalizeApiError(e2, { action: 'load_boards' }));
     } finally { setLoading(false); }
   }
 
@@ -278,6 +294,7 @@ export default function Home() {
       setTemplates(res.data?.items || []);
     } catch (e) {
       await captureError(e, { action: 'load_templates' });
+      setError(await normalizeApiError(e, { action: 'load_templates' }));
       setTemplates([]);
     }
   }
@@ -340,7 +357,7 @@ export default function Home() {
       showToast('Доска из шаблона создана', 'success');
     } catch (e) {
       await captureError(e, { action: 'create_board_from_template', templateId: template.id });
-      setError(String(e.message || e));
+      setError(await normalizeApiError(e, { action: 'create_board_from_template' }));
     } finally {
       setLoading(false);
     }
@@ -367,7 +384,7 @@ export default function Home() {
       await loadBoards();
     } catch (e2) {
       await captureError(e2, { action: 'create_board' });
-      setError(String(e2.message || e2));
+      setError(await normalizeApiError(e2, { action: 'create_board' }));
     }
     finally { setLoading(false); }
   }
