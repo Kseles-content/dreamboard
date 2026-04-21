@@ -491,7 +491,11 @@ export default function Home() {
   }, [persistCards]);
 
   async function openBoard(id) {
-    if (dirty && !confirm('Есть несохранённые изменения. Открыть другую доску?')) return;
+    if (dirty) {
+      try {
+        await persistCards();
+      } catch {}
+    }
     setActiveBoardId(id);
     setLoading(true); setError('');
     try {
