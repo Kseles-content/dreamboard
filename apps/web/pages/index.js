@@ -221,7 +221,7 @@ export default function Home() {
       await trackEvent('login', { email });
       await loadBoards(auth.accessToken);
       if (!auth.user?.onboardedAt) {
-        await loadTemplates();
+        await loadTemplates(auth.accessToken);
         if (!onboardingStartedTrackedRef.current) {
           onboardingStartedTrackedRef.current = true;
           await trackEvent('onboarding_started', { source: 'login' });
@@ -285,9 +285,17 @@ export default function Home() {
     } finally { setLoading(false); }
   }
 
-  async function loadTemplates() {
+  async function loadTemplates(tempToken) {
     try {
-      const res = await typedApi.request({
+      const authHeaderToken = tempToken || token;
+      const client = authHeaderToken
+        ? new DreamboardApi({
+            baseUrl,
+            baseApiParams: { headers: { authorization: `Bearer ${authHeaderToken}` } },
+          })
+        : typedApi;
+
+      const res = await client.request({
         path: '/v1/templates',
         method: 'GET',
         format: 'json',
