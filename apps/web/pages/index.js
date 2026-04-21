@@ -36,6 +36,7 @@ function normalizeApiBaseUrl(url) {
   }
 }
 const HISTORY_KEY_PREFIX = 'db_web_history_';
+const AUTH_STORAGE_KEY = 'db_web_auth_v2';
 const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
 
@@ -91,7 +92,8 @@ export default function Home() {
   const canRedo = history.future.length > 0;
 
   useEffect(() => {
-    const saved = localStorage.getItem('db_web_auth');
+    localStorage.removeItem('db_web_auth');
+    const saved = localStorage.getItem(AUTH_STORAGE_KEY);
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved);
@@ -102,7 +104,7 @@ export default function Home() {
       setCurrentUser(parsed.user || null);
 
       if (normalizedBaseUrl !== (parsed.baseUrl || DEFAULT_API)) {
-        localStorage.setItem('db_web_auth', JSON.stringify({
+        localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({
           token: parsed.token || '',
           refreshToken: parsed.refreshToken || '',
           baseUrl: normalizedBaseUrl,
@@ -114,7 +116,7 @@ export default function Home() {
 
   useEffect(() => {
     if (token) {
-      localStorage.setItem('db_web_auth', JSON.stringify({ token, refreshToken, baseUrl, user: currentUser }));
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ token, refreshToken, baseUrl, user: currentUser }));
     }
   }, [token, refreshToken, baseUrl, currentUser]);
 
@@ -233,7 +235,7 @@ export default function Home() {
     onboardingStartedTrackedRef.current = false;
     setSavedCards([]);
     setDirty(false);
-    localStorage.removeItem('db_web_auth');
+    localStorage.removeItem(AUTH_STORAGE_KEY);
   }
 
   async function loadBoards(tempToken) {
