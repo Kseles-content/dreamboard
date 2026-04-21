@@ -25,6 +25,14 @@ bash scripts/quick-start.sh
 
 The script checks dependencies (`node`, `npm`, `docker`), starts PostgreSQL via compose, installs deps, runs migrations + seed, and starts API/Web dev servers.
 
+Service management helper:
+
+```bash
+bash scripts/service-status.sh status
+bash scripts/service-status.sh restart api
+bash scripts/service-status.sh logs web
+```
+
 ## Production setup
 
 Minimal production flow:
