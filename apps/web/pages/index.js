@@ -71,6 +71,7 @@ export default function Home() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState('');
+  const [lastUploadedImage, setLastUploadedImage] = useState(null);
   const [versionsOpen, setVersionsOpen] = useState(false);
   const [versions, setVersions] = useState([]);
   const [versionsCursor, setVersionsCursor] = useState(null);
@@ -84,6 +85,7 @@ export default function Home() {
   const queuedSaveRef = useRef(false);
   const autosaveRef = useRef(null);
   const uploadInputRef = useRef(null);
+  const cardsSectionRef = useRef(null);
   const onboardingStartedTrackedRef = useRef(false);
   const { toast, showToast, clearToast } = useToast();
 
@@ -774,7 +776,6 @@ export default function Home() {
       const intent = intentRes.data;
 
       await uploadBinary(intent.uploadUrl, file, intent.headers || { 'content-type': file.type });
-      showToast('Изображение загружено', 'success');
 
       const finalizedRes = await typedApi.request({
         path: `/v1/boards/${activeBoardId}/uploads/finalize`,
@@ -786,16 +787,22 @@ export default function Home() {
       const finalized = finalizedRes.data;
       await trackEvent('upload_image', { boardId: activeBoardId, mimeType: file.type, sizeBytes: file.size });
 
+      const uploadedImageUrl = finalized.publicUrl || intent.publicUrl;
       applyLocalCards([
         ...cards,
         {
           id: `tmp_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           type: 'image',
           objectKey: finalized.objectKey,
-          imageUrl: finalized.publicUrl || intent.publicUrl,
+          imageUrl: uploadedImageUrl,
         },
       ]);
+      setLastUploadedImage({ url: uploadedImageUrl, boardId: activeBoardId });
       setUploadProgress(100);
+      showToast(`Изображение добавлено в доску #${activeBoardId}`, 'success');
+      setTimeout(() => {
+        cardsSectionRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 150);
     } catch (e2) {
       await captureError(e2, { action: 'upload_image', boardId: activeBoardId });
       setUploadError(String(e2.message || e2));
@@ -972,8 +979,14 @@ export default function Home() {
         <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Открыть</Button> {b.title}</li>)}</ul>}
     </section>
 
-    <section>
+    <section ref={cardsSectionRef}>
       <h2>Открытая доска: {activeBoardId || 'нет'}</h2>
+      {lastUploadedImage?.boardId === activeBoardId ? (
+        <div className="list-item-card" style={{ marginBottom: 12 }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Последнее загруженное изображение</div>
+          <img src={lastUploadedImage.url} alt="Последняя загрузка" style={{ maxWidth: 260, maxHeight: 180, display: 'block', border: '1px solid var(--color-border)' }} />
+        </div>
+      ) : null}
       {activeBoardId && <Button onClick={addCard}>Добавить текстовую карточку</Button>}
       {!activeBoardId ? <p>Сначала выберите доску</p> : cards.length === 0 ? (
         <div className="list-item-card" style={{ marginTop: 12, textAlign: 'center', padding: 24 }}>
