@@ -60,6 +60,7 @@ export default function Home() {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterPinnedOnly, setFilterPinnedOnly] = useState(false);
   const [filterUpdated7Days, setFilterUpdated7Days] = useState(false);
+  const [showOnlyActiveBoard, setShowOnlyActiveBoard] = useState(false);
   const [history, setHistory] = useState(createHistory([]));
   const [savedCards, setSavedCards] = useState([]);
 
@@ -92,6 +93,10 @@ export default function Home() {
   const cards = history.present;
   const canUndo = history.past.length > 0;
   const canRedo = history.future.length > 0;
+  const activeBoard = boards.find((b) => String(b.id) === String(activeBoardId)) || null;
+  const visibleBoards = showOnlyActiveBoard && activeBoardId
+    ? boards.filter((b) => String(b.id) === String(activeBoardId))
+    : boards;
 
   useEffect(() => {
     localStorage.removeItem('db_web_auth');
@@ -975,12 +980,22 @@ export default function Home() {
           </label>
         </div>
       </div>
-      {boards.length === 0 ? <p>Нет досок</p> :
-        <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Открыть</Button> {b.title}</li>)}</ul>}
+      <div className="inline-actions" style={{ marginBottom: 12 }}>
+        <Button variant="ghost" onClick={() => setShowOnlyActiveBoard((v) => !v)} disabled={!activeBoardId}>
+          {showOnlyActiveBoard ? 'Показать все доски' : 'Показать только открытую'}
+        </Button>
+      </div>
+      {visibleBoards.length === 0 ? <p>Нет досок</p> :
+        <ul className="board-list">{visibleBoards.map((b) => {
+          const isActive = String(b.id) === String(activeBoardId);
+          return <li className="list-item-card" key={b.id} style={isActive ? { border: '2px solid #2563eb' } : undefined}>
+            <Button variant="secondary" onClick={() => openBoard(b.id)}>{isActive ? 'Открыта' : 'Открыть'}</Button> {b.title}
+          </li>;
+        })}</ul>}
     </section>
 
     <section ref={cardsSectionRef}>
-      <h2>Открытая доска: {activeBoardId || 'нет'}</h2>
+      <h2>Открытая доска: {activeBoardId || 'нет'}{activeBoard ? ` — ${activeBoard.title}` : ''}</h2>
       {lastUploadedImage?.boardId === activeBoardId ? (
         <div className="list-item-card" style={{ marginBottom: 12 }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>Последнее загруженное изображение</div>
