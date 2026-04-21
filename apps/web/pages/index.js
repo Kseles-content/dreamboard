@@ -797,12 +797,12 @@ export default function Home() {
 
   if (!authed) {
     return <main className="page-shell login-shell">
-      <h1>DreamBoard Web Login</h1>
+      <h1>DreamBoard — Вход</h1>
       <form onSubmit={login} className="login-form">
-        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="API Base URL" />
+        <Input value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="API адрес" />
         <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" />
-        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" />
-        <Button type="submit" disabled={loading}>{loading ? 'Loading...' : 'Login'}</Button>
+        <Input value={name} onChange={(e) => setName(e.target.value)} placeholder="Имя" />
+        <Button type="submit" disabled={loading}>{loading ? 'Входим...' : 'Войти'}</Button>
       </form>
       {loading ? <Spinner label="Authorizing..." /> : null}
       {error && <p role="alert" aria-live="assertive" style={{ color: 'var(--color-error)' }}>{error}</p>}
@@ -815,25 +815,25 @@ export default function Home() {
   return <main className="page-shell">
     <h1>DreamBoard Web Editor v1 (text + image cards)</h1>
     <div className="toolbar">
-      <Button variant="secondary" onClick={loadBoards}>Reload boards</Button>
-      <Button variant="ghost" onClick={logout}>Logout</Button>
+      <Button variant="secondary" onClick={loadBoards}>Обновить доски</Button>
+      <Button variant="ghost" onClick={logout}>Выйти</Button>
       <Button variant="ghost" onClick={undo} disabled={!canUndo || !activeBoardId}>Undo</Button>
       <Button variant="ghost" onClick={redo} disabled={!canRedo || !activeBoardId}>Redo</Button>
       <Button variant="secondary" onClick={retrySave} disabled={!dirty || !activeBoardId}>Save now</Button>
-      <Button onClick={askImageUpload} disabled={!activeBoardId || uploading}>Upload image</Button>
-      <Button variant="ghost" onClick={() => exportBoard('png')} disabled={!activeBoardId || exporting}>Export PNG</Button>
-      <Button variant="ghost" onClick={() => exportBoard('jpg')} disabled={!activeBoardId || exporting}>Export JPG</Button>
+      <Button onClick={askImageUpload} disabled={!activeBoardId || uploading}>Загрузить изображение</Button>
+      <Button variant="ghost" onClick={() => exportBoard('png')} disabled={!activeBoardId || exporting}>Экспорт PNG</Button>
+      <Button variant="ghost" onClick={() => exportBoard('jpg')} disabled={!activeBoardId || exporting}>Экспорт JPG</Button>
       <Button variant="danger" onClick={triggerTestError}>Test Sentry Error</Button>
       <Button variant="secondary" onClick={() => {
         const next = !versionsOpen;
         setVersionsOpen(next);
         if (next && activeBoardId) loadVersions({ reset: true });
-      }} disabled={!activeBoardId}>Versions</Button>
+      }} disabled={!activeBoardId}>Версии</Button>
       <Button variant="secondary" onClick={() => {
         const next = !shareOpen;
         setShareOpen(next);
         if (next && activeBoardId) loadShareLinks();
-      }} disabled={!activeBoardId}>Share</Button>
+      }} disabled={!activeBoardId}>Публичная ссылка</Button>
       <input ref={uploadInputRef} type="file" accept="image/jpeg,image/png,image/webp" style={{ display: 'none' }} onChange={onImagePicked} />
     </div>
     {loading ? <Spinner /> : null}
@@ -848,10 +848,10 @@ export default function Home() {
     {activeBoardId && uploadError ? <p role="alert" aria-live="assertive" style={{ color: 'var(--color-error)' }}>Upload error: {uploadError}</p> : null}
 
     {versionsOpen && activeBoardId ? <section>
-      <h2>Versions</h2>
+      <h2>Версии</h2>
       <div className="inline-actions">
         <Button onClick={createVersion} disabled={versionsLoading}>Create snapshot</Button>
-        <Button variant="secondary" onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Reload versions</Button>
+        <Button variant="secondary" onClick={() => loadVersions({ reset: true })} disabled={versionsLoading}>Обновить версии</Button>
       </div>
       {versions.length === 0 ? <p>Нет версий</p> : <ul className="versions-list">
         {versions.map((v) => <li className="list-item-card" key={v.id}>
@@ -859,20 +859,20 @@ export default function Home() {
           <Button variant="ghost" onClick={() => restoreVersion(v.id)} disabled={versionsLoading} aria-label={`Восстановить версию ${v.id}`}>Restore</Button>
         </li>)}
       </ul>}
-      {versionsCursor ? <Button variant="secondary" onClick={() => loadVersions()} disabled={versionsLoading}>Load more</Button> : null}
+      {versionsCursor ? <Button variant="secondary" onClick={() => loadVersions()} disabled={versionsLoading}>Загрузить ещё</Button> : null}
     </section> : null}
 
     {shareOpen && activeBoardId ? <section>
-      <h2>Share links</h2>
+      <h2>Публичные ссылки</h2>
       <div className="inline-actions">
-        <Button onClick={createShareLink} disabled={shareLoading}>Create share link</Button>
-        <Button variant="secondary" onClick={loadShareLinks} disabled={shareLoading}>Reload links</Button>
+        <Button onClick={createShareLink} disabled={shareLoading}>Создать ссылку</Button>
+        <Button variant="secondary" onClick={loadShareLinks} disabled={shareLoading}>Обновить ссылки</Button>
       </div>
       {shareLinks.length === 0 ? <p>Нет share-ссылок</p> : <ul className="share-list">
         {shareLinks.map((s) => <li className="list-item-card" key={s.id}>
           #{s.id} {s.revokedAt ? '(revoked)' : '(active)'} {' '}
-          <Button variant="ghost" onClick={() => copyShareUrl(s.url)} aria-label={`Скопировать ссылку ${s.id}`}>Copy URL</Button>{' '}
-          {!s.revokedAt ? <Button variant="danger" onClick={() => revokeShareLink(s.id)} disabled={shareLoading} aria-label={`Отозвать ссылку ${s.id}`}>Revoke</Button> : null}
+          <Button variant="ghost" onClick={() => copyShareUrl(s.url)} aria-label={`Скопировать ссылку ${s.id}`}>Копировать ссылку</Button>{' '}
+          {!s.revokedAt ? <Button variant="danger" onClick={() => revokeShareLink(s.id)} disabled={shareLoading} aria-label={`Отозвать ссылку ${s.id}`}>Отозвать</Button> : null}
           <div style={{ fontSize: 12 }}>{s.url}</div>
         </li>)}
       </ul>}
@@ -896,19 +896,19 @@ export default function Home() {
         </div>
       ) : null}
       <div className="list-item-card" style={{ marginBottom: 12 }}>
-        <h3 style={{ marginTop: 0 }}>Create empty board</h3>
+        <h3 style={{ marginTop: 0 }}>Создать пустую доску</h3>
         <div className="inline-actions">
           <Input
-            placeholder="Board name (optional)"
+            placeholder="Название доски (необязательно)"
             value={emptyBoardTitle}
             onChange={(e) => setEmptyBoardTitle(e.target.value)}
           />
-          <Button onClick={createBoard}>Create empty board</Button>
+          <Button onClick={createBoard}>Создать пустую доску</Button>
         </div>
       </div>
 
       <div className="list-item-card">
-        <h3 style={{ marginTop: 0 }}>Start with template</h3>
+        <h3 style={{ marginTop: 0 }}>Создать из шаблона</h3>
         {templates.length === 0 ? <p>Шаблоны загружаются...</p> : (
           <ul className="board-list">
             {templates.slice(0, 8).map((tpl) => (
@@ -923,7 +923,7 @@ export default function Home() {
                     setTemplateConfirmOpen(true);
                   }}
                 >
-                  Use template
+                  Выбрать шаблон
                 </Button>
               </li>
             ))}
@@ -933,11 +933,11 @@ export default function Home() {
     </section>
 
     <section>
-      <h2>Boards list</h2>
+      <h2>Список досок</h2>
       <div className="list-item-card" style={{ marginBottom: 12 }}>
         <div className="inline-actions" style={{ alignItems: 'center' }}>
           <Input
-            placeholder="Search by title..."
+            placeholder="Поиск по названию..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
           />
@@ -960,12 +960,12 @@ export default function Home() {
         </div>
       </div>
       {boards.length === 0 ? <p>Нет досок</p> :
-        <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Open</Button> {b.title}</li>)}</ul>}
+        <ul className="board-list">{boards.map((b) => <li className="list-item-card" key={b.id}><Button variant="secondary" onClick={() => openBoard(b.id)}>Открыть</Button> {b.title}</li>)}</ul>}
     </section>
 
     <section>
-      <h2>Open board: {activeBoardId || 'none'}</h2>
-      {activeBoardId && <Button onClick={addCard}>Add text card</Button>}
+      <h2>Открытая доска: {activeBoardId || 'нет'}</h2>
+      {activeBoardId && <Button onClick={addCard}>Добавить текстовую карточку</Button>}
       {!activeBoardId ? <p>Сначала выберите доску</p> : cards.length === 0 ? (
         <div className="list-item-card" style={{ marginTop: 12, textAlign: 'center', padding: 24 }}>
           <div style={{ fontSize: 36, marginBottom: 8 }}>🗂️</div>
@@ -1019,10 +1019,10 @@ export default function Home() {
             setSelectedTemplate(null);
           }}
         >
-          Cancel
+          Отмена
         </Button>
         <Button onClick={() => createBoardFromTemplate(selectedTemplate)}>
-          Confirm
+          Подтвердить
         </Button>
       </div>
     </Modal>
