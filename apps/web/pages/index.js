@@ -196,7 +196,7 @@ export default function Home() {
       const status = Number(e.status);
       if (status === 401) {
         await logout();
-        return 'Сессия истекла. Войдите снова.';
+        return context?.silent401 ? '' : 'Сессия истекла. Войдите снова.';
       }
       try {
         const payload = await e.clone().json();
@@ -280,7 +280,8 @@ export default function Home() {
       });
       setBoards(res.data || []);
     } catch (e2) {
-      setError(await normalizeApiError(e2, { action: 'load_boards' }));
+      const msg = await normalizeApiError(e2, { action: 'load_boards', silent401: true });
+      if (msg) setError(msg);
     } finally { setLoading(false); }
   }
 
@@ -294,7 +295,8 @@ export default function Home() {
       setTemplates(res.data?.items || []);
     } catch (e) {
       await captureError(e, { action: 'load_templates' });
-      setError(await normalizeApiError(e, { action: 'load_templates' }));
+      const msg = await normalizeApiError(e, { action: 'load_templates', silent401: true });
+      if (msg) setError(msg);
       setTemplates([]);
     }
   }
