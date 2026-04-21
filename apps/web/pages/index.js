@@ -18,6 +18,23 @@ import Modal from '../components/ui/Modal';
 import { Toast, useToast } from '../components/ui/Toast';
 
 const DEFAULT_API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3000';
+
+function normalizeApiBaseUrl(url) {
+  if (!url) return DEFAULT_API;
+  try {
+    const parsed = new URL(url);
+    const pageHost = typeof window !== 'undefined' ? window.location.hostname : '';
+    const isLocalHost = ['localhost', '127.0.0.1'].includes(parsed.hostname);
+    if (isLocalHost && pageHost && !['localhost', '127.0.0.1'].includes(pageHost)) {
+      parsed.hostname = pageHost;
+      parsed.port = '3000';
+      return parsed.toString().replace(/\/$/, '');
+    }
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return DEFAULT_API;
+  }
+}
 const HISTORY_KEY_PREFIX = 'db_web_history_';
 const MAX_ASSET_SIZE_BYTES = 10 * 1024 * 1024;
 const ALLOWED_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp']);
@@ -78,10 +95,20 @@ export default function Home() {
     if (!saved) return;
     try {
       const parsed = JSON.parse(saved);
+      const normalizedBaseUrl = normalizeApiBaseUrl(parsed.baseUrl || DEFAULT_API);
       setToken(parsed.token || '');
       setRefreshToken(parsed.refreshToken || '');
-      setBaseUrl(parsed.baseUrl || DEFAULT_API);
+      setBaseUrl(normalizedBaseUrl);
       setCurrentUser(parsed.user || null);
+
+      if (normalizedBaseUrl !== (parsed.baseUrl || DEFAULT_API)) {
+        localStorage.setItem('db_web_auth', JSON.stringify({
+          token: parsed.token || '',
+          refreshToken: parsed.refreshToken || '',
+          baseUrl: normalizedBaseUrl,
+          user: parsed.user || null,
+        }));
+      }
     } catch {}
   }, []);
 
