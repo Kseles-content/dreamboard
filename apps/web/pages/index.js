@@ -501,9 +501,14 @@ export default function Home() {
 
       const raw = localStorage.getItem(`${HISTORY_KEY_PREFIX}${id}`);
       const parsed = raw ? deserializeHistory(raw) : null;
-      if (parsed) {
+      if (parsed?.present) {
         setHistory(parsed);
-        setDirty(true);
+        const { creates, updates, deletes } = diffCards(remoteCards, parsed.present);
+        const hasUnsaved = creates.length > 0 || updates.length > 0 || deletes.length > 0;
+        setDirty(hasUnsaved);
+        if (!hasUnsaved) {
+          localStorage.removeItem(`${HISTORY_KEY_PREFIX}${id}`);
+        }
       } else {
         setHistory(createHistory(remoteCards));
         setDirty(false);
