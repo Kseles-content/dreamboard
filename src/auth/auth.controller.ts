@@ -13,7 +13,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: minutes(15) } })
+  @Throttle({ default: { limit: 60, ttl: minutes(15) } })
   login(@Body() input: LoginDto) {
     return this.authService.login(input);
   }
