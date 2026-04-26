@@ -1,45 +1,47 @@
 # Feedback — DreamBoard v1.0 demo session
 
 ## Session
-- Date: 2026-04-20
-- Type: Self-demo (pilot flow)
-- Environment: local (API + Web)
+- Date: 2026-04-25
+- Type: Manual self-demo (этап 5)
+- Environment: local
+- Build/commit: `022b7c4`
 - Evidence inputs:
-  - `docs/export-evidence.md`
-  - `docs/testing.md` (e2e 14/14, smoke)
   - `docs/demo-checklist.md`
+  - `docs/export-evidence.md`
+  - `npm run test:e2e` (14/14 PASS)
+  - `bash scripts/demo-check.sh` (`DEMO_OK`)
 
 ---
 
-## Checklist result
+## Checklist result (этап 5)
 
 ### 1) Регистрация/логин
 - Status: ✅ PASS
-- Notes: Login flow stable.
+- Notes: Логин и доступ к защищённым сценариям стабильны.
 
 ### 2) Создание доски (пустой и из шаблона)
 - Status: ✅ PASS
-- Notes: Empty board and template board creation work.
+- Notes: Оба сценария создания работают ожидаемо.
 
 ### 3) Карточки (создание/редактирование/удаление)
 - Status: ✅ PASS
-- Notes: CRUD behavior consistent; e2e confirms idempotent patch.
+- Notes: CRUD отрабатывает корректно, расхождений не выявлено.
 
-### 4) Поиск и фильтрация досок
+### 4) Share-link + public view
 - Status: ✅ PASS
-- Notes: `query`, `pinned`, `updatedSince` work together.
+- Notes: Ссылка создаётся, публичный просмотр read-only, revoke работает.
 
-### 5) Resume flow
+### 5) Export PNG/JPG
 - Status: ✅ PASS
-- Notes: Continue card appears and opens last board.
+- Notes: Экспорт обоих форматов подтверждён.
 
-### 6) Share-link + public view
+### 6) Поиск и фильтрация досок
 - Status: ✅ PASS
-- Notes: Create/list/revoke link works; public read-only verified in e2e.
+- Notes: `query`, `pinned`, `updatedSince` и их комбинации работают корректно.
 
-### 7) Export PNG/JPG
+### 7) Resume flow
 - Status: ✅ PASS
-- Notes: Manual export evidence captured in `docs/export-evidence.md`.
+- Notes: Continue-карточка появляется и открывает последнюю доску.
 
 ---
 
@@ -49,19 +51,17 @@
 - **None**.
 
 ### P1 (high priority)
-- **None identified during demo**.
+- **None**.
 
 ### P2
-1. No dedicated staging environment (`NO_STAGING`), verification relies on local smoke/demo evidence.
-2. Export is client-side only (no server-side export API for batch automation).
+1. Отдельный staging-контур отсутствует (используется локальное demo-evidence).
 
 ### P3
-1. CI workflow naming is legacy (`Day1 CI`), cosmetic mismatch with current release phase.
-2. Historical docs can drift from current canonical handoff docs.
+1. Часть исторических документов использует устаревший нейминг CI/этапов.
 
 ---
 
 ## Release decision (demo gate)
-- Demo gate: ✅ PASSED
+- Demo gate (этап 5): ✅ PASSED
 - P0 count: **0**
-- Recommendation: proceed with v1.0 handoff; track P2/P3 as post-release improvements.
+- Recommendation: можно переходить к этапу 6.
