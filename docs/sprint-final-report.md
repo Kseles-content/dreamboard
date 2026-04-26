@@ -1,32 +1,65 @@
 # Sprint Final Report — DreamBoard v1.0 (этап 6)
 
-## 1) Анализ feedback-v1.0.md
-Источник: `docs/feedback-v1.0.md`
+## 1) Что сделано за спринт
 
-- P0 (release blockers): **0**
-- P1 (high priority): **0**
-- Demo gate этапа 5: **PASSED**
+### Продуктовый scope v1.0
+- Авторизация и refresh/logout flows.
+- CRUD досок и карточек.
+- Шаринг (создание/отзыв ссылок) и публичный read-only просмотр.
+- Поиск/фильтры (`query`, `pinned`, `updatedSince`) и cursor-пагинация.
+- Resume flow (continue where you left off).
+- Экспорт PNG/JPG (UI).
 
-Вывод: блокирующих и high-priority дефектов для релизного тега v1.0.0 не выявлено.
-
----
-
-## 2) CI status
-Проверены последние GitHub Actions runs (`gh run list`):
-
-- ✅ 24453572729 — success
-- ✅ 24453207645 — success
-- ✅ 24410734311 — success
-
-Вывод: последние релевантные CI-runs в зелёном состоянии.
+### Приёмка и доказательства
+- Ручной demo-checklist этапа 5: `docs/demo-checklist.md`.
+- Фидбек демо-сессии: `docs/feedback-v1.0.md`.
+- Локальная smoke-проверка: `bash scripts/demo-check.sh` → `DEMO_OK`.
+- Автотесты:
+  - `npm test` → PASS (3/3)
+  - `npm run test:e2e` → PASS (14/14)
 
 ---
 
-## 3) Release tag
-- Создан git tag: **v1.0.0**
-- Tag target: текущий commit main с финальным отчётом этапа 6.
+## 2) Статус передачи пользователю
+
+- Demo gate: ✅ PASSED
+- P0: **0**
+- P1: **0**
+- Документация handoff актуализирована (`demo-checklist`, `feedback`, данный финальный отчёт).
+- Решение по релизу: **передача v1.0 пользователю подтверждена**.
 
 ---
 
-## 4) Итоговое решение
-Релизный этап 6 завершён: можно считать **DreamBoard v1.0.0** зафиксированным релизным срезом документации и подтверждённого demo/CI состояния.
+## 3) CI status
+
+Проверка последних релевантных GitHub Actions runs:
+- ✅ `24453572729` — success
+- ✅ `24453207645` — success
+- ✅ `24410734311` — success
+
+Примечание: для docs-only коммитов в `main` отдельные новые runs не запускались; используем последние успешные релевантные прогоны + локальные test/e2e/smoke.
+
+---
+
+## 4) Git tag релиза
+
+- Релизный tag: **v1.0.0**
+- Формат сообщения: `Release v1.0.0: DreamBoard MVP`
+
+---
+
+## 5) Рекомендации по следующей итерации
+
+1. Поднять выделенный staging-контур (снять зависимость от `NO_STAGING`).
+2. Обновить/унифицировать naming CI и исторических документов.
+3. Добавить автоматизированные проверки UI-экспорта (PNG/JPG) в regression pipeline.
+4. Подготовить пост-релизный backlog из P2/P3 наблюдений.
+
+---
+
+## 6) DoD этапа 6
+
+- [x] 0 P0/P1 замечаний
+- [x] CI зелёный
+- [x] Git tag v1.0.0 создан
+- [x] `docs/sprint-final-report.md` готов
