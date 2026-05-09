@@ -3,8 +3,19 @@ name: Day1 CI
 on:
   pull_request:
     branches: [ main ]
+  push:
+    branches: [ main, 'feature/**', 'chore/**' ]
+  workflow_dispatch:
 
 jobs:
+
+  heartbeat-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Heartbeat smoke (demo check)
+        run: bash scripts/demo-check.sh
+
   contracts-check:
     runs-on: ubuntu-latest
     steps:
