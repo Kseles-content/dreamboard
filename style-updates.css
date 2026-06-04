@@ -1,0 +1,48 @@
+/* ==========================================================================
+   PHASE 2 - ADDITIONAL STYLES (MULTI-BOARDS & EXPORT)
+   ========================================================================== */
+
+/* Группа селектора досок */
+.board-selector-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
+    padding: 4px 8px;
+}
+
+.board-selector {
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-family: 'Outfit', sans-serif;
+    font-size: 16px;
+    font-weight: 600;
+    outline: none;
+    cursor: pointer;
+    padding: 4px;
+    width: 140px;
+}
+
+.board-selector option {
+    background: var(--bg-dark);
+    color: var(--text-primary);
+}
+
+.icon-btn.small {
+    width: 28px;
+    height: 28px;
+}
+
+.icon-btn.small svg {
+    width: 14px;
+    height: 14px;
+}
+
+.icon-btn.danger:hover {
+    border-color: rgba(255, 45, 85, 0.4);
+    background: rgba(255, 45, 85, 0.15);
+    color: #ff2d55;
+}

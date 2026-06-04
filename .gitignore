@@ -1,0 +1,22 @@
+# DreamBoard PWA — GitHub Pages
+
+# Temporary and Python scripts
+*.py
+*.pyc
+__pycache__/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# OpenClaw workspace files (keep local)
+.openclaw/
+.env
+AGENTS.md
+IDENTITY.md
+SOUL.md
+TOOLS.md
+USER.md
+HEARTBEAT.md
+MEMORY.md
+memory/
