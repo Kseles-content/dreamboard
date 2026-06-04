@@ -1,9 +1,15 @@
-.openclaw/
-memory/
-node_modules/
-dist/
-*.sqlite
-coverage/
+# DreamBoard — PWA + Backend
+
+# Temporary and Python scripts
+*.py
+*.pyc
+__pycache__/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# OpenClaw workspace files (keep local)
 .openclaw/
 AGENTS.md
 BOOTSTRAP.md
@@ -11,14 +17,33 @@ SOUL.md
 TOOLS.md
 USER.md
 IDENTITY.md
-apps/api/src/main.ts.bak
+HEARTBEAT.md
+MEMORY.md
+memory/
+
+# Node
+node_modules/
+
+# Build output
+dist/
+apps/web/.next/
+apps/web/node_modules/
+
+# Backend
+*.sqlite
+coverage/
+prisma/*.db
+/generated/prisma
+
+# Config
+.env
+!.env.example
+
+# Mobile
 apps/mobile/.dart_tool/
 apps/mobile/.flutter-plugins-dependencies
 apps/mobile/build/
+
+# Backups / temp
+apps/api/src/main.ts.bak
 apps/web/.env.local
-apps/web/.next/
-
-/generated/prisma
-
-.env
-!.env.example

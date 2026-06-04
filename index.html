@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DreamBoard — Интерактивный Коллаж Желаний</title>
+    <meta name="description" content="DreamBoard — премиальное веб-приложение для визуализации целей и мечтаний. Создавайте интерактивные коллажи желаний, медитируйте в иммерсивном режиме и воплощайте мечты в жизнь.">
+    <meta name="theme-color" content="#07050f">
+
+    <!-- Open Graph для красивых превью в мессенджерах -->
+    <meta property="og:title" content="DreamBoard — Интерактивный Коллаж Желаний">
+    <meta property="og:description" content="Визуализируйте свои мечты, создавайте интерактивные доски целей и медитируйте в режиме манифестации с процедурной музыкой и дыхательным гидом.">
+    <meta property="og:image" content="assets/images/og-preview.png">
+    <meta property="og:type" content="website">
+    <meta property="og:locale" content="ru_RU">
+
+    <!-- PWA: Manifest и иконки -->
+    <link rel="manifest" href="manifest.json">
+    <link rel="icon" type="image/png" sizes="192x192" href="assets/icons/icon-192.png">
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="DreamBoard">
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Фоновые интерактивные частицы -->
+    <canvas id="ambient-particles" class="ambient-canvas"></canvas>
+
+    <!-- Основной Контейнер Приложения -->
+    <div class="app-container">
+        <!-- Шапка / Панель Управления -->
+        <header class="app-header">
+            <div class="header-logo">
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L14.8 8.4L21.8 9L16.5 13.6L18.1 20.5L12 16.8L5.9 20.5L7.5 13.6L2.2 9L9.2 8.4L12 2Z" fill="url(#star-grad)" stroke="url(#star-grad)" stroke-width="1.5" stroke-linejoin="round"/>
+                    <defs>
+                        <linearGradient id="star-grad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                            <stop offset="0%" stop-color="#00f2fe" />
+                            <stop offset="50%" stop-color="#a18cd1" />
+                            <stop offset="100%" stop-color="#ff0844" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+                <h1>DreamBoard</h1>
+            </div>
+
+            <!-- Селектор Мульти-досок -->
+            <div class="board-selector-group">
+                <select id="board-selector" class="board-selector" title="Выбрать доску">
+                    <!-- Заполняется динамически -->
+                </select>
+                <button id="add-board-btn" class="icon-btn small" title="Создать новую доску">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                </button>
+                <button id="rename-board-btn" class="icon-btn small" title="Переименовать доску">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                </button>
+                <button id="delete-board-btn" class="icon-btn small danger" title="Удалить доску">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                </button>
+            </div>
+
+            <!-- Фильтр категорий -->
+            <nav class="category-filters">
+                <button class="filter-btn active" data-category="all">Все</button>
+                <button class="filter-btn" data-category="career" data-color="career"><span class="dot"></span>Карьера</button>
+                <button class="filter-btn" data-category="wealth" data-color="wealth"><span class="dot"></span>Богатство</button>
+                <button class="filter-btn" data-category="health" data-color="health"><span class="dot"></span>Здоровье & Дух</button>
+                <button class="filter-btn" data-category="travel" data-color="travel"><span class="dot"></span>Путешествия</button>
+                <button class="filter-btn" data-category="relationships" data-color="relationships"><span class="dot"></span>Отношения</button>
+                <button class="filter-btn" data-category="growth" data-color="growth"><span class="dot"></span>Личность</button>
+            </nav>
+
+            <div class="header-actions">
+                <!-- Переключатель видов -->
+                <div class="view-toggle-group">
+                    <button id="view-grid-btn" class="toggle-btn active" title="Режим Сетки (Masonry)">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <rect x="3" y="3" width="7" height="9" rx="1"/>
+                            <rect x="14" y="3" width="7" height="5" rx="1"/>
+                            <rect x="14" y="12" width="7" height="9" rx="1"/>
+                            <rect x="3" y="16" width="7" height="5" rx="1"/>
+                        </svg>
+                    </button>
+                    <button id="view-canvas-btn" class="toggle-btn" title="Свободный Интерактивный Холст">
+                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="10"/>
+                            <circle cx="12" cy="12" r="3"/>
+                            <path d="M12 2v2M12 20v2M2 12h2M20 12h2"/>
+                        </svg>
+                    </button>
+                </div>
+
+                <!-- Звук -->
+                <button id="audio-toggle-btn" class="icon-btn muted" title="Включить эмбиент-звуки">
+                    <svg class="audio-on-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/>
+                    </svg>
+                    <svg class="audio-off-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
+                        <line x1="23" y1="9" x2="17" y2="15"/>
+                        <line x1="17" y1="9" x2="23" y2="15"/>
+                    </svg>
+                </button>
+
+                <!-- Экспорт доски в PNG -->
+                <button id="export-png-btn" class="icon-btn" title="Скачать доску как PNG-изображение">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="7 10 12 15 17 10"/>
+                        <line x1="12" y1="15" x2="12" y2="3"/>
+                    </svg>
+                </button>
+
+                <!-- Экспорт / Импорт JSON -->
+                <button id="export-json-btn" class="icon-btn" title="Экспорт данных (JSON-бэкап)">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+                        <polyline points="14 2 14 8 20 8"/>
+                        <line x1="16" y1="13" x2="8" y2="13"/>
+                        <line x1="16" y1="17" x2="8" y2="17"/>
+                    </svg>
+                </button>
+                <button id="import-json-btn" class="icon-btn" title="Импорт данных из JSON-файла">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                        <polyline points="17 8 12 3 7 8"/>
+                        <line x1="12" y1="3" x2="12" y2="15"/>
+                    </svg>
+                </button>
+                <input type="file" id="import-file-input" accept=".json" style="display:none;">
+
+                <!-- Достижения -->
+                <button id="archive-toggle-btn" class="icon-btn" title="Архив достижений (Архив Благодарности)">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/>
+                        <polyline points="22 4 12 14.01 9 11.01"/>
+                    </svg>
+                </button>
+
+                <!-- Кнопка Медитации -->
+                <button id="start-manifest-btn" class="glow-btn">
+                    <span>Режим Манифестации</span>
+                </button>
+            </div>
+        </header>
+
+        <!-- Рабочее пространство -->
+        <main class="app-workspace">
+            
+            <!-- Режим 1: Сетка Masonry (По умолчанию) -->
+            <section id="grid-view-section" class="workspace-section active">
+                <div class="section-header">
+                    <h2>Мои стремления</h2>
+                    <button class="add-dream-btn neon-btn">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <line x1="12" y1="5" x2="12" y2="19"/>
+                            <line x1="5" y1="12" x2="19" y2="12"/>
+                        </svg>
+                        Добавить мечту
+                    </button>
+                </div>
+                <div id="dreams-masonry-grid" class="dreams-masonry-grid">
+                    <!-- Заполняется динамически через JS -->
+                </div>
+            </section>
+
+            <!-- Режим 2: Свободный Интерактивный Холст -->
+            <section id="canvas-view-section" class="workspace-section">
+                <!-- Ограничивающий вьюпорт для холста -->
+                <div id="canvas-viewport" class="canvas-viewport">
+                    <!-- Сам холст, который мы будем скроллить и скейлить -->
+                    <div id="spatial-canvas" class="spatial-canvas">
+                        <!-- Сетка на фоне холста -->
+                        <div class="canvas-grid-bg"></div>
+                        <!-- Перетаскиваемые карточки будут рендериться здесь -->
+                    </div>
+
+                    <!-- Инструкция и плавающие подсказки -->
+                    <div class="canvas-tip">
+                        <span>Зажмите <strong>Space + ЛКМ</strong> или колесо мыши для перемещения. <strong>Прокрутка</strong> — масштабирование.</span>
+                    </div>
+
+                    <!-- Плавающая панель управления зумом холста -->
+                    <div class="canvas-controls">
+                        <button id="canvas-zoom-out" class="canvas-control-btn" title="Уменьшить">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        </button>
+                        <span id="canvas-zoom-indicator">100%</span>
+                        <button id="canvas-zoom-in" class="canvas-control-btn" title="Увеличить">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        </button>
+                        <button id="canvas-zoom-reset" class="canvas-control-btn" title="Сбросить масштаб и положение">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+                            </svg>
+                        </button>
+                        <div class="divider"></div>
+                        <button id="canvas-add-dream" class="canvas-control-btn primary" title="Добавить мечту на холст">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Модальное окно: Создание / Редактирование Мечты -->
+    <div id="dream-modal" class="modal-overlay">
+        <div class="modal-content glass-card">
+            <header class="modal-header">
+                <h3 id="modal-title">Создать новую мечту</h3>
+                <button class="close-modal-btn">&times;</button>
+            </header>
+            <form id="dream-form" class="modal-form">
+                <input type="hidden" id="edit-dream-id">
+                
+                <div class="form-group">
+                    <label for="dream-title-input">Название мечты</label>
+                    <input type="text" id="dream-title-input" required placeholder="Например: Построить дом у океана" maxlength="60">
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group half">
+                        <label for="dream-category-select">Категория</label>
+                        <select id="dream-category-select" required>
+                            <option value="career">Карьера & Бизнес</option>
+                            <option value="wealth">Богатство & Финансы</option>
+                            <option value="health">Здоровье, Разум & Спорт</option>
+                            <option value="travel">Путешествия & Места</option>
+                            <option value="relationships">Отношения & Семья</option>
+                            <option value="growth">Личностный рост & Хобби</option>
+                        </select>
+                    </div>
+                    <div class="form-group half">
+                        <label for="dream-year-input">Целевой год</label>
+                        <input type="number" id="dream-year-input" placeholder="2027" min="2026" max="2100">
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label for="dream-desc-input">Описание стремления</label>
+                    <textarea id="dream-desc-input" rows="3" placeholder="Опишите ваши чувства и видение этой мечты в настоящем времени..."></textarea>
+                </div>
+
+                <div class="form-group">
+                    <label for="dream-image-url">Изображение</label>
+                    <div class="image-source-tabs">
+                        <button type="button" class="tab-btn active" data-tab="unsplash">Выбрать обложку</button>
+                        <button type="button" class="tab-btn" data-tab="url">Вставить ссылку</button>
+                    </div>
+                    
+                    <!-- Вариант 1: Поиск по Unsplash -->
+                    <div class="tab-content" id="unsplash-tab-content">
+                        <div class="unsplash-search-row">
+                            <input type="text" id="unsplash-search-input" placeholder="Поиск красивых фото (на англ., например: ocean, tech)...">
+                            <button type="button" id="unsplash-search-btn" class="simple-btn">Искать</button>
+                        </div>
+                        <div id="unsplash-results-grid" class="unsplash-results-grid">
+                            <!-- Сюда подгрузятся картинки -->
+                        </div>
+                    </div>
+                    
+                    <!-- Вариант 2: Прямой URL -->
+                    <div class="tab-content hidden" id="url-tab-content">
+                        <input type="url" id="dream-image-url" placeholder="https://images.unsplash.com/... или любая другая ссылка">
+                    </div>
+
+                    <!-- Скрытый инпут с итоговым путем -->
+                    <input type="hidden" id="dream-image-final-path">
+                </div>
+
+                <div class="form-group">
+                    <label>Ключевые вехи (Подзадачи)</label>
+                    <div id="modal-milestones-list" class="modal-milestones-list">
+                        <!-- Чек-листы подзадач -->
+                    </div>
+                    <div class="add-milestone-row">
+                        <input type="text" id="new-milestone-input" placeholder="Добавить веху (например: Отложить $5000)">
+                        <button type="button" id="add-milestone-btn" class="simple-btn">Добавить</button>
+                    </div>
+                </div>
+
+                <footer class="modal-footer">
+                    <button type="button" class="btn secondary close-modal-btn">Отмена</button>
+                    <button type="submit" class="btn primary">Сохранить</button>
+                </footer>
+            </form>
+        </div>
+    </div>
+
+    <!-- Полноэкранный иммерсивный оверлей: Режим Манифестации -->
+    <div id="manifest-mode-overlay" class="manifest-overlay">
+        <!-- Анимированный звездный фон -->
+        <canvas id="manifest-starfield" class="manifest-starfield"></canvas>
+
+        <button id="exit-manifest-btn" class="exit-manifest-btn" title="Выйти из режима манифестации">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="18" y1="6" x2="6" y2="18"/>
+                <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+        </button>
+
+        <!-- Главное кинематографическое окно показа карточки -->
+        <div class="manifest-content">
+            <!-- Движущиеся слайды Ken Burns -->
+            <div id="manifest-slider-container" class="manifest-slider-container">
+                <!-- Рендерится через JS: одно или несколько больших изображений -->
+            </div>
+
+            <!-- Информационный блок мечты на переднем плане -->
+            <div class="manifest-card-info glass-card">
+                <span id="manifest-category" class="card-badge">Категория</span>
+                <h2 id="manifest-title">Моя Великая Мечта</h2>
+                <p id="manifest-desc">Описание визуализации цели. Наполняем мысли позитивной энергией...</p>
+                <div id="manifest-milestones" class="manifest-milestones-progress">
+                    <!-- Прогресс выполнения -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Центральный / плавающий Гид по Дыханию -->
+        <div class="breath-guide-container">
+            <div class="breath-circle-outer">
+                <div class="breath-circle-inner"></div>
+                <span id="breath-text">Дышите глубоко</span>
+            </div>
+            <p class="breath-subtext">Синхронизируйте дыхание для лучшей концентрации</p>
+        </div>
+
+        <!-- Слайдер аффирмаций внизу -->
+        <div class="manifest-affirmation-slider">
+            <p id="manifest-affirmation-text">Я уверенно иду к реализации своих истинных желаний.</p>
+        </div>
+
+        <!-- Управление презентацией внизу -->
+        <div class="manifest-controls">
+            <button id="manifest-prev-btn" class="manifest-control-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+            </button>
+            <button id="manifest-play-btn" class="manifest-control-btn active">
+                <!-- Иконка паузы -->
+                <svg class="pause-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="6" y="4" width="4" height="16"/>
+                    <rect x="14" y="4" width="4" height="16"/>
+                </svg>
+                <!-- Иконка плей -->
+                <svg class="play-icon hidden" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="5 3 19 12 5 21 5 3"/>
+                </svg>
+            </button>
+            <button id="manifest-next-btn" class="manifest-control-btn">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="9 18 15 12 9 6"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+
+    <!-- Модальное окно: Архив Благодарности (Достигнутые Мечты) -->
+    <div id="archive-modal" class="modal-overlay">
+        <div class="modal-content glass-card wide">
+            <header class="modal-header">
+                <h3>Архив Благодарности</h3>
+                <button class="close-modal-btn">&times;</button>
+            </header>
+            <div class="archive-body">
+                <p class="archive-intro">Здесь хранятся ваши цели, которые уже воплотились в жизнь. Вспоминайте их с чувством глубокой благодарности.</p>
+                
+                <div id="archived-dreams-grid" class="archived-dreams-grid">
+                    <!-- Заполняется динамически -->
+                    <div class="empty-archive-state">
+                        <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                            <path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/>
+                            <path d="M11.99 8v8M9 13l3 3 3-3"/>
+                        </svg>
+                        <p>У вас пока нет манифестированных мечтаний. Сделайте первый шаг на пути к цели!</p>
+                    </div>
+                </div>
+            </div>
+            <footer class="modal-footer">
+                <button type="button" class="btn primary close-modal-btn">Закрыть</button>
+            </footer>
+        </div>
+    </div>
+
+    <!-- Элемент для всплывающих уведомлений -->
+    <div id="toast-container" class="toast-container"></div>
+
+    <!-- html2canvas для экспорта PNG -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+    <script src="app.js"></script>
+
+    <!-- Регистрация Service Worker (PWA) -->
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('service-worker.js')
+                    .then(reg => console.log('SW зарегистрирован:', reg.scope))
+                    .catch(err => console.log('SW ошибка:', err));
+            });
+        }
+    </script>
+</body>
+</html>
