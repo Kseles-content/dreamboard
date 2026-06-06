@@ -2,7 +2,7 @@
    DREAMBOARD - SERVICE WORKER (PWA OFFLINE CACHE)
    ========================================================================== */
 
-const CACHE_NAME = 'dreamboard-v8';
+const CACHE_NAME = 'dreamboard-v9';
 
 // Ресурсы для предварительного кэширования (Precache)
 const PRECACHE_URLS = [

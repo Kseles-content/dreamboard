@@ -1081,7 +1081,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const startY = 2050;
         const gapX = 360;
         const gapY = 480;
-        const columns = window.innerWidth < 768 ? 1 : 3;
+        const isMobile = window.innerWidth < 768;
+        const isLandscape = window.innerWidth > window.innerHeight;
+        const columns = isMobile ? (isLandscape ? 2 : 1) : 3;
 
         activeDreams.forEach((dream, index) => {
             const col = index % columns;
@@ -1094,6 +1096,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 height: dream.canvasPos?.height || 420
             };
         });
+    }
+
+    function resetCanvasCamera() {
+        const isMobile = window.innerWidth < 768;
+        const isLandscape = window.innerWidth > window.innerHeight;
+        zoom = isMobile ? (isLandscape ? 0.62 : 0.82) : 1.0;
+        panX = isMobile ? -1710 : -2100;
+        panY = isMobile ? -1680 : -2050;
     }
 
     // Отслеживание нажатия пробела (Space) для панорамирования холста
@@ -1258,13 +1268,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     canvasZoomReset.addEventListener('click', () => {
-        zoom = 1.0;
         resetCanvasCardLayout();
         saveDreams();
         renderCanvas();
+        resetCanvasCamera();
         // Возвращаем в центр
-        panX = -2100;
-        panY = -2050;
         updateCanvasTransform();
         showToast('Холст сброшен в исходную позицию', 'info');
     });
