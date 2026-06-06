@@ -1541,8 +1541,13 @@ textarea:focus {
     .app-header {
         flex-direction: column;
         height: auto;
-        padding: 12px;
-        gap: 12px;
+        align-items: stretch;
+        padding: 10px 12px;
+        gap: 10px;
+    }
+
+    .header-logo {
+        justify-content: center;
     }
 
     .header-logo h1 {
@@ -1550,29 +1555,56 @@ textarea:focus {
     }
 
     .board-selector-group {
+        display: flex;
+        align-items: center;
         width: 100%;
         justify-content: center;
-        margin-bottom: 8px;
+        gap: 8px;
+        margin-bottom: 0;
     }
 
     .board-selector {
-        width: 100%;
-        max-width: 220px;
+        flex: 1 1 auto;
+        width: auto;
+        min-width: 0;
+        max-width: 240px;
+        height: 40px;
+    }
+
+    .board-selector-group .icon-btn.small {
+        display: none;
     }
 
     .category-filters {
+        box-sizing: border-box;
         width: 100%;
         max-width: 100%;
         overflow-x: auto;
+        white-space: nowrap;
         padding-bottom: 4px;
         -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .category-filters::-webkit-scrollbar {
+        display: none;
     }
 
     .header-actions {
         flex-wrap: wrap;
         justify-content: center;
         width: 100%;
+        max-width: 100%;
         gap: 8px;
+        overflow: visible;
+    }
+
+    #start-manifest-btn {
+        flex: 1 0 100%;
+        justify-content: center;
+        min-height: 46px;
+        max-width: 100%;
+        white-space: normal;
     }
 
     .icon-btn,
