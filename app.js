@@ -1794,6 +1794,10 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentManifestIdx = 0;
     let isManifestPlaying = true;
     let breathGuideTimer = null;
+    let manifestWakeLock = null;
+    let manifestTouchStartX = 0;
+    let manifestTouchStartY = 0;
+    let manifestTouchStartTime = 0;
     
     // Список вдохновляющих аффирмаций
     const GENERAL_AFFIRMATIONS = [
@@ -1849,6 +1853,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         // Запускаем Дыхательный Гид
         startBreathingGuide();
+        requestManifestWakeLock();
     }
 
     function exitManifestMode() {
@@ -1864,7 +1869,37 @@ document.addEventListener('DOMContentLoaded', () => {
         breathGuideTimer = null;
         
         stopManifestStarfield();
+        releaseManifestWakeLock();
     }
+
+    async function requestManifestWakeLock() {
+        if (!('wakeLock' in navigator)) return;
+        try {
+            manifestWakeLock = await navigator.wakeLock.request('screen');
+            manifestWakeLock.addEventListener('release', () => {
+                manifestWakeLock = null;
+            });
+        } catch (error) {
+            console.warn('[DreamBoard] Wake Lock unavailable', error);
+        }
+    }
+
+    async function releaseManifestWakeLock() {
+        if (!manifestWakeLock) return;
+        try {
+            await manifestWakeLock.release();
+        } catch (error) {
+            console.warn('[DreamBoard] Wake Lock release failed', error);
+        } finally {
+            manifestWakeLock = null;
+        }
+    }
+
+    document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible' && manifestOverlay.classList.contains('active')) {
+            requestManifestWakeLock();
+        }
+    });
 
     function renderManifestSlides(activeDreams) {
         manifestSlider.innerHTML = '';
@@ -1969,6 +2004,54 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // ЛОГИКА ДЫХАТЕЛЬНОГО ГИДА (4-4-4 SECONDS BOX BREATHING)
+    function isManifestGestureBlocked(target) {
+        return target.closest('.exit-manifest-btn') ||
+            target.closest('.manifest-controls') ||
+            target.closest('.manifest-rotate-prompt');
+    }
+
+    function swipeManifestStep(direction) {
+        const activeDreams = dreams.filter(d => d.status === 'active');
+        if (activeDreams.length === 0) return;
+        currentManifestIdx = (currentManifestIdx + direction + activeDreams.length) % activeDreams.length;
+        showManifestSlide(currentManifestIdx, activeDreams);
+        startManifestLoop(activeDreams);
+    }
+
+    manifestOverlay.addEventListener('touchstart', (e) => {
+        if (!manifestOverlay.classList.contains('active') || isManifestGestureBlocked(e.target)) return;
+        manifestTouchStartX = e.touches[0].clientX;
+        manifestTouchStartY = e.touches[0].clientY;
+        manifestTouchStartTime = Date.now();
+    }, { passive: true });
+
+    manifestOverlay.addEventListener('touchend', (e) => {
+        if (!manifestOverlay.classList.contains('active') || isManifestGestureBlocked(e.target) || !e.changedTouches.length) return;
+
+        const touch = e.changedTouches[0];
+        const dx = touch.clientX - manifestTouchStartX;
+        const dy = touch.clientY - manifestTouchStartY;
+        const elapsed = Date.now() - manifestTouchStartTime;
+
+        if (Math.abs(dx) > 54 && Math.abs(dx) > Math.abs(dy) * 1.4) {
+            swipeManifestStep(dx < 0 ? 1 : -1);
+            e.preventDefault();
+            return;
+        }
+
+        if (Math.abs(dx) < 18 && Math.abs(dy) < 18 && elapsed < 500) {
+            manifestPlayBtn.click();
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    manifestOverlay.addEventListener('click', (e) => {
+        if (!manifestOverlay.classList.contains('active') || isManifestGestureBlocked(e.target)) return;
+        if (window.matchMedia('(max-width: 900px) and (orientation: landscape)').matches) {
+            manifestPlayBtn.click();
+        }
+    });
+
     function startBreathingGuide() {
         if (breathGuideTimer) clearInterval(breathGuideTimer);
         
