@@ -1533,3 +1533,156 @@ textarea:focus {
 ::-webkit-scrollbar-thumb:hover {
     background: rgba(255, 255, 255, 0.2);
 }
+
+/* ==========================================================================
+   13. MOBILE OPTIMIZATIONS (TOUCH & RESPONSIVE)
+   ========================================================================== */
+@media (max-width: 768px) {
+    .app-header {
+        flex-direction: column;
+        height: auto;
+        padding: 12px;
+        gap: 12px;
+    }
+
+    .header-logo h1 {
+        font-size: 20px;
+    }
+
+    .board-selector-group {
+        width: 100%;
+        justify-content: center;
+        margin-bottom: 8px;
+    }
+
+    .board-selector {
+        width: 100%;
+        max-width: 220px;
+    }
+
+    .category-filters {
+        width: 100%;
+        max-width: 100%;
+        overflow-x: auto;
+        padding-bottom: 4px;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .header-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+        width: 100%;
+        gap: 8px;
+    }
+
+    .icon-btn,
+    .toggle-btn,
+    .canvas-control-btn,
+    .manifest-control-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    #grid-view-section {
+        padding: 16px;
+    }
+
+    .section-header {
+        gap: 12px;
+        align-items: flex-start;
+    }
+
+    .section-header h2 {
+        font-size: 22px;
+    }
+
+    .neon-btn,
+    .glow-btn {
+        padding: 8px 12px;
+        font-size: 13px;
+    }
+
+    .dream-card {
+        margin-bottom: 16px;
+    }
+
+    .card-title {
+        font-size: 16px;
+    }
+
+    .card-quick-actions {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, -50%) scale(1);
+        background: rgba(0, 0, 0, 0.42);
+        padding: 8px;
+        border-radius: 30px;
+        backdrop-filter: blur(4px);
+        -webkit-backdrop-filter: blur(4px);
+    }
+
+    .action-round-btn {
+        width: 44px;
+        height: 44px;
+    }
+
+    .modal-content {
+        width: 95%;
+        padding: 20px;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+
+    .form-row,
+    .add-milestone-row,
+    .unsplash-search-row {
+        flex-direction: column;
+        gap: 8px;
+    }
+
+    .form-group.half {
+        width: 100%;
+    }
+
+    .unsplash-results-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .manifest-content {
+        width: 94%;
+        height: 64vh;
+    }
+
+    .manifest-card-info {
+        width: 90%;
+        padding: 20px;
+    }
+
+    #manifest-title {
+        font-size: 24px;
+    }
+
+    #manifest-desc {
+        font-size: 14px;
+    }
+
+    .breath-guide-container {
+        top: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        padding: 10px 18px;
+    }
+
+    .manifest-affirmation-slider {
+        width: 90%;
+        bottom: 112px;
+    }
+}
+
+@media (hover: none), (pointer: coarse) {
+    .card-quick-actions {
+        opacity: 1;
+        pointer-events: auto;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
