@@ -2010,10 +2010,10 @@ textarea:focus {
 
     .manifest-content {
         position: absolute;
-        left: 92px;
-        right: 96px;
-        top: 88px;
-        bottom: 86px;
+        left: 72px;
+        right: 112px;
+        top: 76px;
+        bottom: 112px;
         width: auto;
         height: auto;
         max-width: none;
@@ -2026,7 +2026,7 @@ textarea:focus {
     }
 
     .manifest-card-info {
-        width: min(45%, 520px);
+        width: min(43%, 520px);
         max-height: calc(100% - 24px);
         overflow: hidden;
         margin-left: 20px;
@@ -2035,10 +2035,16 @@ textarea:focus {
         border-radius: 16px;
     }
 
+    .manifest-card-info .card-badge {
+        position: static;
+        display: inline-block;
+        margin-bottom: 6px;
+    }
+
     #manifest-title {
         font-size: clamp(18px, 3vw, 26px);
         line-height: 1.12;
-        margin: 6px 0 8px;
+        margin: 2px 0 8px;
     }
 
     #manifest-desc {
@@ -2084,8 +2090,8 @@ textarea:focus {
     .manifest-affirmation-slider {
         left: 50%;
         transform: translateX(-50%);
-        width: min(62vw, 760px);
-        bottom: 82px;
+        width: min(58vw, 720px);
+        bottom: 104px;
         padding: 6px 12px;
         border-radius: 16px;
         background: rgba(2, 1, 6, 0.62);
@@ -2099,7 +2105,7 @@ textarea:focus {
     .manifest-controls {
         left: 50%;
         transform: translateX(-50%);
-        bottom: 18px;
+        bottom: 42px;
         gap: 10px;
         padding: 6px;
     }
@@ -2114,6 +2120,25 @@ textarea:focus {
     .manifest-control-btn#manifest-play-btn {
         width: 54px;
         height: 54px;
+    }
+
+    .manifest-slide {
+        transition: opacity 0.15s linear;
+    }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+    .manifest-overlay.active .manifest-controls {
+        bottom: 42px;
+    }
+
+    .manifest-overlay.active .manifest-affirmation-slider {
+        bottom: 104px;
+    }
+
+    .manifest-overlay.active .manifest-content {
+        top: 76px;
+        bottom: 112px;
     }
 }
 

@@ -1871,6 +1871,7 @@ document.addEventListener('DOMContentLoaded', () => {
         activeDreams.forEach(dream => {
             const slide = document.createElement('div');
             slide.className = 'manifest-slide';
+            slide.dataset.dreamId = dream.id;
             slide.innerHTML = `
                 ${getImageHtml(dream.imageUrl, 'manifest-slide-img', dream.title, false)}
                 <div class="manifest-slide-overlay"></div>
@@ -1882,11 +1883,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function showManifestSlide(idx, activeDreams) {
         const slides = manifestOverlay.querySelectorAll('.manifest-slide');
+        const dream = activeDreams[idx];
         slides.forEach((slide, i) => {
-            slide.classList.toggle('active', i === idx);
+            slide.classList.toggle('active', slide.dataset.dreamId === dream.id || i === idx);
         });
         
-        const dream = activeDreams[idx];
         updateManifestCardInfo(dream);
         
         // Обновляем аффирмацию внизу
