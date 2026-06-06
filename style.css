@@ -729,6 +729,7 @@ body {
     height: 100%;
     overflow: hidden;
     cursor: grab;
+    touch-action: none;
 }
 
 .canvas-viewport:active {
@@ -1752,11 +1753,14 @@ textarea:focus {
 
     .manifest-content {
         width: 94%;
-        height: 64vh;
+        height: 58vh;
+        margin-top: 54px;
     }
 
     .manifest-card-info {
         width: 90%;
+        margin-left: auto;
+        margin-right: auto;
         padding: 20px;
     }
 
@@ -1769,15 +1773,46 @@ textarea:focus {
     }
 
     .breath-guide-container {
-        top: 20px;
+        top: 14px;
         left: 50%;
         transform: translateX(-50%);
-        padding: 10px 18px;
+        width: min(72vw, 360px);
+        min-height: 54px;
+        gap: 14px;
+        padding: 8px 14px;
+    }
+
+    .breath-circle-outer {
+        flex: 0 0 40px;
+    }
+
+    #breath-text {
+        position: static;
+        min-width: 62px;
+        font-size: 16px;
+        line-height: 1.1;
+        letter-spacing: 0.5px;
+    }
+
+    .breath-subtext {
+        max-width: 150px;
+        font-size: 11px;
+        line-height: 1.25;
     }
 
     .manifest-affirmation-slider {
         width: 90%;
-        bottom: 112px;
+        bottom: 104px;
+    }
+
+    #manifest-affirmation-text {
+        font-size: 17px;
+        line-height: 1.25;
+        letter-spacing: 0;
+    }
+
+    .manifest-controls {
+        bottom: 22px;
     }
 }
 

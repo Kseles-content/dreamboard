@@ -97,6 +97,15 @@ document.addEventListener('DOMContentLoaded', () => {
     let resizeStartH = 0;
     let resizeStartX = 0;
     let resizeStartY = 0;
+    let touchMode = null;
+    let lastTouchX = 0;
+    let lastTouchY = 0;
+    let pinchStartDistance = 0;
+    let pinchStartZoom = 1;
+    let pinchCanvasX = 0;
+    let pinchCanvasY = 0;
+    let pinchScreenX = 0;
+    let pinchScreenY = 0;
 
     // Временные вехи при редактировании
     let tempMilestones = [];
@@ -1105,6 +1114,81 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Масштабирование холста (Zoom) колесиком мыши
+    function getTouchDistance(touches) {
+        const dx = touches[0].clientX - touches[1].clientX;
+        const dy = touches[0].clientY - touches[1].clientY;
+        return Math.hypot(dx, dy);
+    }
+
+    function getTouchCenter(touches) {
+        return {
+            x: (touches[0].clientX + touches[1].clientX) / 2,
+            y: (touches[0].clientY + touches[1].clientY) / 2
+        };
+    }
+
+    function isCanvasTouchControl(target) {
+        return target.closest('.canvas-controls') ||
+            target.closest('.action-round-btn') ||
+            target.closest('.milestone-item') ||
+            target.closest('.card-resizer');
+    }
+
+    canvasViewport.addEventListener('touchstart', (e) => {
+        if (isCanvasTouchControl(e.target)) return;
+
+        if (e.touches.length === 1) {
+            touchMode = 'pan';
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+            e.preventDefault();
+        } else if (e.touches.length === 2) {
+            touchMode = 'pinch';
+            pinchStartDistance = getTouchDistance(e.touches);
+            pinchStartZoom = zoom;
+            const center = getTouchCenter(e.touches);
+            const rect = canvasViewport.getBoundingClientRect();
+            pinchScreenX = center.x - rect.left;
+            pinchScreenY = center.y - rect.top;
+            pinchCanvasX = (pinchScreenX - panX) / zoom;
+            pinchCanvasY = (pinchScreenY - panY) / zoom;
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    canvasViewport.addEventListener('touchmove', (e) => {
+        if (!touchMode) return;
+
+        if (touchMode === 'pan' && e.touches.length === 1) {
+            const touch = e.touches[0];
+            panX += touch.clientX - lastTouchX;
+            panY += touch.clientY - lastTouchY;
+            lastTouchX = touch.clientX;
+            lastTouchY = touch.clientY;
+            updateCanvasTransform();
+            e.preventDefault();
+        } else if (touchMode === 'pinch' && e.touches.length === 2) {
+            const distance = getTouchDistance(e.touches);
+            const ratio = distance / Math.max(1, pinchStartDistance);
+            zoom = Math.max(0.2, Math.min(2.0, pinchStartZoom * ratio));
+            panX = pinchScreenX - pinchCanvasX * zoom;
+            panY = pinchScreenY - pinchCanvasY * zoom;
+            updateCanvasTransform();
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    canvasViewport.addEventListener('touchend', (e) => {
+        if (e.touches.length === 0) {
+            touchMode = null;
+            saveDreams();
+        } else if (e.touches.length === 1) {
+            touchMode = 'pan';
+            lastTouchX = e.touches[0].clientX;
+            lastTouchY = e.touches[0].clientY;
+        }
+    }, { passive: false });
+
     canvasViewport.addEventListener('wheel', (e) => {
         e.preventDefault();
         
