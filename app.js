@@ -100,6 +100,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Временные вехи при редактировании
     let tempMilestones = [];
+    let currentLocalImagePreviewUrl = null;
+    let pendingLocalImageRef = null;
+    const LOCAL_IMAGE_PREFIX = 'dbimage:';
+    const LOCAL_IMAGE_DB_NAME = 'dreamboard-local-images';
+    const LOCAL_IMAGE_STORE = 'images';
+    const localImageObjectUrls = new Map();
 
     // Библиотека красивых Unsplash картинок по категориям для быстрого выбора
     const UNSPLASH_PRESETS = {
@@ -174,6 +180,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const tabButtons = document.querySelectorAll('.image-source-tabs .tab-btn');
     const unsplashTab = document.getElementById('unsplash-tab-content');
     const urlTab = document.getElementById('url-tab-content');
+    const uploadTab = document.getElementById('upload-tab-content');
+    const dreamImageFile = document.getElementById('dream-image-file');
+    const localImagePreview = document.getElementById('local-image-preview');
+    const localImagePreviewImg = document.getElementById('local-image-preview-img');
+    const localImagePreviewName = document.getElementById('local-image-preview-name');
+    const localImagePreviewSize = document.getElementById('local-image-preview-size');
     const unsplashSearchInput = document.getElementById('unsplash-search-input');
     const unsplashSearchBtn = document.getElementById('unsplash-search-btn');
     const unsplashResultsGrid = document.getElementById('unsplash-results-grid');
@@ -229,6 +241,205 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function saveDreams() {
         localStorage.setItem('dreams_db', JSON.stringify(dreams));
+    }
+
+    function isLocalImageRef(value) {
+        return typeof value === 'string' && value.startsWith(LOCAL_IMAGE_PREFIX);
+    }
+
+    function getLocalImageId(ref) {
+        return ref.slice(LOCAL_IMAGE_PREFIX.length);
+    }
+
+    function openLocalImageDb() {
+        return new Promise((resolve, reject) => {
+            const request = indexedDB.open(LOCAL_IMAGE_DB_NAME, 1);
+            request.onupgradeneeded = () => {
+                const db = request.result;
+                if (!db.objectStoreNames.contains(LOCAL_IMAGE_STORE)) {
+                    db.createObjectStore(LOCAL_IMAGE_STORE, { keyPath: 'id' });
+                }
+            };
+            request.onsuccess = () => resolve(request.result);
+            request.onerror = () => reject(request.error);
+        });
+    }
+
+    async function saveLocalImageBlob(blob, originalName) {
+        const db = await openLocalImageDb();
+        const id = `img-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readwrite');
+            tx.objectStore(LOCAL_IMAGE_STORE).put({
+                id,
+                blob,
+                originalName,
+                mimeType: blob.type,
+                size: blob.size,
+                createdAt: new Date().toISOString()
+            });
+            tx.oncomplete = () => {
+                db.close();
+                resolve(`${LOCAL_IMAGE_PREFIX}${id}`);
+            };
+            tx.onerror = () => {
+                db.close();
+                reject(tx.error);
+            };
+        });
+    }
+
+    async function getLocalImageBlob(id) {
+        const db = await openLocalImageDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readonly');
+            const request = tx.objectStore(LOCAL_IMAGE_STORE).get(id);
+            request.onsuccess = () => {
+                db.close();
+                resolve(request.result ? request.result.blob : null);
+            };
+            request.onerror = () => {
+                db.close();
+                reject(request.error);
+            };
+        });
+    }
+
+    async function deleteLocalImageRef(ref) {
+        if (!isLocalImageRef(ref)) return;
+        const id = getLocalImageId(ref);
+        const cachedUrl = localImageObjectUrls.get(id);
+        if (cachedUrl) {
+            URL.revokeObjectURL(cachedUrl);
+            localImageObjectUrls.delete(id);
+        }
+        const db = await openLocalImageDb();
+        return new Promise((resolve) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readwrite');
+            tx.objectStore(LOCAL_IMAGE_STORE).delete(id);
+            tx.oncomplete = () => {
+                db.close();
+                resolve();
+            };
+            tx.onerror = () => {
+                db.close();
+                resolve();
+            };
+        });
+    }
+
+    function getImageHtml(imageUrl, className, altText, lazy = true) {
+        const safeAlt = String(altText || '').replace(/"/g, '&quot;');
+        if (!isLocalImageRef(imageUrl)) {
+            return `<img src="${imageUrl}" class="${className}" alt="${safeAlt}"${lazy ? ' loading="lazy"' : ''}>`;
+        }
+
+        const id = getLocalImageId(imageUrl);
+        const cachedUrl = localImageObjectUrls.get(id) || 'assets/images/og-preview.png';
+        return `<img src="${cachedUrl}" class="${className}" alt="${safeAlt}" data-local-image-id="${id}"${lazy ? ' loading="lazy"' : ''}>`;
+    }
+
+    function hydrateLocalImages(root = document) {
+        root.querySelectorAll('img[data-local-image-id]').forEach(async img => {
+            const id = img.dataset.localImageId;
+            if (!id) return;
+            if (localImageObjectUrls.has(id)) {
+                img.src = localImageObjectUrls.get(id);
+                return;
+            }
+
+            try {
+                const blob = await getLocalImageBlob(id);
+                if (!blob) return;
+                const url = URL.createObjectURL(blob);
+                localImageObjectUrls.set(id, url);
+                img.src = url;
+            } catch (error) {
+                console.warn('[DreamBoard] Local image load failed', error);
+            }
+        });
+    }
+
+    async function loadImageSource(file) {
+        if ('createImageBitmap' in window) {
+            try {
+                const bitmap = await createImageBitmap(file);
+                return {
+                    image: bitmap,
+                    width: bitmap.width,
+                    height: bitmap.height,
+                    close: () => bitmap.close()
+                };
+            } catch (error) {
+                console.warn('[DreamBoard] createImageBitmap failed, falling back to HTMLImageElement', error);
+            }
+        }
+
+        return new Promise((resolve, reject) => {
+            const url = URL.createObjectURL(file);
+            const img = new Image();
+            img.onload = () => {
+                URL.revokeObjectURL(url);
+                resolve({
+                    image: img,
+                    width: img.naturalWidth,
+                    height: img.naturalHeight,
+                    close: () => {}
+                });
+            };
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('Не удалось прочитать изображение'));
+            };
+            img.src = url;
+        });
+    }
+
+    async function compressImageFile(file) {
+        if (!file || !file.type.startsWith('image/')) {
+            throw new Error('Выберите файл изображения');
+        }
+
+        const source = await loadImageSource(file);
+        const targetRatio = 16 / 9;
+        let sourceWidth = source.width;
+        let sourceHeight = source.height;
+        let sourceX = 0;
+        let sourceY = 0;
+
+        if (sourceWidth / sourceHeight > targetRatio) {
+            sourceWidth = Math.round(sourceHeight * targetRatio);
+            sourceX = Math.round((source.width - sourceWidth) / 2);
+        } else {
+            sourceHeight = Math.round(sourceWidth / targetRatio);
+            sourceY = Math.round((source.height - sourceHeight) / 2);
+        }
+
+        const scale = Math.min(1, 1280 / sourceWidth, 720 / sourceHeight);
+        const outputWidth = Math.max(1, Math.round(sourceWidth * scale));
+        const outputHeight = Math.max(1, Math.round(sourceHeight * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = outputWidth;
+        canvas.height = outputHeight;
+        const ctx = canvas.getContext('2d', { alpha: false });
+        ctx.drawImage(source.image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, outputWidth, outputHeight);
+        source.close();
+
+        return new Promise((resolve, reject) => {
+            canvas.toBlob(blob => {
+                if (!blob) {
+                    reject(new Error('Не удалось обработать изображение'));
+                    return;
+                }
+                resolve(blob);
+            }, 'image/webp', 0.82);
+        });
+    }
+
+    function formatBytes(bytes) {
+        if (bytes < 1024) return `${bytes} B`;
+        if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+        return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
     }
 
     // ==========================================================================
@@ -685,6 +896,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = createDreamCardDOM(dream, false);
             dreamsGrid.appendChild(card);
         });
+        hydrateLocalImages(dreamsGrid);
     }
 
     // Рендер 2: Режим Свободного Холста
@@ -704,6 +916,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const card = createDreamCardDOM(dream, true);
             spatialCanvas.appendChild(card);
         });
+        hydrateLocalImages(spatialCanvas);
     }
 
     // Создание DOM элемента карточки
@@ -741,7 +954,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         card.innerHTML = `
             <div class="card-image-wrapper">
-                <img src="${dream.imageUrl}" class="card-image" alt="${dream.title}" loading="lazy">
+                ${getImageHtml(dream.imageUrl, 'card-image', dream.title)}
                 <div class="card-image-overlay"></div>
                 <span class="card-badge">${getCategoryNameRU(dream.category)}</span>
                 ${dream.year ? `<span class="card-year">${dream.year} г.</span>` : ''}
@@ -1054,8 +1267,31 @@ document.addEventListener('DOMContentLoaded', () => {
     // 8. МОДАЛЬНОЕ ОКНО СОЗДАНИЯ И РЕДАКТИРОВАНИЯ ЦЕЛЕЙ
     // ==========================================================================
     
+    function discardPendingLocalUpload() {
+        if (pendingLocalImageRef) {
+            deleteLocalImageRef(pendingLocalImageRef);
+            pendingLocalImageRef = null;
+        }
+    }
+
+    function resetLocalImagePreview(discardPending = false) {
+        if (discardPending) {
+            discardPendingLocalUpload();
+        }
+        if (currentLocalImagePreviewUrl) {
+            URL.revokeObjectURL(currentLocalImagePreviewUrl);
+            currentLocalImagePreviewUrl = null;
+        }
+        if (dreamImageFile) dreamImageFile.value = '';
+        localImagePreview.classList.add('hidden');
+        localImagePreviewImg.removeAttribute('src');
+        localImagePreviewName.innerText = '';
+        localImagePreviewSize.innerText = '';
+    }
+
     function openDreamModal(dream = null) {
         tempMilestones = [];
+        resetLocalImagePreview(true);
         
         if (dream) {
             // Режим редактирования
@@ -1092,13 +1328,14 @@ document.addEventListener('DOMContentLoaded', () => {
         renderUnsplashPresets();
         
         // По умолчанию открываем вкладку Unsplash
-        switchImageTab('unsplash');
+        switchImageTab(isLocalImageRef(dreamImageFinalPath.value) ? 'upload' : 'unsplash');
         
         dreamModal.classList.add('active');
     }
 
     function closeDreamModal() {
         dreamModal.classList.remove('active');
+        resetLocalImagePreview(true);
     }
 
     closeButtons.forEach(btn => btn.addEventListener('click', (e) => {
@@ -1117,12 +1354,48 @@ document.addEventListener('DOMContentLoaded', () => {
         tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
         if (tab === 'unsplash') {
             unsplashTab.classList.remove('hidden');
+            uploadTab.classList.add('hidden');
+            urlTab.classList.add('hidden');
+        } else if (tab === 'upload') {
+            unsplashTab.classList.add('hidden');
+            uploadTab.classList.remove('hidden');
             urlTab.classList.add('hidden');
         } else {
             unsplashTab.classList.add('hidden');
+            uploadTab.classList.add('hidden');
             urlTab.classList.remove('hidden');
         }
     }
+
+    dreamImageFile.addEventListener('change', async () => {
+        const file = dreamImageFile.files && dreamImageFile.files[0];
+        if (!file) return;
+
+        try {
+            localImagePreviewName.innerText = 'Обработка изображения...';
+            localImagePreviewSize.innerText = '';
+            localImagePreview.classList.remove('hidden');
+
+            discardPendingLocalUpload();
+            const blob = await compressImageFile(file);
+            const imageRef = await saveLocalImageBlob(blob, file.name);
+            dreamImageFinalPath.value = imageRef;
+            pendingLocalImageRef = imageRef;
+
+            if (currentLocalImagePreviewUrl) {
+                URL.revokeObjectURL(currentLocalImagePreviewUrl);
+            }
+            currentLocalImagePreviewUrl = URL.createObjectURL(blob);
+            localImagePreviewImg.src = currentLocalImagePreviewUrl;
+            localImagePreviewName.innerText = file.name;
+            localImagePreviewSize.innerText = `${formatBytes(file.size)} -> ${formatBytes(blob.size)}`;
+            showToast('Картинка сжата и добавлена локально', 'success');
+        } catch (error) {
+            console.error('[DreamBoard] Image upload failed', error);
+            resetLocalImagePreview();
+            showToast(error.message || 'Не удалось обработать изображение', 'info');
+        }
+    });
 
     // Рендеринг подзадач в модальном окне
     function renderModalMilestones() {
@@ -1177,6 +1450,7 @@ document.addEventListener('DOMContentLoaded', () => {
             img.addEventListener('click', () => {
                 unsplashResultsGrid.querySelectorAll('.unsplash-img-item').forEach(i => i.classList.remove('selected'));
                 img.classList.add('selected');
+                discardPendingLocalUpload();
                 dreamImageFinalPath.value = url;
                 playSoundEffect('hover');
             });
@@ -1190,6 +1464,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Автоматически выбираем первую картинку из новой категории
         const cat = dreamCategorySelect.value;
         if (UNSPLASH_PRESETS[cat]) {
+            discardPendingLocalUpload();
             dreamImageFinalPath.value = UNSPLASH_PRESETS[cat][0];
             renderUnsplashPresets();
         }
@@ -1214,6 +1489,7 @@ document.addEventListener('DOMContentLoaded', () => {
                     img.addEventListener('click', () => {
                         unsplashResultsGrid.querySelectorAll('.unsplash-img-item').forEach(idx => idx.classList.remove('selected'));
                         img.classList.add('selected');
+                        discardPendingLocalUpload();
                         dreamImageFinalPath.value = url;
                         playSoundEffect('hover');
                     });
@@ -1240,11 +1516,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!urlTab.classList.contains('hidden') && directUrl) {
             finalImage = directUrl;
         }
+        if (pendingLocalImageRef && pendingLocalImageRef !== finalImage) {
+            discardPendingLocalUpload();
+        }
 
         if (id) {
             // Обновление существующей цели
             const index = dreams.findIndex(d => d.id === id);
             if (index !== -1) {
+                const previousImage = dreams[index].imageUrl;
                 dreams[index] = {
                     ...dreams[index],
                     title,
@@ -1254,6 +1534,9 @@ document.addEventListener('DOMContentLoaded', () => {
                     imageUrl: finalImage,
                     milestones: [...tempMilestones]
                 };
+                if (previousImage !== finalImage) {
+                    deleteLocalImageRef(previousImage);
+                }
                 showToast('Цель успешно обновлена', 'success');
             }
         } else {
@@ -1281,6 +1564,7 @@ document.addEventListener('DOMContentLoaded', () => {
         
         saveDreams();
         renderAll();
+        pendingLocalImageRef = null;
         closeDreamModal();
     });
 
@@ -1292,6 +1576,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Удаление цели
     function deleteDream(id) {
+        const dream = dreams.find(d => d.id === id);
+        if (dream) {
+            deleteLocalImageRef(dream.imageUrl);
+        }
         dreams = dreams.filter(d => d.id !== id);
         saveDreams();
         renderAll();
@@ -1405,11 +1693,12 @@ document.addEventListener('DOMContentLoaded', () => {
             const slide = document.createElement('div');
             slide.className = 'manifest-slide';
             slide.innerHTML = `
-                <img src="${dream.imageUrl}" class="manifest-slide-img" alt="${dream.title}">
+                ${getImageHtml(dream.imageUrl, 'manifest-slide-img', dream.title, false)}
                 <div class="manifest-slide-overlay"></div>
             `;
             manifestSlider.appendChild(slide);
         });
+        hydrateLocalImages(manifestSlider);
     }
 
     function showManifestSlide(idx, activeDreams) {
@@ -1634,7 +1923,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 card.innerHTML = `
                     <div class="card-image-wrapper">
-                        <img src="${dream.imageUrl}" class="card-image" alt="${dream.title}">
+                        ${getImageHtml(dream.imageUrl, 'card-image', dream.title, false)}
                         <div class="card-image-overlay"></div>
                         <span class="card-badge">Воплощено ★</span>
                     </div>
@@ -1673,6 +1962,7 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
+        hydrateLocalImages(archivedDreamsGrid);
         archiveModal.classList.add('active');
         playSoundEffect('hover');
     }

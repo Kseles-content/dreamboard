@@ -254,6 +254,7 @@
                     <label for="dream-image-url">Изображение</label>
                     <div class="image-source-tabs">
                         <button type="button" class="tab-btn active" data-tab="unsplash">Выбрать обложку</button>
+                        <button type="button" class="tab-btn" data-tab="upload">С устройства</button>
                         <button type="button" class="tab-btn" data-tab="url">Вставить ссылку</button>
                     </div>
                     
@@ -271,6 +272,22 @@
                     <!-- Вариант 2: Прямой URL -->
                     <div class="tab-content hidden" id="url-tab-content">
                         <input type="url" id="dream-image-url" placeholder="https://images.unsplash.com/... или любая другая ссылка">
+                    </div>
+
+                    <!-- Вариант 3: Локальная загрузка с автообрезкой и сжатием -->
+                    <div class="tab-content hidden" id="upload-tab-content">
+                        <label for="dream-image-file" class="upload-dropzone">
+                            <span class="upload-dropzone-title">Выбрать картинку с устройства</span>
+                            <span class="upload-dropzone-hint">JPG, PNG или WebP. Автообрезка 16:9 и сжатие до 1280x720.</span>
+                            <input type="file" id="dream-image-file" accept="image/jpeg,image/png,image/webp,image/gif,image/*">
+                        </label>
+                        <div id="local-image-preview" class="local-image-preview hidden">
+                            <img id="local-image-preview-img" alt="Предпросмотр выбранной картинки">
+                            <div class="local-image-preview-meta">
+                                <span id="local-image-preview-name">Файл выбран</span>
+                                <span id="local-image-preview-size"></span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Скрытый инпут с итоговым путем -->
