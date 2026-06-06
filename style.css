@@ -1753,8 +1753,8 @@ textarea:focus {
 
     .manifest-content {
         width: 94%;
-        height: 54vh;
-        margin-top: 108px;
+        height: 49vh;
+        margin-top: 116px;
     }
 
     .manifest-card-info {
@@ -1776,43 +1776,59 @@ textarea:focus {
         top: 14px;
         left: 50%;
         transform: translateX(-50%);
-        flex-direction: column;
-        width: min(46vw, 190px);
-        min-height: 118px;
-        gap: 5px;
-        padding: 10px 14px 12px;
+        display: block;
+        width: 190px;
+        height: 132px;
+        padding: 0;
         text-align: center;
     }
 
     .breath-circle-outer {
-        flex: 0 0 40px;
-        order: 1;
+        position: absolute;
+        top: 14px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 40px;
+        height: 40px;
     }
 
     #breath-text {
-        order: 2;
-        position: static;
+        position: absolute !important;
+        top: 62px;
+        left: 0 !important;
+        width: 100%;
         min-width: 0;
-        font-size: 16px;
+        font-size: 15px;
         line-height: 1.1;
         letter-spacing: 0.5px;
+        text-align: center;
+        white-space: nowrap;
     }
 
     .breath-subtext {
-        order: 3;
-        max-width: 160px;
+        position: absolute;
+        top: 84px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: 150px;
+        max-width: 150px;
         font-size: 11px;
         line-height: 1.25;
     }
 
     .manifest-affirmation-slider {
-        width: 90%;
-        bottom: 104px;
+        width: 88%;
+        bottom: 96px;
+        padding: 8px 12px;
+        border-radius: 18px;
+        background: rgba(2, 1, 6, 0.46);
+        backdrop-filter: blur(8px);
+        -webkit-backdrop-filter: blur(8px);
     }
 
     #manifest-affirmation-text {
-        font-size: 17px;
-        line-height: 1.25;
+        font-size: 15px;
+        line-height: 1.2;
         letter-spacing: 0;
     }
 
