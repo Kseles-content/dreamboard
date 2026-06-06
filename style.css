@@ -1473,6 +1473,17 @@ textarea:focus {
     border-radius: 40px;
 }
 
+.manifest-rotate-prompt {
+    display: none;
+}
+
+.rotate-phone-icon {
+    display: flex;
+    justify-content: center;
+    color: #00f2fe;
+    margin-bottom: 14px;
+}
+
 .manifest-control-btn {
     background: transparent;
     border: none;
@@ -1955,6 +1966,154 @@ textarea:focus {
     .manifest-controls,
     .canvas-controls {
         bottom: calc(16px + env(safe-area-inset-bottom, 0px));
+    }
+}
+
+@media (max-width: 768px) and (orientation: portrait) {
+    .manifest-overlay.active .manifest-content,
+    .manifest-overlay.active .manifest-affirmation-slider,
+    .manifest-overlay.active .manifest-controls,
+    .manifest-overlay.active .breath-guide-container {
+        display: none;
+    }
+
+    .manifest-overlay.active .manifest-rotate-prompt {
+        display: block;
+        position: relative;
+        z-index: 20;
+        width: min(82vw, 360px);
+        padding: 28px 24px;
+        text-align: center;
+        background: rgba(2, 1, 6, 0.72) !important;
+    }
+
+    .manifest-rotate-prompt h3 {
+        font-size: 24px;
+        margin-bottom: 10px;
+    }
+
+    .manifest-rotate-prompt p {
+        color: var(--text-secondary);
+        line-height: 1.45;
+    }
+}
+
+@media (max-width: 900px) and (orientation: landscape) {
+    .manifest-overlay {
+        justify-content: flex-start;
+        align-items: flex-start;
+    }
+
+    .manifest-rotate-prompt {
+        display: none !important;
+    }
+
+    .manifest-content {
+        position: absolute;
+        left: 92px;
+        right: 96px;
+        top: 88px;
+        bottom: 86px;
+        width: auto;
+        height: auto;
+        max-width: none;
+        margin: 0;
+        border-radius: 18px;
+    }
+
+    .manifest-slide-overlay {
+        background: linear-gradient(to right, rgba(0,0,0,0.92) 0%, rgba(0,0,0,0.62) 38%, rgba(0,0,0,0.12) 100%);
+    }
+
+    .manifest-card-info {
+        width: min(45%, 520px);
+        max-height: calc(100% - 24px);
+        overflow: hidden;
+        margin-left: 20px;
+        margin-right: auto;
+        padding: 14px 18px;
+        border-radius: 16px;
+    }
+
+    #manifest-title {
+        font-size: clamp(18px, 3vw, 26px);
+        line-height: 1.12;
+        margin: 6px 0 8px;
+    }
+
+    #manifest-desc {
+        display: -webkit-box;
+        -webkit-line-clamp: 4;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        font-size: clamp(11px, 1.8vw, 14px);
+        line-height: 1.35;
+        margin-bottom: 10px;
+    }
+
+    .manifest-milestones-progress {
+        gap: 6px;
+        font-size: 11px;
+    }
+
+    .breath-guide-container {
+        top: 14px;
+        left: 18px;
+        transform: none;
+        width: 118px;
+        height: 70px;
+        display: block;
+    }
+
+    .breath-circle-outer {
+        top: 6px;
+    }
+
+    #breath-text {
+        top: 46px;
+        font-size: 12px;
+    }
+
+    .exit-manifest-btn {
+        top: 14px;
+        right: 96px;
+        width: 44px;
+        height: 44px;
+    }
+
+    .manifest-affirmation-slider {
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(62vw, 760px);
+        bottom: 82px;
+        padding: 6px 12px;
+        border-radius: 16px;
+        background: rgba(2, 1, 6, 0.62);
+    }
+
+    #manifest-affirmation-text {
+        font-size: clamp(12px, 2vw, 15px);
+        line-height: 1.2;
+    }
+
+    .manifest-controls {
+        left: 50%;
+        transform: translateX(-50%);
+        bottom: 18px;
+        gap: 10px;
+        padding: 6px;
+    }
+
+    .manifest-control-btn {
+        width: 42px;
+        height: 42px;
+        min-width: 42px;
+        min-height: 42px;
+    }
+
+    .manifest-control-btn#manifest-play-btn {
+        width: 54px;
+        height: 54px;
     }
 }
 
