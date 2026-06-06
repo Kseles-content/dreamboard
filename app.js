@@ -1075,6 +1075,27 @@ document.addEventListener('DOMContentLoaded', () => {
         localStorage.setItem('canvas_pan_y', panY);
     }
 
+    function resetCanvasCardLayout() {
+        const activeDreams = dreams.filter(d => d.status === 'active');
+        const startX = 2100;
+        const startY = 2050;
+        const gapX = 360;
+        const gapY = 480;
+        const columns = window.innerWidth < 768 ? 1 : 3;
+
+        activeDreams.forEach((dream, index) => {
+            const col = index % columns;
+            const row = Math.floor(index / columns);
+            dream.canvasPos = {
+                ...(dream.canvasPos || {}),
+                x: startX + col * gapX,
+                y: startY + row * gapY,
+                width: dream.canvasPos?.width || 320,
+                height: dream.canvasPos?.height || 420
+            };
+        });
+    }
+
     // Отслеживание нажатия пробела (Space) для панорамирования холста
     window.addEventListener('keydown', (e) => {
         if (e.code === 'Space' && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
@@ -1238,6 +1259,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
     canvasZoomReset.addEventListener('click', () => {
         zoom = 1.0;
+        resetCanvasCardLayout();
+        saveDreams();
+        renderCanvas();
         // Возвращаем в центр
         panX = -2100;
         panY = -2050;
@@ -1266,11 +1290,9 @@ document.addEventListener('DOMContentLoaded', () => {
             card.classList.add('dragging');
             
             // Вычисляем оффсет с учетом зума
-            const clientX = e.clientX;
-            const clientY = e.clientY;
-            
-            dragOffsetX = (clientX / zoom) - dream.canvasPos.x;
-            dragOffsetY = (clientY / zoom) - dream.canvasPos.y;
+            const point = clientToCanvasPoint(e.clientX, e.clientY);
+            dragOffsetX = point.x - dream.canvasPos.x;
+            dragOffsetY = point.y - dream.canvasPos.y;
             
             e.preventDefault();
             e.stopPropagation();
@@ -1317,8 +1339,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const dream = dreams.find(d => d.id === dreamId);
             
             if (dream) {
-                let newX = (e.clientX / zoom) - dragOffsetX;
-                let newY = (e.clientY / zoom) - dragOffsetY;
+                const point = clientToCanvasPoint(e.clientX, e.clientY);
+                let newX = point.x - dragOffsetX;
+                let newY = point.y - dragOffsetY;
                 
                 // Привязка к невидимой сетке
                 newX = Math.round(newX / GRID_SNAP_SIZE) * GRID_SNAP_SIZE;

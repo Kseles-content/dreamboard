@@ -1777,8 +1777,8 @@ textarea:focus {
         left: 50%;
         transform: translateX(-50%);
         display: block;
-        width: 190px;
-        height: 132px;
+        width: 170px;
+        height: 96px;
         padding: 0;
         text-align: center;
     }
@@ -1794,7 +1794,7 @@ textarea:focus {
 
     #breath-text {
         position: absolute !important;
-        top: 62px;
+        top: 66px;
         left: 0 !important;
         width: 100%;
         min-width: 0;
@@ -1806,14 +1806,7 @@ textarea:focus {
     }
 
     .breath-subtext {
-        position: absolute;
-        top: 84px;
-        left: 50%;
-        transform: translateX(-50%);
-        width: 150px;
-        max-width: 150px;
-        font-size: 11px;
-        line-height: 1.25;
+        display: none;
     }
 
     .manifest-affirmation-slider {
