@@ -1134,6 +1134,14 @@ document.addEventListener('DOMContentLoaded', () => {
             target.closest('.card-resizer');
     }
 
+    function clientToCanvasPoint(clientX, clientY) {
+        const rect = canvasViewport.getBoundingClientRect();
+        return {
+            x: (clientX - rect.left - panX) / zoom,
+            y: (clientY - rect.top - panY) / zoom
+        };
+    }
+
     canvasViewport.addEventListener('touchstart', (e) => {
         if (isCanvasTouchControl(e.target)) return;
 
@@ -1179,6 +1187,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { passive: false });
 
     canvasViewport.addEventListener('touchend', (e) => {
+        if (touchMode === 'card-drag') return;
+
         if (e.touches.length === 0) {
             touchMode = null;
             saveDreams();
@@ -1267,6 +1277,26 @@ document.addEventListener('DOMContentLoaded', () => {
         });
 
         // ВАРИАНТ Б: ИЗМЕНЕНИЕ РАЗМЕРОВ (RESIZE)
+        card.addEventListener('touchstart', (e) => {
+            if (e.touches.length !== 1 ||
+                e.target.closest('.action-round-btn') ||
+                e.target.closest('.milestone-item') ||
+                e.target === resizer) {
+                return;
+            }
+
+            const touch = e.touches[0];
+            const point = clientToCanvasPoint(touch.clientX, touch.clientY);
+            activeDragCard = card;
+            touchMode = 'card-drag';
+            card.classList.add('dragging');
+            dragOffsetX = point.x - dream.canvasPos.x;
+            dragOffsetY = point.y - dream.canvasPos.y;
+
+            e.preventDefault();
+            e.stopPropagation();
+        }, { passive: false });
+
         resizer.addEventListener('mousedown', (e) => {
             activeResizeCard = card;
             resizeStartW = dream.canvasPos.width;
@@ -1334,6 +1364,40 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
     });
+
+    window.addEventListener('touchmove', (e) => {
+        if (!activeDragCard || touchMode !== 'card-drag' || e.touches.length !== 1) return;
+
+        const dreamId = activeDragCard.dataset.id;
+        const dream = dreams.find(d => d.id === dreamId);
+        if (dream) {
+            const touch = e.touches[0];
+            const point = clientToCanvasPoint(touch.clientX, touch.clientY);
+            let newX = point.x - dragOffsetX;
+            let newY = point.y - dragOffsetY;
+
+            newX = Math.round(newX / GRID_SNAP_SIZE) * GRID_SNAP_SIZE;
+            newY = Math.round(newY / GRID_SNAP_SIZE) * GRID_SNAP_SIZE;
+            newX = Math.max(10, Math.min(4600, newX));
+            newY = Math.max(10, Math.min(4600, newY));
+
+            dream.canvasPos.x = newX;
+            dream.canvasPos.y = newY;
+            activeDragCard.style.left = `${newX}px`;
+            activeDragCard.style.top = `${newY}px`;
+        }
+
+        e.preventDefault();
+    }, { passive: false });
+
+    window.addEventListener('touchend', () => {
+        if (activeDragCard && touchMode === 'card-drag') {
+            activeDragCard.classList.remove('dragging');
+            activeDragCard = null;
+            touchMode = null;
+            saveDreams();
+        }
+    }, { passive: false });
 
     window.addEventListener('mouseup', () => {
         if (activeDragCard) {

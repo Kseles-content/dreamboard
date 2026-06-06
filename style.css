@@ -1753,8 +1753,8 @@ textarea:focus {
 
     .manifest-content {
         width: 94%;
-        height: 58vh;
-        margin-top: 54px;
+        height: 54vh;
+        margin-top: 108px;
     }
 
     .manifest-card-info {
@@ -1776,26 +1776,31 @@ textarea:focus {
         top: 14px;
         left: 50%;
         transform: translateX(-50%);
-        width: min(72vw, 360px);
-        min-height: 54px;
-        gap: 14px;
-        padding: 8px 14px;
+        flex-direction: column;
+        width: min(46vw, 190px);
+        min-height: 118px;
+        gap: 5px;
+        padding: 10px 14px 12px;
+        text-align: center;
     }
 
     .breath-circle-outer {
         flex: 0 0 40px;
+        order: 1;
     }
 
     #breath-text {
+        order: 2;
         position: static;
-        min-width: 62px;
+        min-width: 0;
         font-size: 16px;
         line-height: 1.1;
         letter-spacing: 0.5px;
     }
 
     .breath-subtext {
-        max-width: 150px;
+        order: 3;
+        max-width: 160px;
         font-size: 11px;
         line-height: 1.25;
     }
