@@ -33,6 +33,9 @@ function makeStorage(initial, opts) {
                 const e = opts.throwOnSet === true ? new Error('boom') : opts.throwOnSet;
                 throw e;
             }
+            if (opts.failSetKeys && opts.failSetKeys.includes(k)) {
+                throw (opts.failError || quotaError());
+            }
             data.set(k, String(v));
         },
         removeItem(k) {
@@ -93,6 +96,7 @@ test('1. Пустое хранилище → defaults', () => {
     const res = Storage.load(storage, { defaultDreams: DEFAULTS });
     assert.strictEqual(res.source, 'defaults');
     assert.strictEqual(res.shouldPersist, true);
+    assert.strictEqual(res.writeProtected, false); // E: пустое хранилище → запись разрешена
     assert.deepStrictEqual(res.dreams, DEFAULTS);
     assert.deepStrictEqual(res.warnings, []);
 });
@@ -134,6 +138,7 @@ test('5. Повреждённый primary + корректный recovery → re
     const res = Storage.load(storage, { defaultDreams: DEFAULTS });
     assert.strictEqual(res.source, 'recovery');
     assert.strictEqual(res.shouldPersist, true);
+    assert.strictEqual(res.writeProtected, false); // G: recovery корректен → запись разрешена
     assert.deepStrictEqual(res.warnings, ['primary-corrupt']);
     assert.strictEqual(res.dreams[0].title, 'Мечта с русским текстом 💖');
 });
@@ -146,6 +151,7 @@ test('6. Повреждённые primary/recovery + корректный legacy
     });
     const res = Storage.load(storage, { defaultDreams: DEFAULTS });
     assert.strictEqual(res.source, 'legacy');
+    assert.strictEqual(res.writeProtected, false); // H: legacy корректен → миграция разрешена
     assert.strictEqual(res.dreams.length, 1);
     assert.deepStrictEqual(res.warnings, ['primary-corrupt', 'recovery-corrupt']);
 });
@@ -162,11 +168,20 @@ test('7. Все источники повреждены → контролиру
     });
     assert.strictEqual(res.source, 'defaults');
     assert.strictEqual(res.shouldPersist, false); // повреждённые строки не перезаписываем
+    assert.strictEqual(res.writeProtected, true); // B: все источники повреждены → защита
     assert.deepStrictEqual(res.dreams, DEFAULTS);
     assert.ok(res.warnings.includes('primary-corrupt'));
     assert.ok(res.warnings.includes('recovery-corrupt'));
     assert.ok(res.warnings.includes('legacy-corrupt'));
     // Повреждённые строки остаются на месте.
+    assert.strictEqual(storage.getItem(KEY_PRIMARY), '{{{');
+    assert.strictEqual(storage.getItem(KEY_RECOVERY), '!!!');
+    assert.strictEqual(storage.getItem(KEY_LEGACY), '###');
+
+    // Последующий save (с флагом из load) не меняет ни одного байта.
+    const saveRes = Storage.save(storage, DEFAULTS, { writeProtected: res.writeProtected });
+    assert.strictEqual(saveRes.ok, false);
+    assert.strictEqual(saveRes.error, 'write-protected');
     assert.strictEqual(storage.getItem(KEY_PRIMARY), '{{{');
     assert.strictEqual(storage.getItem(KEY_RECOVERY), '!!!');
     assert.strictEqual(storage.getItem(KEY_LEGACY), '###');
@@ -181,14 +196,21 @@ test('8. schemaVersion выше 2 → защита от перезаписи', (
     const res = Storage.load(storage, { defaultDreams: DEFAULTS });
     assert.strictEqual(res.source, 'protected');
     assert.strictEqual(res.protected, true);
+    assert.strictEqual(res.writeProtected, true); // A: future schema → защита
     assert.strictEqual(res.shouldPersist, false);
 
-    // Сохранение старым кодом запрещено.
+    // Сохранение старым кодом запрещено (самозащита в save).
     const saveRes = Storage.save(storage, DEFAULTS);
     assert.strictEqual(saveRes.ok, false);
     assert.strictEqual(saveRes.error, 'newer-schema-protected');
     assert.strictEqual(storage.getItem(KEY_PRIMARY), JSON.stringify(newer));
     assert.strictEqual(storage.getItem(KEY_RECOVERY), null);
+
+    // И с флагом writeProtected — тоже запрещено.
+    const saveRes2 = Storage.save(storage, DEFAULTS, { writeProtected: true });
+    assert.strictEqual(saveRes2.ok, false);
+    assert.strictEqual(saveRes2.error, 'write-protected');
+    assert.strictEqual(storage.getItem(KEY_PRIMARY), JSON.stringify(newer));
 });
 
 test('9. QuotaExceededError при записи → структурированная ошибка, без падения', () => {
@@ -206,11 +228,12 @@ test('10. SecurityError / недоступный storage → контролир�
     assert.strictEqual(r1.ok, false);
     assert.strictEqual(r1.error, 'security');
 
-    // SecurityError на getItem (недоступный storage) → load отдаёт defaults.
+    // SecurityError на getItem (недоступный storage) → load отдаёт defaults, writeProtected.
     const s2 = makeStorage({}, { throwOnGet: securityError() });
     const r2 = Storage.load(s2, { defaultDreams: DEFAULTS });
     assert.strictEqual(r2.source, 'defaults');
     assert.strictEqual(r2.shouldPersist, false);
+    assert.strictEqual(r2.writeProtected, true); // C: storage недоступен → read-only
     assert.ok(r2.warnings.includes('storage-unavailable'));
 
     // null storage → save контролируемо ошибается.
@@ -218,10 +241,11 @@ test('10. SecurityError / недоступный storage → контролир�
     assert.strictEqual(r3.ok, false);
     assert.strictEqual(r3.error, 'storage-unavailable');
 
-    // null storage → load отдаёт defaults.
+    // null storage → load отдаёт defaults, writeProtected.
     const r4 = Storage.load(null, { defaultDreams: DEFAULTS });
     assert.strictEqual(r4.source, 'defaults');
     assert.strictEqual(r4.shouldPersist, false);
+    assert.strictEqual(r4.writeProtected, true);
 });
 
 test('11. Round-trip: русский, emoji, milestones, gratitudeNote, canvasPos, dbimage:*', () => {
@@ -335,6 +359,135 @@ test('14. DEFAULT_DREAMS не мутируются через загруженн
     const s2 = makeStorage({ [KEY_LEGACY]: LEGACY_JSON });
     Storage.load(s2, { defaultDreams: DEFAULTS });
     assert.strictEqual(JSON.stringify(DEFAULTS), DEFAULTS_SNAPSHOT);
+});
+
+// --- 2A-R постоянные regression tests --------------------------------------
+
+// 3. Recovery write failure → новый primary НЕ записывается, старый байт-в-байт.
+test('2AR-3. Recovery write failure → primary не меняется', () => {
+    const state1 = JSON.stringify(makeValidState([LEGACY_DREAM]));
+    const storage = makeStorage({ [KEY_PRIMARY]: state1 }, { failSetKeys: [KEY_RECOVERY], failError: quotaError() });
+
+    const res = Storage.save(storage, DEFAULTS);
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.error, 'recovery-failed');
+    assert.deepStrictEqual(res.warnings, ['recovery-quota']);
+    assert.strictEqual(storage.getItem(KEY_PRIMARY), state1, 'старый primary байт-в-байт');
+    assert.strictEqual(storage.getItem(KEY_RECOVERY), null, 'recovery не записан');
+});
+
+// 4. Primary write failure после успешной recovery → recovery остаётся копией.
+test('2AR-4. Primary write failure → recovery корректен', () => {
+    const state1 = JSON.stringify(makeValidState([LEGACY_DREAM]));
+    const storage = makeStorage({ [KEY_PRIMARY]: state1 }, { failSetKeys: [KEY_PRIMARY], failError: quotaError() });
+
+    const res = Storage.save(storage, DEFAULTS);
+    assert.strictEqual(res.ok, false);
+    assert.strictEqual(res.error, 'quota');
+    assert.strictEqual(storage.getItem(KEY_RECOVERY), state1, 'recovery = предыдущий primary байт-в-байт');
+    assert.strictEqual(storage.getItem(KEY_PRIMARY), state1, 'primary не изменён');
+
+    const reload = Storage.load(storage, { defaultDreams: DEFAULTS });
+    assert.strictEqual(reload.source, 'primary');
+    assert.strictEqual(reload.dreams[0].title, 'Мечта с русским текстом 💖');
+});
+
+// 5. Valid JSON с неверной схемой → recovery, без исключения.
+test('2AR-5. Valid JSON неверной схемы → recovery', () => {
+    const storage = makeStorage({
+        [KEY_PRIMARY]: JSON.stringify({ foo: 'bar', schemaVersion: 2, dreams: 'not-array' }),
+        [KEY_RECOVERY]: JSON.stringify(makeValidState([LEGACY_DREAM]))
+    });
+    let res;
+    assert.doesNotThrow(() => {
+        res = Storage.load(storage, { defaultDreams: DEFAULTS });
+    });
+    assert.strictEqual(res.source, 'recovery');
+    assert.strictEqual(res.writeProtected, false);
+    assert.strictEqual(res.dreams[0].title, 'Мечта с русским текстом 💖');
+});
+
+// 6. Legacy migration + QuotaExceededError: legacy не меняется, ошибка явная.
+test('2AR-6. Legacy migration + quota → ошибка, legacy цел', () => {
+    const storage = makeStorage({ [KEY_LEGACY]: LEGACY_JSON }, { throwOnSet: quotaError() });
+    const loadRes = Storage.load(storage, { defaultDreams: DEFAULTS });
+    assert.strictEqual(loadRes.source, 'legacy');
+    assert.strictEqual(loadRes.writeProtected, false);
+
+    const saveRes = Storage.save(storage, loadRes.dreams, { writeProtected: loadRes.writeProtected });
+    assert.strictEqual(saveRes.ok, false);
+    assert.strictEqual(saveRes.error, 'quota');
+    assert.strictEqual(storage.getItem(KEY_LEGACY), LEGACY_JSON, 'legacy не изменён');
+    assert.strictEqual(storage.getItem(KEY_PRIMARY), null, 'primary не записан');
+});
+
+// 7. Empty legacy array → пустая доска, writeProtected false.
+test('2AR-7. Empty legacy array → пустая доска, запись разрешена', () => {
+    const storage = makeStorage({ [KEY_LEGACY]: '[]' });
+    const res = Storage.load(storage, { defaultDreams: DEFAULTS });
+    assert.strictEqual(res.source, 'legacy');
+    assert.strictEqual(res.writeProtected, false);
+    assert.deepStrictEqual(res.dreams, []);
+
+    // Разрешено сохранить пустую доску.
+    const saveRes = Storage.save(storage, [], { writeProtected: res.writeProtected });
+    assert.strictEqual(saveRes.ok, true);
+    assert.deepStrictEqual(JSON.parse(storage.getItem(KEY_PRIMARY)).dreams, []);
+});
+
+// 10. app.js integration: write protection не обходится (storage-уровень).
+test('2AR-10. Write protection сохраняется между load и save', () => {
+    // Fallback-режим: после load защита активна, save из формы/checkbox не пишет.
+    const s1 = makeStorage({ [KEY_PRIMARY]: '{{{', [KEY_RECOVERY]: '}}}', [KEY_LEGACY]: '###' });
+    const load1 = Storage.load(s1, { defaultDreams: DEFAULTS });
+    assert.strictEqual(load1.writeProtected, true);
+    const save1 = Storage.save(s1, [{ ...LEGACY_DREAM, title: 'правка из формы' }], { writeProtected: load1.writeProtected });
+    assert.strictEqual(save1.ok, false);
+    assert.strictEqual(save1.error, 'write-protected');
+    assert.strictEqual(s1.getItem(KEY_PRIMARY), '{{{');
+    assert.strictEqual(s1.getItem(KEY_RECOVERY), '}}}');
+    assert.strictEqual(s1.getItem(KEY_LEGACY), '###');
+
+    // Future-schema: защита тоже не обходится.
+    const future = JSON.stringify(Object.assign(makeValidState([LEGACY_DREAM]), { schemaVersion: 999 }));
+    const s2 = makeStorage({ [KEY_PRIMARY]: future });
+    const load2 = Storage.load(s2, { defaultDreams: DEFAULTS });
+    assert.strictEqual(load2.writeProtected, true);
+    const save2 = Storage.save(s2, DEFAULTS, { writeProtected: load2.writeProtected });
+    assert.strictEqual(save2.ok, false);
+    assert.strictEqual(s2.getItem(KEY_PRIMARY), future);
+
+    // Обычный режим (primary корректен): защита выключена, сохранение работает.
+    const s3 = makeStorage({ [KEY_PRIMARY]: JSON.stringify(makeValidState([LEGACY_DREAM])) });
+    const load3 = Storage.load(s3, { defaultDreams: DEFAULTS });
+    assert.strictEqual(load3.writeProtected, false);
+    const save3 = Storage.save(s3, DEFAULTS, { writeProtected: load3.writeProtected });
+    assert.strictEqual(save3.ok, true);
+});
+
+// 11-13. writeProtected по источникам.
+test('2AR-11/12/13. writeProtected по source: recovery/legacy/empty → false', () => {
+    const rec = makeStorage({ [KEY_RECOVERY]: JSON.stringify(makeValidState([LEGACY_DREAM])) });
+    assert.strictEqual(Storage.load(rec, { defaultDreams: DEFAULTS }).writeProtected, false);
+
+    const leg = makeStorage({ [KEY_LEGACY]: LEGACY_JSON });
+    assert.strictEqual(Storage.load(leg, { defaultDreams: DEFAULTS }).writeProtected, false);
+
+    const empty = makeStorage({});
+    assert.strictEqual(Storage.load(empty, { defaultDreams: DEFAULTS }).writeProtected, false);
+});
+
+// 14. Отсутствующий DreamBoardStorage → guard в app.js (статическая проверка).
+test('2AR-14. app.js содержит guard отсутствующего DreamBoardStorage', () => {
+    const fs = require('node:fs');
+    const path = require('node:path');
+    const appJs = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+    assert.ok(
+        appJs.includes("typeof DreamBoardStorage === 'undefined' || !DreamBoardStorage"),
+        'guard отсутствующего storage-модуля должен присутствовать в app.js'
+    );
+    assert.ok(appJs.includes("writeProtected: appStorageState ? appStorageState.writeProtected === true : true"),
+        'saveDreams должен учитывать write protection');
 });
 
 // --- дополнительные проверки схемы ------------------------------------------

@@ -260,11 +260,13 @@
         // 1. Primary state.
         var primary = safeGet(storage, KEY_PRIMARY);
         if (primary.unavailable) {
+            // C: localStorage недоступен / getItem бросает SecurityError → read-only.
             warnings.push('storage-unavailable');
             return {
                 source: 'defaults',
                 dreams: cloneDefaults(defaults),
                 state: null,
+                writeProtected: true,
                 shouldPersist: false,
                 warnings: warnings
             };
@@ -274,14 +276,16 @@
             if (p.ok) {
                 var n = normalizeState(p.value);
                 if (n.ok) {
-                    return { source: 'primary', dreams: n.state.dreams, state: n.state, shouldPersist: false, warnings: warnings };
+                    // F: primary корректен → обычная работа.
+                    return { source: 'primary', dreams: n.state.dreams, state: n.state, writeProtected: false, shouldPersist: false, warnings: warnings };
                 }
                 if (n.protected) {
-                    // schemaVersion выше поддерживаемой: режим защиты, не перезаписываем.
+                    // A: schemaVersion выше поддерживаемой → режим защиты.
                     return {
                         source: 'protected',
                         dreams: cloneDefaults(defaults),
                         state: null,
+                        writeProtected: true,
                         shouldPersist: false,
                         warnings: warnings,
                         protected: true,
@@ -299,7 +303,8 @@
             if (rp.ok) {
                 var rn = normalizeState(rp.value);
                 if (rn.ok) {
-                    return { source: 'recovery', dreams: rn.state.dreams, state: rn.state, shouldPersist: true, warnings: warnings };
+                    // G: recovery корректен → разрешено восстановление primary.
+                    return { source: 'recovery', dreams: rn.state.dreams, state: rn.state, writeProtected: false, shouldPersist: true, warnings: warnings };
                 }
             }
             warnings.push('recovery-corrupt');
@@ -313,10 +318,12 @@
                 var dreams = normalizeDreams(lp.value);
                 // Пустой legacy-массив тоже валиден (пользователь удалил все цели).
                 if (lp.value.length === 0 || dreams.length > 0) {
+                    // H/I: legacy корректен (в т.ч. пустой) → миграция разрешена.
                     return {
                         source: 'legacy',
                         dreams: dreams,
                         state: null,
+                        writeProtected: false,
                         shouldPersist: true,
                         warnings: warnings,
                         legacyPreserved: true
@@ -326,25 +333,39 @@
             warnings.push('legacy-corrupt');
         }
 
-        // 6. Fallback: новых данных нет (сеем defaults) или все источники
-        //    повреждены (запускаемся с defaults, но ничего не перезаписываем —
-        //    повреждённые строки остаются на месте как улики).
-        var persisted = warnings.length === 0;
-        return { source: 'defaults', dreams: cloneDefaults(defaults), state: null, shouldPersist: persisted, warnings: warnings };
+        // B: все источники повреждены → fallback с защитой от перезаписи.
+        // E: хранилище полностью пустое → чистый seed, запись разрешена.
+        var allEmpty = warnings.length === 0;
+        return {
+            source: 'defaults',
+            dreams: cloneDefaults(defaults),
+            state: null,
+            writeProtected: !allEmpty,
+            shouldPersist: allEmpty,
+            warnings: warnings
+        };
     }
 
     // --- сохранение ----------------------------------------------------------
 
-    function save(storage, dreams) {
+    function save(storage, dreams, opts) {
+        opts = opts || {};
         var state = createState(dreams);
         var payload = JSON.stringify(state);
 
         var existing = safeGet(storage, KEY_PRIMARY);
         if (existing.unavailable) {
+            // C: localStorage недоступен.
             return { ok: false, error: 'storage-unavailable', warnings: [] };
         }
 
-        // Защита: не перезаписывать данные более новой схемы старым кодом.
+        // Write protection из результата load() (app.js передаёт opts.writeProtected).
+        if (opts.writeProtected) {
+            return { ok: false, error: 'write-protected', warnings: [] };
+        }
+
+        // Самозащита: не перезаписывать данные более новой схемы старым кодом
+        // (срабатывает даже если opts.writeProtected не был передан).
         if (existing.value !== null && existing.value !== undefined) {
             var ep = safeParse(existing.value);
             if (ep.ok && isPlainObject(ep.value) && isFiniteNumber(ep.value.schemaVersion) && ep.value.schemaVersion > SCHEMA_VERSION) {
@@ -353,14 +374,19 @@
         }
 
         // 2. Recovery ← предыдущее корректное primary (байт-в-байт).
-        var warnings = [];
+        var hasValidPrevious = false;
         if (existing.value !== null && existing.value !== undefined) {
             var ev = safeParse(existing.value);
             if (ev.ok) {
                 var en = normalizeState(ev.value);
                 if (en.ok) {
+                    hasValidPrevious = true;
                     var recWrite = safeSet(storage, KEY_RECOVERY, existing.value);
-                    if (!recWrite.ok) warnings.push('recovery-' + recWrite.error);
+                    if (!recWrite.ok) {
+                        // Атомарность: recovery не удался → primary НЕ пишем,
+                        // старый primary остаётся байт-в-байт прежним.
+                        return { ok: false, error: 'recovery-failed', warnings: ['recovery-' + recWrite.error] };
+                    }
                 }
             }
         }
@@ -368,9 +394,10 @@
         // 3. Primary.
         var primWrite = safeSet(storage, KEY_PRIMARY, payload);
         if (!primWrite.ok) {
-            return { ok: false, error: primWrite.error, warnings: warnings };
+            // recovery остаётся корректной копией предыдущего primary.
+            return { ok: false, error: primWrite.error, warnings: hasValidPrevious ? ['recovery-written'] : [] };
         }
-        return { ok: true, warnings: warnings };
+        return { ok: true, warnings: [] };
     }
 
     return {
