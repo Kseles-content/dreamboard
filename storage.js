@@ -400,6 +400,27 @@
         return { ok: true, warnings: [] };
     }
 
+    // --- статусы хранения (UI) -------------------------------------------------
+    // Чистая функция: вычисляет статус индикатора из результатов load/save.
+    // Не обращается к DOM и не хранит состояние — тестируема в Node.
+    // pendingLabel: 'migrated' | 'recovered' — показывается один раз после
+    // первого успешного save, затем следующий save даёт 'saved'.
+    function deriveStatus(loadResult, saveResult, pendingLabel) {
+        if (saveResult === 'saving') return 'saving';
+        if (loadResult && (loadResult.unavailable || (loadResult.warnings || []).indexOf('storage-unavailable') !== -1)) {
+            return 'unavailable';
+        }
+        if (loadResult && loadResult.writeProtected) return 'readonly';
+        if (saveResult && !saveResult.ok) return 'error';
+        if (saveResult && saveResult.ok) {
+            return pendingLabel || 'saved';
+        }
+        // Нет результата save (init): primary уже на диске; пустое хранилище
+        // до первичного сохранения показывается как 'saving' (seed в процессе).
+        if (loadResult && loadResult.source === 'defaults' && loadResult.shouldPersist) return 'saving';
+        return 'saved';
+    }
+
     return {
         SCHEMA_VERSION: SCHEMA_VERSION,
         APP_VERSION: APP_VERSION,
@@ -410,6 +431,7 @@
         save: save,
         createState: createState,
         normalizeState: normalizeState,
-        normalizeDreams: normalizeDreams
+        normalizeDreams: normalizeDreams,
+        deriveStatus: deriveStatus
     };
 });
