@@ -72,6 +72,7 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     let dreams = [];
+    let appStorageRef = null; // localStorage (или null, если недоступен) для storage layer
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
 
@@ -229,11 +230,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================================
     
     function init() {
-        const storedDreams = localStorage.getItem('dreams_db');
-        if (storedDreams) {
-            dreams = JSON.parse(storedDreams);
-        } else {
-            dreams = [...DEFAULT_DREAMS];
+        // Безопасная загрузка через versioned storage layer (v14).
+        let appStorage = null;
+        try {
+            appStorage = window.localStorage;
+        } catch (e) {
+            appStorage = null;
+        }
+        appStorageRef = appStorage;
+
+        const storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
+
+        if (storageResult.protected) {
+            showToast('Данные созданы более новой версией приложения. Обновите приложение, чтобы не потерять изменения.', 'info');
+        } else if (storageResult.source === 'defaults' && storageResult.warnings.length > 0) {
+            showToast('Не удалось восстановить сохранённые данные. Приложение запущено с безопасными значениями по умолчанию.', 'info');
+        }
+
+        dreams = storageResult.dreams;
+
+        // Миграция legacy dreams_db → versioned state или первичный seed.
+        // legacy dreams_db при этом не изменяется (страховка).
+        if (storageResult.shouldPersist) {
             saveDreams();
         }
         
@@ -249,7 +267,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveDreams() {
-        localStorage.setItem('dreams_db', JSON.stringify(dreams));
+        const result = DreamBoardStorage.save(appStorageRef, dreams);
+        if (!result.ok) {
+            if (result.error === 'newer-schema-protected') {
+                showToast('Данные созданы более новой версией приложения. Обновите приложение, чтобы сохранять изменения.', 'info');
+            } else {
+                showToast('Не удалось сохранить изменения. Создайте резервную копию или освободите место в браузере', 'error');
+            }
+        }
     }
 
     function isLocalImageRef(value) {
