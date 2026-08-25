@@ -50,8 +50,8 @@
                 <h1>DreamBoard</h1>
             </div>
 
-            <!-- Селектор Мульти-досок -->
-            <div class="board-selector-group">
+            <!-- Селектор Мульти-досок: функции запланированы на следующие этапы v14 (реализация отсутствует) -->
+            <div class="board-selector-group" hidden>
                 <select id="board-selector" class="board-selector" title="Выбрать доску">
                     <!-- Заполняется динамически -->
                 </select>
@@ -110,8 +110,8 @@
                     </svg>
                 </button>
 
-                <!-- Экспорт доски в PNG -->
-                <button id="export-png-btn" class="icon-btn" title="Скачать доску как PNG-изображение">
+                <!-- Экспорт доски в PNG: функция запланирована на следующие этапы v14 (реализация отсутствует) -->
+                <button id="export-png-btn" class="icon-btn" title="Скачать доску как PNG-изображение" hidden>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
@@ -119,8 +119,8 @@
                     </svg>
                 </button>
 
-                <!-- Экспорт / Импорт JSON -->
-                <button id="export-json-btn" class="icon-btn" title="Экспорт данных (JSON-бэкап)">
+                <!-- Экспорт / Импорт JSON: функции запланированы на следующие этапы v14 (реализация отсутствует) -->
+                <button id="export-json-btn" class="icon-btn" title="Экспорт данных (JSON-бэкап)" hidden>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
@@ -128,14 +128,15 @@
                         <line x1="16" y1="17" x2="8" y2="17"/>
                     </svg>
                 </button>
-                <button id="import-json-btn" class="icon-btn" title="Импорт данных из JSON-файла">
+                <button id="import-json-btn" class="icon-btn" title="Импорт данных из JSON-файла" hidden>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
                         <line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
                 </button>
-                <input type="file" id="import-file-input" accept=".json" style="display:none;">
+                <!-- Импорт из JSON-файла: функция запланирована на следующие этапы v14 (реализация отсутствует) -->
+                <input type="file" id="import-file-input" accept=".json" hidden>
 
                 <!-- Достижения -->
                 <button id="archive-toggle-btn" class="icon-btn" title="Архив достижений (Архив Благодарности)">
