@@ -146,6 +146,13 @@
                     </svg>
                 </button>
 
+                <!-- Индикатор состояния локального хранения (v14) -->
+                <div class="storage-status" id="storage-status" role="status" aria-live="polite" aria-label="Сохранено на устройстве" title="Сохранено на устройстве" data-status="saved">
+                    <span class="storage-status-dot" aria-hidden="true"></span>
+                    <span class="storage-status-text">Сохранено</span>
+                    <button type="button" class="storage-status-retry" hidden>Повторить</button>
+                </div>
+
                 <!-- Кнопка Медитации -->
                 <button id="start-manifest-btn" class="glow-btn">
                     <span>Режим Манифестации</span>

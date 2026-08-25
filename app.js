@@ -74,6 +74,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let dreams = [];
     let appStorageRef = null; // localStorage (или null, если недоступен) для storage layer
     let appStorageState = null; // результат load(): source / writeProtected / shouldPersist / warnings / state
+    let storageStatusEl = null;      // индикатор #storage-status
+    let pendingStatusLabel = null;   // 'migrated' | 'recovered' — показать один раз после первого успешного save
+    let storageSaving = false;       // защита от повторного клика «Повторить»
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
 
@@ -230,7 +233,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. ИНИЦИАЛИЗАЦИЯ И ХРАНЕНИЕ (STORAGE & SEED)
     // ==========================================================================
     
+    // ==========================================================================
+    // 2.1 ИНДИКАТОР СОСТОЯНИЯ ХРАНЕНИЯ (STORAGE STATUS)
+    // ==========================================================================
+
+    // Полные описания (aria-label/title) — без технических ключей и содержимого.
+    const STORAGE_STATUS_TEXT = {
+        saved: 'Сохранено на устройстве',
+        migrated: 'Данные обновлены до нового формата',
+        recovered: 'Данные восстановлены из резервного состояния',
+        saving: 'Сохранение…',
+        error: 'Изменения не сохранены',
+        readonly: 'Только чтение: данные защищены',
+        unavailable: 'Хранилище недоступно'
+    };
+
+    // Короткие визуальные тексты (на мобильном могут скрываться через CSS).
+    const STORAGE_STATUS_SHORT = {
+        saved: 'Сохранено',
+        migrated: 'Формат обновлён',
+        recovered: 'Восстановлено',
+        saving: 'Сохранение…',
+        error: 'Не сохранено',
+        readonly: 'Только чтение',
+        unavailable: 'Хранилище недоступно'
+    };
+
+    function renderStorageStatus(statusKey) {
+        if (!storageStatusEl) return;
+        const full = STORAGE_STATUS_TEXT[statusKey] || STORAGE_STATUS_TEXT.saved;
+        const short = STORAGE_STATUS_SHORT[statusKey] || STORAGE_STATUS_SHORT.saved;
+        storageStatusEl.setAttribute('data-status', statusKey);
+        storageStatusEl.setAttribute('aria-label', full);
+        storageStatusEl.setAttribute('title', full);
+        const textEl = storageStatusEl.querySelector('.storage-status-text');
+        if (textEl) textEl.textContent = short;
+        const retryEl = storageStatusEl.querySelector('.storage-status-retry');
+        if (retryEl) {
+            retryEl.hidden = statusKey !== 'error' || storageSaving;
+            retryEl.disabled = storageSaving;
+        }
+    }
+
     function init() {
+        // Инициализация индикатора состояния хранения.
+        storageStatusEl = document.getElementById('storage-status');
+        const retryEl = storageStatusEl ? storageStatusEl.querySelector('.storage-status-retry') : null;
+        if (retryEl) {
+            retryEl.addEventListener('click', () => {
+                if (storageSaving) return; // повторный клик во время saving блокируется
+                saveDreams();
+            });
+        }
+
         // Безопасная загрузка через versioned storage layer (v14).
         let appStorage = null;
         try {
@@ -250,17 +305,26 @@ document.addEventListener('DOMContentLoaded', () => {
                 state: null,
                 writeProtected: true,
                 shouldPersist: false,
-                warnings: ['storage-module-missing']
+                warnings: ['storage-module-missing'],
+                unavailable: true
             };
+            renderStorageStatus('unavailable');
         } else {
             const storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
             appStorageState = storageResult;
+
+            // Миграция/восстановление показываются один раз после первого
+            // успешного сохранения, затем — обычный saved.
+            if (storageResult.source === 'legacy') pendingStatusLabel = 'migrated';
+            else if (storageResult.source === 'recovery') pendingStatusLabel = 'recovered';
 
             if (storageResult.protected) {
                 showToast('Данные созданы более новой версией приложения. Обновите приложение, чтобы не потерять изменения.', 'info');
             } else if (storageResult.source === 'defaults' && storageResult.warnings.length > 0) {
                 showToast('Не удалось восстановить сохранённые данные. Приложение запущено с безопасными значениями по умолчанию.', 'info');
             }
+
+            renderStorageStatus(DreamBoardStorage.deriveStatus(storageResult, null, null));
 
             dreams = storageResult.dreams;
 
@@ -285,14 +349,38 @@ document.addEventListener('DOMContentLoaded', () => {
     function saveDreams() {
         // Каждый вызов сохранения (форма, checkbox, drag/resize, архив) обязан
         // учитывать write protection; при защите никаких setItem не выполняется.
-        const result = DreamBoardStorage.save(appStorageRef, dreams, {
-            writeProtected: appStorageState ? appStorageState.writeProtected === true : true
-        });
+        storageSaving = true;
+        renderStorageStatus('saving');
+
+        let result;
+        try {
+            result = DreamBoardStorage.save(appStorageRef, dreams, {
+                writeProtected: appStorageState ? appStorageState.writeProtected === true : true
+            });
+        } catch (e) {
+            result = { ok: false, error: 'unknown' };
+        }
+        storageSaving = false;
+
+        if (result.ok) {
+            // saved показывается только после фактически успешного setItem.
+            if (pendingStatusLabel) {
+                renderStorageStatus(pendingStatusLabel);
+                pendingStatusLabel = null;
+            } else {
+                renderStorageStatus('saved');
+            }
+        } else {
+            renderStorageStatus(DreamBoardStorage.deriveStatus(appStorageState, result, pendingStatusLabel));
+        }
+
         if (!result.ok) {
             if (result.error === 'write-protected' || result.error === 'newer-schema-protected') {
-                showToast('Данные защищены от перезаписи: источник повреждён или создан более новой версией. Обновите приложение.', 'info');
+                showToast('Данные защищены от перезаписи. Не закрывайте приложение до восстановления', 'info');
+            } else if (result.error === 'storage-unavailable') {
+                showToast('Хранилище временно недоступно. Перезагрузите приложение — изменения пока не будут сохранены', 'error');
             } else {
-                showToast('Не удалось сохранить изменения. Создайте резервную копию или освободите место в браузере', 'error');
+                showToast('Изменения не сохранены. Освободите место в браузере и повторите сохранение', 'error');
             }
         }
     }

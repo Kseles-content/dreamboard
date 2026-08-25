@@ -2256,3 +2256,69 @@ textarea:focus {
 /* v14: скрытые нереализованные контролы (мульти-доски, экспорт/импорт JSON/PNG) —
    функции запланированы на следующие этапы v14; правило защищает от авторских стилей */
 [hidden] { display: none !important; }
+
+/* v14: индикатор состояния локального хранения */
+.storage-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary, #9a9ab0);
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+    opacity: 0.85;
+    transition: opacity 0.3s ease, border-color 0.3s ease, background 0.3s ease;
+}
+.storage-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--text-secondary, #9a9ab0);
+    flex: 0 0 auto;
+}
+.storage-status-retry {
+    font: inherit;
+    font-size: 12px;
+    color: var(--career-color, #00f2fe);
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    border-radius: 12px;
+    padding: 2px 10px;
+    cursor: pointer;
+}
+.storage-status-retry:disabled { opacity: 0.5; cursor: default; }
+.storage-status-retry:focus-visible { outline: 2px solid var(--career-color, #00f2fe); outline-offset: 2px; }
+
+/* saved — приглушённый, не отвлекает */
+.storage-status[data-status="saved"] { opacity: 0.7; }
+.storage-status[data-status="saved"] .storage-status-dot { background: var(--wealth-color, #00b09b); }
+/* migrated / recovered — краткий акцент после миграции/восстановления */
+.storage-status[data-status="migrated"],
+.storage-status[data-status="recovered"] { border-color: rgba(0, 242, 254, 0.35); opacity: 1; }
+.storage-status[data-status="migrated"] .storage-status-dot,
+.storage-status[data-status="recovered"] .storage-status-dot { background: var(--career-color, #00f2fe); }
+/* saving — без бесконечной анимации */
+.storage-status[data-status="saving"] { opacity: 0.6; }
+.storage-status[data-status="saving"] .storage-status-dot { background: var(--text-secondary, #9a9ab0); }
+/* error / readonly / unavailable — заметны и остаются до устранения причины */
+.storage-status[data-status="error"] { border-color: rgba(255, 82, 82, 0.55); background: rgba(255, 82, 82, 0.12); opacity: 1; }
+.storage-status[data-status="error"] .storage-status-dot { background: #ff5252; }
+.storage-status[data-status="readonly"],
+.storage-status[data-status="unavailable"] { border-color: rgba(255, 183, 77, 0.5); background: rgba(255, 183, 77, 0.1); opacity: 1; }
+.storage-status[data-status="readonly"] .storage-status-dot,
+.storage-status[data-status="unavailable"] .storage-status-dot { background: #ffb74d; }
+
+/* Мобильные: сокращаем визуальный текст, полное описание остаётся в aria-label/title */
+@media (max-width: 620px) {
+    .storage-status .storage-status-text { display: none; }
+    .storage-status { padding: 4px 8px; }
+}
+
+/* prefers-reduced-motion: без переходов и анимаций */
+@media (prefers-reduced-motion: reduce) {
+    .storage-status { transition: none; }
+}
