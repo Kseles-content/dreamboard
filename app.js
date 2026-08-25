@@ -72,6 +72,8 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     let dreams = [];
+    let appStorageRef = null; // localStorage (или null, если недоступен) для storage layer
+    let appStorageState = null; // результат load(): source / writeProtected / shouldPersist / warnings / state
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
 
@@ -229,12 +231,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================================
     
     function init() {
-        const storedDreams = localStorage.getItem('dreams_db');
-        if (storedDreams) {
-            dreams = JSON.parse(storedDreams);
+        // Безопасная загрузка через versioned storage layer (v14).
+        let appStorage = null;
+        try {
+            appStorage = window.localStorage;
+        } catch (e) {
+            appStorage = null;
+        }
+        appStorageRef = appStorage;
+
+        if (typeof DreamBoardStorage === 'undefined' || !DreamBoardStorage) {
+            // Аварийный read-only режим: storage.js не загрузился (например,
+            // рассинхрон SW-кэша). Без белого экрана и без записи.
+            showToast('Хранилище временно недоступно. Перезагрузите приложение — изменения пока не будут сохранены', 'error');
+            dreams = JSON.parse(JSON.stringify(DEFAULT_DREAMS));
+            appStorageState = {
+                source: 'defaults',
+                state: null,
+                writeProtected: true,
+                shouldPersist: false,
+                warnings: ['storage-module-missing']
+            };
         } else {
-            dreams = [...DEFAULT_DREAMS];
-            saveDreams();
+            const storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
+            appStorageState = storageResult;
+
+            if (storageResult.protected) {
+                showToast('Данные созданы более новой версией приложения. Обновите приложение, чтобы не потерять изменения.', 'info');
+            } else if (storageResult.source === 'defaults' && storageResult.warnings.length > 0) {
+                showToast('Не удалось восстановить сохранённые данные. Приложение запущено с безопасными значениями по умолчанию.', 'info');
+            }
+
+            dreams = storageResult.dreams;
+
+            // Миграция legacy dreams_db → versioned state или первичный seed.
+            // legacy dreams_db при этом не изменяется (страховка).
+            if (storageResult.shouldPersist) {
+                saveDreams();
+            }
         }
         
         // Восстановление сохраненных позиций холста
@@ -249,7 +283,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function saveDreams() {
-        localStorage.setItem('dreams_db', JSON.stringify(dreams));
+        // Каждый вызов сохранения (форма, checkbox, drag/resize, архив) обязан
+        // учитывать write protection; при защите никаких setItem не выполняется.
+        const result = DreamBoardStorage.save(appStorageRef, dreams, {
+            writeProtected: appStorageState ? appStorageState.writeProtected === true : true
+        });
+        if (!result.ok) {
+            if (result.error === 'write-protected' || result.error === 'newer-schema-protected') {
+                showToast('Данные защищены от перезаписи: источник повреждён или создан более новой версией. Обновите приложение.', 'info');
+            } else {
+                showToast('Не удалось сохранить изменения. Создайте резервную копию или освободите место в браузере', 'error');
+            }
+        }
     }
 
     function isLocalImageRef(value) {
