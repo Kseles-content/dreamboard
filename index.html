@@ -146,6 +146,14 @@
                     </svg>
                 </button>
 
+                <button id="trash-toggle-btn" class="icon-btn" title="Недавно удалённые" aria-label="Недавно удалённые">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6l-1 14H6L5 6m3 0V4h8v2"/>
+                    </svg>
+                    <span id="trash-count" class="trash-count" hidden>0</span>
+                </button>
+
                 <!-- Индикатор состояния локального хранения (v14) -->
                 <div class="storage-status" id="storage-status" role="status" aria-live="polite" aria-label="Сохранено на устройстве" title="Сохранено на устройстве" data-status="saved">
                     <span class="storage-status-dot" aria-hidden="true"></span>
@@ -430,8 +438,25 @@
         </div>
     </div>
 
+    <!-- Недавно удалённые цели (persistent trash, Этап 5) -->
+    <div id="trash-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal-content glass-card wide" role="dialog" aria-modal="true" aria-labelledby="trash-modal-title">
+            <header class="modal-header">
+                <h3 id="trash-modal-title">Недавно удалённые</h3>
+                <button type="button" class="close-modal-btn" aria-label="Закрыть">&times;</button>
+            </header>
+            <div class="archive-body">
+                <p class="archive-intro">Удалённые цели хранятся 30 дней. Их можно восстановить или удалить окончательно.</p>
+                <div id="trash-items-list" class="trash-items-list"></div>
+            </div>
+            <footer class="modal-footer">
+                <button type="button" class="btn primary close-modal-btn">Закрыть</button>
+            </footer>
+        </div>
+    </div>
+
     <!-- Элемент для всплывающих уведомлений -->
-    <div id="toast-container" class="toast-container"></div>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions"></div>
 
     <!-- html2canvas для экспорта PNG -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
@@ -440,6 +465,7 @@
     <script src="backup.js"></script>
     <script src="import.js"></script>
     <script src="performance.js"></script>
+    <script src="trash.js"></script>
     <script src="app.js"></script>
 
     <!-- Регистрация Service Worker (PWA) -->

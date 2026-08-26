@@ -556,6 +556,12 @@ body {
     box-shadow: 0 0 15px #ff2d55;
 }
 
+.action-round-btn.delete-btn {
+    color: #ff6b83;
+    border-color: rgba(255, 45, 85, 0.55);
+    background: rgba(80, 8, 28, 0.88);
+}
+
 /* Тело карточки */
 .card-body {
     padding: 20px;
@@ -1585,6 +1591,33 @@ textarea:focus {
     font-weight: 500;
     box-shadow: 0 8px 24px rgba(0,0,0,0.4);
     animation: toast-in 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.25) forwards;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: min(92vw, 620px);
+}
+
+.toast-message { min-width: 0; }
+
+.toast-action {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 8px 14px;
+    border: 1px solid rgba(255,255,255,0.3);
+    border-radius: 22px;
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+}
+
+.toast-action:focus-visible,
+.trash-restore-btn:focus-visible,
+.trash-delete-btn:focus-visible,
+#trash-toggle-btn:focus-visible {
+    outline: 3px solid var(--career-color);
+    outline-offset: 2px;
 }
 
 @keyframes toast-in {
@@ -1594,6 +1627,60 @@ textarea:focus {
 
 .toast.success { border-color: var(--wealth-color); }
 .toast.info { border-color: var(--career-color); }
+
+/* Недавно удалённые */
+#trash-toggle-btn { position: relative; }
+
+.trash-count {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 4px;
+    border-radius: 9px;
+    background: #ff2d55;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 800;
+    line-height: 18px;
+    text-align: center;
+}
+
+.trash-items-list {
+    display: grid;
+    gap: 12px;
+}
+
+.trash-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 14px 16px;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 14px;
+    background: rgba(0,0,0,0.2);
+}
+
+.trash-item-content { min-width: 0; }
+.trash-item-content h4 { margin: 0 0 4px; overflow-wrap: anywhere; }
+.trash-item-content p,
+.empty-trash-state { margin: 0; color: var(--text-secondary); font-size: 12px; }
+.empty-trash-state { padding: 32px 12px; text-align: center; }
+.trash-item-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.trash-item-actions .btn { min-height: 44px; }
+.trash-delete-btn {
+    color: #fff;
+    border-color: rgba(255,45,85,0.65);
+    background: rgba(125,15,43,0.7);
+}
+
+@media (max-width: 620px) {
+    .trash-item { align-items: stretch; flex-direction: column; }
+    .trash-item-actions { display: grid; grid-template-columns: 1fr; }
+    .toast { padding: 8px 10px 8px 16px; }
+}
 
 /* ==========================================================================
    12. СТИЛИЗАЦИЯ СКРОЛЛБАРОВ

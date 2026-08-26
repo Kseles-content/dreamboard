@@ -78,6 +78,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let pendingStatusLabel = null;   // 'migrated' | 'recovered' — показать один раз после первого успешного save
     let storageSaving = false;       // защита от повторного клика «Повторить»
     let importBusy = false;          // защита от повторного запуска импорта
+    let trashItems = [];             // persistent recently-deleted records
+    let trashProtected = false;      // corrupt/future trash must never be overwritten
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
 
@@ -241,6 +243,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const archiveToggleBtn = document.getElementById('archive-toggle-btn');
     const archiveModal = document.getElementById('archive-modal');
     const archivedDreamsGrid = document.getElementById('archived-dreams-grid');
+    const trashToggleBtn = document.getElementById('trash-toggle-btn');
+    const trashModal = document.getElementById('trash-modal');
+    const trashItemsList = document.getElementById('trash-items-list');
+    const trashCount = document.getElementById('trash-count');
 
     // Звук
     const audioToggleBtn = document.getElementById('audio-toggle-btn');
@@ -322,6 +328,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 if (file) handleImportBackup(file);
             });
         }
+        if (trashToggleBtn) trashToggleBtn.addEventListener('click', openTrashModal);
 
         // Безопасная загрузка через versioned storage layer (v14).
         let appStorage = null;
@@ -371,6 +378,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 saveDreams();
             }
         }
+
+        initTrashStore();
         
         // Восстановление сохраненных позиций холста
         zoom = parseFloat(localStorage.getItem('canvas_zoom') || '1.0');
@@ -424,6 +433,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 showToast('Изменения не сохранены. Освободите место в браузере и повторите сохранение', 'error');
             }
         }
+        return result;
     }
 
     function isLocalImageRef(value) {
@@ -524,6 +534,184 @@ document.addEventListener('DOMContentLoaded', () => {
                 db.close();
                 reject(request.error);
             };
+        });
+    }
+
+    function initTrashStore() {
+        if (typeof DreamBoardTrash === 'undefined' || !DreamBoardTrash) {
+            trashProtected = true;
+            updateTrashCount();
+            return;
+        }
+        const loaded = DreamBoardTrash.load(appStorageRef);
+        trashProtected = !loaded.ok || loaded.protected === true;
+        trashItems = loaded.ok ? loaded.items : [];
+        updateTrashCount();
+        if (trashProtected) {
+            showToast('Недавно удалённые недоступны: данные защищены от перезаписи', 'info');
+            return;
+        }
+        cleanupExpiredTrash();
+    }
+
+    function reloadTrashItems() {
+        const loaded = DreamBoardTrash.load(appStorageRef);
+        if (!loaded.ok) {
+            trashProtected = true;
+            return false;
+        }
+        trashItems = loaded.items;
+        updateTrashCount();
+        return true;
+    }
+
+    function updateTrashCount() {
+        if (!trashCount) return;
+        trashCount.textContent = String(trashItems.length);
+        trashCount.hidden = trashItems.length === 0;
+        if (trashToggleBtn) trashToggleBtn.setAttribute('aria-label', `Недавно удалённые: ${trashItems.length}`);
+    }
+
+    async function cleanupExpiredTrash() {
+        const result = DreamBoardTrash.pruneExpired(appStorageRef);
+        if (!result.ok) return;
+        trashItems = result.items;
+        updateTrashCount();
+        for (const item of result.removed) {
+            const ref = item && item.dream ? item.dream.imageUrl : '';
+            if (isLocalImageRef(ref) && !DreamBoardTrash.isLocalImageRefInUse(ref, dreams, trashItems)) {
+                try { await deleteLocalImageRef(ref); } catch (e) { /* orphan безопаснее потери данных */ }
+            }
+        }
+    }
+
+    function makeTrashRecordId() {
+        const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+        return `trash-${random}`;
+    }
+
+    function isImageRefInUse(ref, excludingDreamId) {
+        if (typeof DreamBoardTrash === 'undefined' || !DreamBoardTrash) {
+            return dreams.some(dream => dream && dream.id !== excludingDreamId && dream.imageUrl === ref);
+        }
+        return DreamBoardTrash.isLocalImageRefInUse(ref, dreams, trashItems, excludingDreamId);
+    }
+
+    async function restoreTrashRecord(recordId, options = {}) {
+        if (trashProtected) {
+            showToast('Восстановление недоступно: корзина защищена', 'error');
+            return false;
+        }
+        const record = trashItems.find(item => item.id === recordId);
+        if (!record) {
+            showToast('Удалённая цель уже недоступна', 'info');
+            return false;
+        }
+        const plan = DreamBoardTrash.buildRestore(dreams, record);
+        if (!plan.ok) {
+            showToast(plan.error === 'id-conflict' ? 'Цель с таким идентификатором уже существует' : 'Не удалось восстановить цель', 'error');
+            return false;
+        }
+
+        const previousDreams = dreams;
+        dreams = plan.dreams;
+        const saved = saveDreams();
+        if (!saved.ok) {
+            dreams = previousDreams;
+            renderAll();
+            return false;
+        }
+
+        const removed = DreamBoardTrash.remove(appStorageRef, recordId);
+        if (!removed.ok) {
+            // Active state уже безопасно сохранён. Оставшаяся trash-копия не
+            // означает потерю; повторное восстановление блокирует id-conflict.
+            reloadTrashItems();
+            renderAll();
+            showToast('Цель восстановлена, но запись корзины не удалось очистить', 'info');
+            return true;
+        }
+        trashItems = removed.items;
+        updateTrashCount();
+        renderAll();
+        if (trashModal && trashModal.classList.contains('active')) renderTrashItems();
+        if (!options.silent) showToast(`Цель «${plan.restored.title}» восстановлена`, 'success');
+        return true;
+    }
+
+    async function permanentlyDeleteTrashRecord(recordId) {
+        if (trashProtected) return false;
+        const record = trashItems.find(item => item.id === recordId);
+        if (!record) return false;
+        if (!window.confirm(`Удалить цель «${record.dream.title}» окончательно? Это действие нельзя отменить.`)) return false;
+        const removed = DreamBoardTrash.remove(appStorageRef, recordId);
+        if (!removed.ok) {
+            showToast('Не удалось удалить запись из корзины', 'error');
+            return false;
+        }
+        trashItems = removed.items;
+        updateTrashCount();
+        const ref = record.dream.imageUrl;
+        if (isLocalImageRef(ref) && !isImageRefInUse(ref)) {
+            try { await deleteLocalImageRef(ref); } catch (e) { /* orphan non-fatal */ }
+        }
+        renderTrashItems();
+        showToast('Цель удалена окончательно', 'info');
+        return true;
+    }
+
+    function openTrashModal() {
+        if (!trashModal) return;
+        renderTrashItems();
+        trashModal.classList.add('active');
+        trashModal.setAttribute('aria-hidden', 'false');
+    }
+
+    function renderTrashItems() {
+        if (!trashItemsList) return;
+        trashItemsList.textContent = '';
+        if (trashProtected) {
+            const message = document.createElement('p');
+            message.className = 'empty-trash-state';
+            message.textContent = 'Корзина защищена: повреждённый или более новый формат не будет перезаписан.';
+            trashItemsList.appendChild(message);
+            return;
+        }
+        if (!trashItems.length) {
+            const empty = document.createElement('p');
+            empty.className = 'empty-trash-state';
+            empty.textContent = 'Недавно удалённых целей нет.';
+            trashItemsList.appendChild(empty);
+            return;
+        }
+        trashItems.slice().reverse().forEach(record => {
+            const row = document.createElement('article');
+            row.className = 'trash-item';
+            const content = document.createElement('div');
+            content.className = 'trash-item-content';
+            const title = document.createElement('h4');
+            title.textContent = record.dream.title;
+            const date = document.createElement('p');
+            date.textContent = `Удалено: ${new Date(record.deletedAt).toLocaleString()}`;
+            content.append(title, date);
+
+            const actions = document.createElement('div');
+            actions.className = 'trash-item-actions';
+            const restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'btn secondary trash-restore-btn';
+            restore.textContent = 'Восстановить';
+            restore.addEventListener('click', () => restoreTrashRecord(record.id));
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn danger trash-delete-btn';
+            remove.textContent = 'Удалить окончательно';
+            remove.addEventListener('click', () => permanentlyDeleteTrashRecord(record.id));
+            actions.append(restore, remove);
+            row.append(content, actions);
+            trashItemsList.appendChild(row);
         });
     }
 
@@ -801,15 +989,24 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function getImageHtml(imageUrl, className, altText, lazy = true) {
-        const safeAlt = String(altText || '').replace(/"/g, '&quot;');
+        const safeAlt = escapeHtml(altText);
         if (!isLocalImageRef(imageUrl)) {
-            return `<img src="${imageUrl}" class="${className}" alt="${safeAlt}"${lazy ? ' loading="lazy"' : ''}>`;
+            return `<img src="${escapeHtml(imageUrl)}" class="${className}" alt="${safeAlt}"${lazy ? ' loading="lazy"' : ''}>`;
         }
 
         const id = getLocalImageId(imageUrl);
         const cachedUrl = localImageObjectUrls.get(id) || 'assets/images/og-preview.png';
-        return `<img src="${cachedUrl}" class="${className}" alt="${safeAlt}" data-local-image-id="${id}"${lazy ? ' loading="lazy"' : ''}>`;
+        return `<img src="${escapeHtml(cachedUrl)}" class="${className}" alt="${safeAlt}" data-local-image-id="${escapeHtml(id)}"${lazy ? ' loading="lazy"' : ''}>`;
     }
 
     function hydrateLocalImages(root = document) {
@@ -1438,13 +1635,13 @@ document.addEventListener('DOMContentLoaded', () => {
             milestonesHTML = `<div class="card-milestones">`;
             dream.milestones.forEach(m => {
                 milestonesHTML += `
-                    <div class="milestone-item ${m.checked ? 'checked' : ''}" data-mid="${m.id}">
+                    <div class="milestone-item ${m.checked ? 'checked' : ''}" data-mid="${escapeHtml(m.id)}">
                         <div class="milestone-checkbox">
                             <svg width="9" height="7" viewBox="0 0 9 7" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M1 3L3.5 5.5L8 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                             </svg>
                         </div>
-                        <span>${m.text}</span>
+                        <span>${escapeHtml(m.text)}</span>
                     </div>
                 `;
             });
@@ -1455,8 +1652,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="card-image-wrapper">
                 ${getImageHtml(dream.imageUrl, 'card-image', dream.title)}
                 <div class="card-image-overlay"></div>
-                <span class="card-badge">${getCategoryNameRU(dream.category)}</span>
-                ${dream.year ? `<span class="card-year">${dream.year} г.</span>` : ''}
+                <span class="card-badge">${escapeHtml(getCategoryNameRU(dream.category))}</span>
+                ${dream.year ? `<span class="card-year">${escapeHtml(dream.year)} г.</span>` : ''}
                 
                 <div class="card-quick-actions">
                     <button class="action-round-btn manifest-btn" title="Воплотить в реальность! (Манифестировано)">
@@ -1481,8 +1678,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="card-body">
-                <h4 class="card-title">${dream.title}</h4>
-                <p class="card-desc">${dream.desc}</p>
+                <h4 class="card-title">${escapeHtml(dream.title)}</h4>
+                <p class="card-desc">${escapeHtml(dream.desc)}</p>
                 ${milestonesHTML}
             </div>
             ${isCanvasMode ? `<div class="card-resizer"></div>` : ''}
@@ -2113,6 +2310,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         closeDreamModal();
         archiveModal.classList.remove('active');
+        if (trashModal) {
+            trashModal.classList.remove('active');
+            trashModal.setAttribute('aria-hidden', 'true');
+        }
     }));
 
     // Вкладки выбора картинки
@@ -2174,12 +2375,16 @@ document.addEventListener('DOMContentLoaded', () => {
         tempMilestones.forEach(m => {
             const div = document.createElement('div');
             div.className = 'modal-milestone-item';
-            div.innerHTML = `
-                <span>${m.text}</span>
-                <button type="button" class="delete-milestone-btn" data-mid="${m.id}">&times;</button>
-            `;
-            
-            div.querySelector('.delete-milestone-btn').addEventListener('click', () => {
+            const label = document.createElement('span');
+            label.textContent = m.text;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'delete-milestone-btn';
+            remove.dataset.mid = m.id;
+            remove.textContent = '×';
+            div.append(label, remove);
+
+            remove.addEventListener('click', () => {
                 tempMilestones = tempMilestones.filter(x => x.id !== m.id);
                 renderModalMilestones();
             });
@@ -2291,10 +2496,19 @@ document.addEventListener('DOMContentLoaded', () => {
             discardPendingLocalUpload();
         }
 
+        let previousDreamSnapshot = null;
+        let changedIndex = -1;
+        let createdDream = null;
+        let imageToCleanup = '';
+
         if (id) {
             // Обновление существующей цели
             const index = dreams.findIndex(d => d.id === id);
             if (index !== -1) {
+                changedIndex = index;
+                previousDreamSnapshot = typeof DreamBoardTrash !== 'undefined'
+                    ? DreamBoardTrash.cloneSafe(dreams[index])
+                    : JSON.parse(JSON.stringify(dreams[index]));
                 const previousImage = dreams[index].imageUrl;
                 dreams[index] = {
                     ...dreams[index],
@@ -2306,9 +2520,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     milestones: [...tempMilestones]
                 };
                 if (previousImage !== finalImage) {
-                    deleteLocalImageRef(previousImage);
+                    imageToCleanup = previousImage;
                 }
-                showToast('Цель успешно обновлена', 'success');
             }
         } else {
             // Создание новой цели
@@ -2329,11 +2542,25 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             
             dreams.push(newDream);
+            createdDream = newDream;
+        }
+
+        const saveResult = saveDreams();
+        if (!saveResult.ok) {
+            if (changedIndex !== -1 && previousDreamSnapshot) dreams[changedIndex] = previousDreamSnapshot;
+            if (createdDream) dreams = dreams.filter(dream => dream !== createdDream);
+            renderAll();
+            return;
+        }
+        if (imageToCleanup && !isImageRefInUse(imageToCleanup)) {
+            deleteLocalImageRef(imageToCleanup);
+        }
+        if (id) {
+            showToast('Цель успешно обновлена', 'success');
+        } else {
             playSoundEffect('manifest-success');
             showToast('Новая мечта визуализирована!', 'success');
         }
-        
-        saveDreams();
         renderAll();
         pendingLocalImageRef = null;
         closeDreamModal();
@@ -2347,15 +2574,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Удаление цели
     function deleteDream(id) {
-        const dream = dreams.find(d => d.id === id);
-        if (dream) {
-            deleteLocalImageRef(dream.imageUrl);
+        const originalIndex = dreams.findIndex(dream => dream.id === id);
+        if (originalIndex === -1) return;
+        const dream = dreams[originalIndex];
+        if (!window.confirm(`Удалить цель «${dream.title}»? Её можно будет восстановить в течение 30 дней.`)) return;
+        if (trashProtected || typeof DreamBoardTrash === 'undefined') {
+            showToast('Удаление недоступно: корзина защищена', 'error');
+            return;
         }
-        dreams = dreams.filter(d => d.id !== id);
-        saveDreams();
+
+        const added = DreamBoardTrash.add(appStorageRef, dream, originalIndex, { makeId: makeTrashRecordId });
+        if (!added.ok) {
+            showToast(added.error === 'trash-full' ? 'Корзина заполнена. Восстановите или удалите старые цели.' : 'Не удалось создать безопасную копию цели', 'error');
+            return;
+        }
+        trashItems = added.items;
+        updateTrashCount();
+
+        dreams = dreams.slice(0, originalIndex).concat(dreams.slice(originalIndex + 1));
+        const saved = saveDreams();
+        if (!saved.ok) {
+            dreams.splice(originalIndex, 0, dream);
+            const rollback = DreamBoardTrash.remove(appStorageRef, added.record.id);
+            if (rollback.ok) trashItems = rollback.items;
+            else reloadTrashItems();
+            updateTrashCount();
+            renderAll();
+            return;
+        }
+
         renderAll();
         playSoundEffect('hover');
-        showToast('Цель отпущена и удалена', 'info');
+        showToast(`Цель «${dream.title}» удалена`, 'info', {
+            duration: 10000,
+            actionLabel: 'Отменить',
+            onAction: () => restoreTrashRecord(added.record.id, { silent: true })
+        });
     }
 
     // Манифестация (успешное воплощение мечты)
@@ -2867,12 +3121,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="card-badge">Воплощено ★</span>
                     </div>
                     <div class="card-body">
-                        <h4 class="card-title">${dream.title}</h4>
-                        <p class="card-desc" style="margin-bottom:12px;">${dream.desc}</p>
+                        <h4 class="card-title">${escapeHtml(dream.title)}</h4>
+                        <p class="card-desc" style="margin-bottom:12px;">${escapeHtml(dream.desc)}</p>
                         
                         <div class="gratitude-note-box" style="border-top:1px solid rgba(255,255,255,0.06); padding-top:12px; margin-top:auto;">
                             <label style="font-size:10px; color:var(--manifested-color); font-weight:700;">Ваш Дневник Благодарности</label>
-                            <textarea class="gratitude-note-input" rows="2" placeholder="Запишите свои мысли и чувства, когда эта цель реализовалась..." style="font-size:12px; padding:8px; margin-top:6px; background:rgba(0,0,0,0.25); border-color:rgba(255,215,0,0.1);">${note}</textarea>
+                            <textarea class="gratitude-note-input" rows="2" placeholder="Запишите свои мысли и чувства, когда эта цель реализовалась..." style="font-size:12px; padding:8px; margin-top:6px; background:rgba(0,0,0,0.25); border-color:rgba(255,215,0,0.1);">${escapeHtml(note)}</textarea>
                         </div>
                         
                         <button class="simple-btn reactivate-btn" style="margin-top:12px; font-size:11px; padding:6px 10px; width:fit-content; border-color:rgba(255,255,255,0.05); color:var(--text-secondary);">Вернуть на доску</button>
@@ -2955,21 +3209,66 @@ document.addEventListener('DOMContentLoaded', () => {
     // 12. СИСТЕМА УВЕДОМЛЕНИЙ (TOAST NOTIFICATIONS)
     // ==========================================================================
     
-    function showToast(message, type = 'info') {
+    function showToast(message, type = 'info', options = {}) {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        toast.innerText = message;
+        const text = document.createElement('span');
+        text.className = 'toast-message';
+        text.textContent = String(message);
+        toast.appendChild(text);
+
+        let actionButton = null;
+        if (options.actionLabel && typeof options.onAction === 'function') {
+            actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.className = 'toast-action';
+            actionButton.textContent = options.actionLabel;
+            toast.appendChild(actionButton);
+        }
         
         container.appendChild(toast);
-        
-        // Плавный уход через 3.5 секунды
-        setTimeout(() => {
+
+        let remaining = typeof options.duration === 'number' ? options.duration : 3500;
+        let startedAt = 0;
+        let timer = null;
+        let dismissed = false;
+
+        const dismiss = () => {
+            if (dismissed) return;
+            dismissed = true;
+            if (timer) clearTimeout(timer);
             toast.style.animation = 'toast-out 0.4s ease forwards';
-            toast.addEventListener('animationend', () => {
-                toast.remove();
+            toast.addEventListener('animationend', () => toast.remove(), { once: true });
+            // Fallback: если browser/reduced-motion не отдаст animationend.
+            setTimeout(() => toast.remove(), 600);
+        };
+
+        const schedule = () => {
+            if (dismissed || remaining <= 0) return dismiss();
+            startedAt = Date.now();
+            timer = setTimeout(dismiss, remaining);
+        };
+        const pause = () => {
+            if (!timer || dismissed) return;
+            clearTimeout(timer);
+            timer = null;
+            remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        };
+
+        toast.addEventListener('focusin', pause);
+        toast.addEventListener('focusout', schedule);
+        if (actionButton) {
+            actionButton.addEventListener('click', async () => {
+                if (actionButton.disabled) return;
+                pause();
+                actionButton.disabled = true;
+                try { await options.onAction(); }
+                finally { dismiss(); }
             });
-        }, 3500);
+        }
+        schedule();
+        return toast;
     }
     
     // Добавляем стиль для ухода тостов в style.css программно
