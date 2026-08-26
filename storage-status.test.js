@@ -114,13 +114,13 @@ test('13. error action (Повторить) доступно клавиатур�
     assert.ok(STYLE.includes('.storage-status-retry:focus-visible'), 'видимый фокус');
 });
 
-test('14. hidden controls Этапа 1A не возвращаются', () => {
+test('14. реализованный импорт видим, остальные заглушки скрыты', () => {
     assert.ok(INDEX.includes('<div class="board-selector-group" hidden>'));
-    for (const id of ['export-png-btn', 'import-json-btn', 'import-file-input']) {
+    for (const id of ['export-png-btn', 'import-file-input']) {
         const line = INDEX.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && line.includes('hidden'), `${id} скрыт`);
     }
-    for (const id of ['view-grid-btn', 'view-canvas-btn', 'audio-toggle-btn', 'archive-toggle-btn', 'start-manifest-btn', 'export-json-btn']) {
+    for (const id of ['view-grid-btn', 'view-canvas-btn', 'audio-toggle-btn', 'archive-toggle-btn', 'start-manifest-btn', 'export-json-btn', 'import-json-btn']) {
         const line = INDEX.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && !line.includes('hidden'), `${id} видим`);
     }

@@ -348,10 +348,26 @@
 
     // --- сохранение ----------------------------------------------------------
 
-    function save(storage, dreams, opts) {
+    function saveState(storage, rawState, opts) {
         opts = opts || {};
-        var state = createState(dreams);
-        var payload = JSON.stringify(state);
+        var normalized = normalizeState(rawState);
+        if (!normalized.ok) {
+            return {
+                ok: false,
+                error: normalized.protected ? 'newer-schema-protected' : 'invalid-state',
+                warnings: []
+            };
+        }
+        var state = normalized.state;
+        state.appVersion = APP_VERSION;
+        state.savedAt = typeof opts.savedAt === 'string' ? opts.savedAt : new Date().toISOString();
+
+        var payload;
+        try {
+            payload = JSON.stringify(state);
+        } catch (e) {
+            return { ok: false, error: 'serialize-failed', warnings: [] };
+        }
 
         var existing = safeGet(storage, KEY_PRIMARY);
         if (existing.unavailable) {
@@ -400,6 +416,10 @@
         return { ok: true, warnings: [] };
     }
 
+    function save(storage, dreams, opts) {
+        return saveState(storage, createState(dreams), opts);
+    }
+
     // --- статусы хранения (UI) -------------------------------------------------
     // Чистая функция: вычисляет статус индикатора из результатов load/save.
     // Не обращается к DOM и не хранит состояние — тестируема в Node.
@@ -429,6 +449,7 @@
         KEY_LEGACY: KEY_LEGACY,
         load: load,
         save: save,
+        saveState: saveState,
         createState: createState,
         normalizeState: normalizeState,
         normalizeDreams: normalizeDreams,

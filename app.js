@@ -77,6 +77,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let storageStatusEl = null;      // индикатор #storage-status
     let pendingStatusLabel = null;   // 'migrated' | 'recovered' — показать один раз после первого успешного save
     let storageSaving = false;       // защита от повторного клика «Повторить»
+    let importBusy = false;          // защита от повторного запуска импорта
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
 
@@ -294,6 +295,19 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        // Безопасное восстановление полного JSON-бэкапа (Этап 4).
+        const importJsonBtn = document.getElementById('import-json-btn');
+        const importFileInput = document.getElementById('import-file-input');
+        if (importJsonBtn && importFileInput) {
+            importJsonBtn.addEventListener('click', () => {
+                if (!importBusy) importFileInput.click();
+            });
+            importFileInput.addEventListener('change', () => {
+                const file = importFileInput.files && importFileInput.files[0];
+                if (file) handleImportBackup(file);
+            });
+        }
+
         // Безопасная загрузка через versioned storage layer (v14).
         let appStorage = null;
         try {
@@ -492,6 +506,152 @@ document.addEventListener('DOMContentLoaded', () => {
                 reject(request.error);
             };
         });
+    }
+
+    function writeImportedImages(records) {
+        if (!records.length) return Promise.resolve();
+        return openLocalImageDb().then(db => new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readwrite');
+            const store = tx.objectStore(LOCAL_IMAGE_STORE);
+            records.forEach(record => {
+                const blob = new Blob([record.bytes], { type: record.mimeType });
+                store.add({
+                    id: record.id,
+                    blob,
+                    originalName: '',
+                    mimeType: record.mimeType,
+                    size: blob.size,
+                    createdAt: new Date().toISOString()
+                });
+            });
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onabort = () => { const error = tx.error; db.close(); reject(error || new Error('image-write-aborted')); };
+            tx.onerror = () => { /* onabort завершит Promise и закроет БД */ };
+        }));
+    }
+
+    function cleanupImportedImages(ids) {
+        if (!ids.length) return Promise.resolve();
+        return openLocalImageDb().then(db => new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readwrite');
+            const store = tx.objectStore(LOCAL_IMAGE_STORE);
+            ids.forEach(id => store.delete(id));
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onabort = () => { const error = tx.error; db.close(); reject(error || new Error('image-cleanup-aborted')); };
+            tx.onerror = () => { /* onabort завершит Promise */ };
+        }));
+    }
+
+    function decodeBase64Bytes(value) {
+        return new Promise((resolve, reject) => {
+            try {
+                const binary = atob(value);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                resolve(bytes);
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    function createImportImageId(index) {
+        const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}-${index}`;
+        return `import-${random}`;
+    }
+
+    function readImportFile(file) {
+        if (file && typeof file.text === 'function') return file.text();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+            reader.onerror = () => reject(reader.error || new Error('file-read-failed'));
+            reader.readAsText(file, 'UTF-8');
+        });
+    }
+
+    async function handleImportBackup(file) {
+        if (importBusy) return;
+        const importBtn = document.getElementById('import-json-btn');
+        const fileInput = document.getElementById('import-file-input');
+
+        if (typeof DreamBoardImport === 'undefined' || !DreamBoardImport || typeof DreamBoardStorage.saveState !== 'function') {
+            showToast('Модуль восстановления недоступен. Обновите страницу', 'error');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+        if (!appStorageState || appStorageState.unavailable || appStorageState.writeProtected) {
+            showToast('Данные защищены от перезаписи — импорт невозможен', 'error');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+        if (!file || typeof file.size !== 'number' || file.size > DreamBoardImport.MAX_FILE_BYTES) {
+            showToast('Файл резервной копии превышает допустимый размер', 'error');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+
+        importBusy = true;
+        if (importBtn) importBtn.disabled = true;
+        showToast('Проверка резервной копии…', 'info');
+        try {
+            const text = await readImportFile(file);
+            const inspected = DreamBoardImport.inspectBackupText(text, {
+                fileSize: file.size,
+                normalizeState: raw => DreamBoardStorage.normalizeState(raw)
+            });
+            if (!inspected.ok) {
+                showToast(inspected.error.message, 'error');
+                return;
+            }
+
+            const info = inspected.inspected;
+            const missingText = info.missingRefs.length
+                ? ` В файле отсутствует изображений: ${info.missingRefs.length}; вместо них будут показаны заглушки.`
+                : '';
+            const approved = window.confirm(
+                `Заменить текущую доску данными из резервной копии? Целей: ${info.dreamCount}, изображений: ${info.imageCount}.${missingText} Текущие данные останутся в recovery-копии.`
+            );
+            if (!approved) {
+                showToast('Импорт отменён', 'info');
+                return;
+            }
+
+            showToast('Восстановление…', 'info');
+            const prepared = await DreamBoardImport.materializeImport(info, {
+                decodeBase64: decodeBase64Bytes,
+                createId: createImportImageId
+            });
+            if (!prepared.ok) {
+                showToast(prepared.error.message, 'error');
+                return;
+            }
+
+            const applied = await DreamBoardImport.applyImport(prepared.plan, {
+                writeImages: writeImportedImages,
+                cleanupImages: cleanupImportedImages,
+                saveState: state => DreamBoardStorage.saveState(appStorageRef, state, {
+                    writeProtected: appStorageState.writeProtected === true
+                })
+            });
+            if (!applied.ok) {
+                showToast(applied.error.message, 'error');
+                return;
+            }
+
+            const missing = applied.stats.missingImageCount ? `, без изображений: ${applied.stats.missingImageCount}` : '';
+            showToast(`Восстановлено: ${applied.stats.dreamCount} целей, ${applied.stats.imageCount} изображений${missing}`, 'success');
+            setTimeout(() => window.location.reload(), 300);
+        } catch (e) {
+            console.error('[DreamBoard] Backup import failed', e);
+            showToast('Не удалось восстановить резервную копию', 'error');
+        } finally {
+            importBusy = false;
+            if (importBtn) importBtn.disabled = false;
+            if (fileInput) fileInput.value = '';
+        }
     }
 
     // Blob → base64 без префикса data: (FileReader).
