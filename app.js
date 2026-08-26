@@ -286,6 +286,14 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
 
+        // Экспорт резервной копии (Этап 3): переносимый JSON-бэкап.
+        const exportJsonBtn = document.getElementById('export-json-btn');
+        if (exportJsonBtn) {
+            exportJsonBtn.addEventListener('click', () => {
+                handleExportBackup();
+            });
+        }
+
         // Безопасная загрузка через versioned storage layer (v14).
         let appStorage = null;
         try {
@@ -468,6 +476,150 @@ document.addEventListener('DOMContentLoaded', () => {
                 resolve();
             };
         });
+    }
+
+    async function getLocalImageRecord(id) {
+        const db = await openLocalImageDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readonly');
+            const request = tx.objectStore(LOCAL_IMAGE_STORE).get(id);
+            request.onsuccess = () => {
+                db.close();
+                resolve(request.result || null);
+            };
+            request.onerror = () => {
+                db.close();
+                reject(request.error);
+            };
+        });
+    }
+
+    // Blob → base64 без префикса data: (FileReader).
+    function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const text = typeof reader.result === 'string' ? reader.result : '';
+                const comma = text.indexOf(',');
+                resolve(comma >= 0 ? text.slice(comma + 1) : text);
+            };
+            reader.onerror = () => reject(reader.error || new Error('read-failed'));
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    // ==========================================================================
+    // 2.2 ЭКСПОРТ РЕЗЕРВНОЙ КОПИИ (Этап 3: переносимый JSON-бэкап)
+    // ==========================================================================
+    let exportBusy = false;
+
+    async function handleExportBackup() {
+        if (exportBusy) return;
+        if (typeof DreamBoardBackup === 'undefined' || !DreamBoardBackup) {
+            showToast('Модуль экспорта недоступен. Обновите страницу', 'error');
+            return;
+        }
+
+        // 1. Фатальные проверки состояния (файл не создаётся).
+        if (!appStorageState || appStorageState.unavailable) {
+            showToast('Хранилище недоступно — экспорт невозможен', 'error');
+            return;
+        }
+        if (appStorageState.protected) {
+            showToast('Данные созданы более новой версией приложения — экспорт невозможен', 'error');
+            return;
+        }
+        if (appStorageState.source === 'defaults' && appStorageState.warnings && appStorageState.warnings.length > 0) {
+            showToast('Сохранённые данные повреждены — экспорт невозможен', 'error');
+            return;
+        }
+        // State для экспорта: нормализованный v2 (legacy/пустое хранилище → createState).
+        const stateForExport = appStorageState.state || DreamBoardStorage.createState(dreams);
+
+        const refs = DreamBoardBackup.collectImageRefs(stateForExport);
+        const ids = [];
+        const seen = {};
+        refs.forEach(r => {
+            if (!seen[r.id]) { seen[r.id] = true; ids.push(r.id); }
+        });
+
+        // 2. Pre-flight: оценка размера по метаданным ТОЛЬКО референсных записей
+        //    (без чтения blob и без сканирования неиспользуемых изображений).
+        //    Недоступная IDB при наличии dbimage:*-ссылок — фатально.
+        let sizeEstimate = null;
+        if (ids.length > 0) {
+            try {
+                let sum = 0;
+                for (const id of ids) {
+                    const rec = await getLocalImageRecord(id);
+                    if (rec && typeof rec.size === 'number') sum += rec.size;
+                }
+                sizeEstimate = sum;
+            } catch (e) {
+                showToast('Хранилище изображений недоступно — экспорт невозможен', 'error');
+                return;
+            }
+        }
+
+        // 3. Экспорт (только чтение: localStorage/IndexedDB не изменяются).
+        exportBusy = true;
+        const exportBtn = document.getElementById('export-json-btn');
+        if (exportBtn) exportBtn.disabled = true;
+        showToast('Экспорт…', 'info');
+        try {
+            const provider = {
+                get: async (id) => {
+                    const rec = await getLocalImageRecord(id);
+                    if (!rec) return null;
+                    return { blob: rec.blob, mimeType: rec.mimeType };
+                }
+            };
+            const result = await DreamBoardBackup.exportBackup({
+                state: stateForExport,
+                provider: provider,
+                toBase64: blobToBase64,
+                appVersion: DreamBoardStorage.APP_VERSION,
+                now: new Date(),
+                sizeEstimate: sizeEstimate,
+                confirm: (message) => window.confirm(message)
+            });
+            if (!result.ok) {
+                if (result.cancelled) {
+                    // Пользователь отказался: ничего не скачиваем, сообщаем об отмене.
+                    showToast('Экспорт отменён', 'info');
+                } else {
+                    showToast(result.fatal && result.fatal.message ? result.fatal.message : 'Экспорт не удался', 'error');
+                }
+                return;
+            }
+
+            // 5. Скачивание (objectURL освобождается модулем).
+            const dl = DreamBoardBackup.downloadJson(result.backup, {
+                createObjectURL: (blob) => URL.createObjectURL(blob),
+                revokeObjectURL: (url) => URL.revokeObjectURL(url),
+                triggerDownload: (url, filename) => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                },
+                filename: DreamBoardBackup.backupFileName(new Date())
+            });
+            if (!dl.ok) {
+                showToast('Не удалось создать файл резервной копии', 'error');
+                return;
+            }
+            const warnText = result.stats.skippedImageCount > 0 ? `, пропущено: ${result.stats.skippedImageCount}` : '';
+            showToast(`Резервная копия: ${result.stats.dreamCount} целей, ${result.stats.includedImageCount} изображений${warnText}`, 'success');
+        } catch (e) {
+            console.error('[DreamBoard] Backup export failed', e);
+            showToast('Экспорт не удался', 'error');
+        } finally {
+            exportBusy = false;
+            if (exportBtn) exportBtn.disabled = false;
+        }
     }
 
     function getImageHtml(imageUrl, className, altText, lazy = true) {
