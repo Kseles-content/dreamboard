@@ -2318,7 +2318,101 @@ textarea:focus {
     .storage-status { padding: 4px 8px; }
 }
 
-/* prefers-reduced-motion: без переходов и анимаций */
+/* prefers-reduced-motion: декоративные анимации и переходы отключаются
+   независимо от устройства (toast сохраняет короткое появление — он не
+   вызывает blur и не влияет на композитинг) */
 @media (prefers-reduced-motion: reduce) {
+    * {
+        transition: none !important;
+    }
+    *:not(.toast):not(.toast *) {
+        animation: none !important;
+    }
+    .manifest-slide.active .manifest-slide-img {
+        animation: none !important;
+    }
+    .breath-circle-inner.inhale,
+    .breath-circle-inner.exhale {
+        transform: none !important;
+        box-shadow: none !important;
+        opacity: 0.85;
+    }
+    .breath-circle-inner.hold {
+        transform: none !important;
+        box-shadow: none !important;
+    }
     .storage-status { transition: none; }
+}
+
+/* ==========================================================================
+   PERFORMANCE-LITE PROFILE (СЛАБЫЕ И МОБИЛЬНЫЕ УСТРОЙСТВА)
+   Класс performance-lite на <html> выставляется performance.js.
+   Визуально: без стекла/свечений/декоративных анимаций; функциональность,
+   focus-visible, accessibility и кликабельность не изменяются.
+   ========================================================================== */
+
+/* Фоновые частицы не нужны: экономия постоянного RAF и GPU */
+html.performance-lite #ambient-particles {
+    display: none;
+}
+
+/* Отключаем дорогой backdrop-filter (композитинг) внутри приложения */
+html.performance-lite *,
+html.performance-lite *::before,
+html.performance-lite *::after {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+}
+
+/* Тяжёлые/многослойные тени и свечения убраны */
+html.performance-lite .glass-card,
+html.performance-lite .dream-card,
+html.performance-lite .modal-content,
+html.performance-lite .glow-btn,
+html.performance-lite .neon-btn,
+html.performance-lite .icon-btn,
+html.performance-lite .canvas-control-btn,
+html.performance-lite .toast,
+html.performance-lite .breath-circle-inner,
+html.performance-lite .card-image-overlay,
+html.performance-lite .manifest-slide-overlay {
+    box-shadow: none !important;
+}
+
+/* Hover-свечения категорий не нужны (на тач-устройствах они липнут) */
+html.performance-lite .category-career:hover,
+html.performance-lite .category-wealth:hover,
+html.performance-lite .category-health:hover,
+html.performance-lite .category-travel:hover,
+html.performance-lite .category-relationships:hover,
+html.performance-lite .category-growth:hover,
+html.performance-lite .category-manifested:hover,
+html.performance-lite .glass-card:hover,
+html.performance-lite .dream-card:hover {
+    box-shadow: none !important;
+}
+
+/* Декоративные переходы отключены; анимации — тоже, кроме toast
+   (короткое появление/уход без blur, удаление тоста зависит от animationend) */
+html.performance-lite * {
+    transition: none !important;
+}
+html.performance-lite *:not(.toast):not(.toast *) {
+    animation: none !important;
+}
+
+/* Ken Burns и дыхательная анимация: без scale и animated box-shadow,
+   фазовый текст и лёгкий opacity сохраняются */
+html.performance-lite .manifest-slide.active .manifest-slide-img {
+    animation: none !important;
+}
+html.performance-lite .breath-circle-inner.inhale,
+html.performance-lite .breath-circle-inner.exhale {
+    transform: none !important;
+    box-shadow: none !important;
+    opacity: 0.85;
+}
+html.performance-lite .breath-circle-inner.hold {
+    transform: none !important;
+    box-shadow: none !important;
 }

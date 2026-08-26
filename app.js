@@ -81,6 +81,21 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
 
+    // Performance-профиль: lite для слабых/мобильных устройств (performance.js).
+    // isLite определяется детерминированной чистой функцией shouldEnableLiteProfile
+    // (reducedMotion || coarsePointer && (width<=900 || deviceMemory<=4 || cores<=4))
+    // и применяется классом performance-lite на <html> до DOMContentLoaded.
+    const perfApi = typeof DreamBoardPerformance !== 'undefined' ? DreamBoardPerformance : null;
+    const isLite = !!perfApi && perfApi.isLite();
+
+    // Количество декоративных частиц: lite сокращает (без shadowBlur), normal — как было.
+    const starCountLimit = isLite && perfApi ? perfApi.LITE_STARFIELD_COUNT : (perfApi ? perfApi.NORMAL_STARFIELD_COUNT : 140);
+    const confettiCountLimit = isLite && perfApi ? perfApi.LITE_CONFETTI_COUNT : (perfApi ? perfApi.NORMAL_CONFETTI_COUNT : 120);
+
+    // Управление декоративным RAF (ambient particles) для hidden-паузы.
+    let ambientFrameId = null;
+    let ambientAnimateFn = null;
+
     // Координаты и масштаб холста
     let zoom = 1.0;
     let panX = -2100; // Центрируем по умолчанию на карточках
@@ -364,7 +379,11 @@ document.addEventListener('DOMContentLoaded', () => {
         
         renderAll();
         updateCanvasTransform();
-        initAmbientParticles();
+        // В lite-профиле фоновые частицы не запускаются вовсе (и не
+        // появятся после resize — слушатель не регистрируется).
+        if (!isLite) {
+            initAmbientParticles();
+        }
         setupAudioToggle();
     }
 
@@ -1157,11 +1176,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function initAmbientParticles() {
         const canvas = document.getElementById('ambient-particles');
         const ctx = canvas.getContext('2d');
-        let animationFrameId;
         
+        let resizeFrame = null;
         function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // RAF-coalescing: не более одного пересоздания canvas на кадр,
+            // цикл animate при resize не перезапускается.
+            if (resizeFrame) return;
+            resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = null;
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            });
         }
         resize();
         window.addEventListener('resize', resize);
@@ -1214,9 +1239,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.fill();
             });
             
-            animationFrameId = requestAnimationFrame(animate);
+            ambientFrameId = requestAnimationFrame(animate);
         }
+        ambientAnimateFn = animate;
         animate();
+    }
+
+    // Пауза декоративного RAF при скрытой вкладке (без потери состояния).
+    function pauseAmbientParticles() {
+        if (ambientFrameId) {
+            cancelAnimationFrame(ambientFrameId);
+            ambientFrameId = null;
+        }
+    }
+
+    // Возобновление: только если цикл реально был запущен и не создаёт дубликат.
+    function resumeAmbientParticles() {
+        if (!ambientFrameId && ambientAnimateFn) {
+            ambientAnimateFn();
+        }
     }
 
     // Эффект 2: Салют из Конфетти при манифестации карточки цели
@@ -1246,7 +1287,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (category === 'growth') colors = ['#a18cd1', '#fbc2eb', '#b388ff', '#ffffff'];
         
         const particles = [];
-        const count = 120;
+        const count = confettiCountLimit; // lite: ≤40, normal: 120
         
         for (let i = 0; i < count; i++) {
             const angle = Math.random() * Math.PI * 2;
@@ -1316,8 +1357,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================================
     
     function renderAll() {
-        renderGrid();
-        renderCanvas();
+        // Рендерим только активное представление: скрытая доска не строится.
+        if (currentViewMode === 'canvas') {
+            renderCanvas();
+        } else {
+            renderGrid();
+        }
     }
 
     // Рендер 1: Режим Сетки (Masonry)
@@ -1510,14 +1555,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // 6. ХОЛСТ: ПЕРЕТАСКИВАНИЕ, ЗУМ, СИСТЕМА СЕТКИ (SPATIAL CANVAS LOGIC)
     // ==========================================================================
 
+    // Визуальное применение transform (без записи в localStorage).
     function updateCanvasTransform() {
         spatialCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
         canvasZoomIndicator.innerText = `${Math.round(zoom * 100)}%`;
-        
-        // Сохраняем в localStorage
-        localStorage.setItem('canvas_zoom', zoom);
-        localStorage.setItem('canvas_pan_x', panX);
-        localStorage.setItem('canvas_pan_y', panY);
+    }
+
+    // Сохранение zoom/pan: ровно три существующих ключа, вызывается после
+    // завершения жеста (pan/pinch/drag), по debounce для wheel и при hidden.
+    function persistCanvasViewState() {
+        try {
+            localStorage.setItem('canvas_zoom', zoom);
+            localStorage.setItem('canvas_pan_x', panX);
+            localStorage.setItem('canvas_pan_y', panY);
+        } catch (e) {
+            // Ошибки localStorage не должны ломать жесты.
+        }
+    }
+
+    // Debounce персиста для wheel (200-300 мс).
+    let canvasPersistTimer = null;
+    function scheduleCanvasPersist() {
+        if (canvasPersistTimer) clearTimeout(canvasPersistTimer);
+        canvasPersistTimer = setTimeout(() => {
+            canvasPersistTimer = null;
+            persistCanvasViewState();
+        }, 250);
+    }
+
+    // RAF-coalescing: не более одного DOM-update transform на кадр,
+    // последнее значение (panX/panY/zoom) не теряется.
+    let transformFrameRequested = false;
+    function requestCanvasTransformUpdate() {
+        if (transformFrameRequested) return;
+        transformFrameRequested = true;
+        requestAnimationFrame(() => {
+            transformFrameRequested = false;
+            updateCanvasTransform();
+        });
     }
 
     function resetCanvasCardLayout() {
@@ -1581,12 +1656,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPanning) {
             panX = e.clientX - startX;
             panY = e.clientY - startY;
-            updateCanvasTransform();
+            requestCanvasTransformUpdate();
         }
     });
 
     window.addEventListener('mouseup', () => {
-        isPanning = false;
+        if (isPanning) {
+            isPanning = false;
+            persistCanvasViewState(); // Сохранение после завершения панорамирования
+        }
     });
 
     // Масштабирование холста (Zoom) колесиком мыши
@@ -1610,8 +1688,12 @@ document.addEventListener('DOMContentLoaded', () => {
             target.closest('.card-resizer');
     }
 
+    // Кэш rect вьюпорта на время жеста: getBoundingClientRect не читается
+    // на каждый mousemove/touchmove (избегаем forced layout в горячем цикле).
+    let dragViewportRect = null;
+
     function clientToCanvasPoint(clientX, clientY) {
-        const rect = canvasViewport.getBoundingClientRect();
+        const rect = dragViewportRect || canvasViewport.getBoundingClientRect();
         return {
             x: (clientX - rect.left - panX) / zoom,
             y: (clientY - rect.top - panY) / zoom
@@ -1649,7 +1731,7 @@ document.addEventListener('DOMContentLoaded', () => {
             panY += touch.clientY - lastTouchY;
             lastTouchX = touch.clientX;
             lastTouchY = touch.clientY;
-            updateCanvasTransform();
+            requestCanvasTransformUpdate();
             e.preventDefault();
         } else if (touchMode === 'pinch' && e.touches.length === 2) {
             const distance = getTouchDistance(e.touches);
@@ -1657,7 +1739,7 @@ document.addEventListener('DOMContentLoaded', () => {
             zoom = Math.max(0.2, Math.min(2.0, pinchStartZoom * ratio));
             panX = pinchScreenX - pinchCanvasX * zoom;
             panY = pinchScreenY - pinchCanvasY * zoom;
-            updateCanvasTransform();
+            requestCanvasTransformUpdate();
             e.preventDefault();
         }
     }, { passive: false });
@@ -1667,6 +1749,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (e.touches.length === 0) {
             touchMode = null;
+            persistCanvasViewState(); // Сохранение после завершения pan/pinch
             saveDreams();
         } else if (e.touches.length === 1) {
             touchMode = 'pan';
@@ -1698,18 +1781,21 @@ document.addEventListener('DOMContentLoaded', () => {
         panX = mouseX - canvasX * zoom;
         panY = mouseY - canvasY * zoom;
         
-        updateCanvasTransform();
+        requestCanvasTransformUpdate();
+        scheduleCanvasPersist(); // Debounce-сохранение для wheel
     }, { passive: false });
 
     // Кнопки зума
     canvasZoomIn.addEventListener('click', () => {
         zoom = Math.min(2.0, zoom + 0.15);
         updateCanvasTransform();
+        persistCanvasViewState();
     });
 
     canvasZoomOut.addEventListener('click', () => {
         zoom = Math.max(0.2, zoom - 0.15);
         updateCanvasTransform();
+        persistCanvasViewState();
     });
 
     canvasZoomReset.addEventListener('click', () => {
@@ -1719,6 +1805,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetCanvasCamera();
         // Возвращаем в центр
         updateCanvasTransform();
+        persistCanvasViewState();
         showToast('Холст сброшен в исходную позицию', 'info');
     });
 
@@ -1742,6 +1829,9 @@ document.addEventListener('DOMContentLoaded', () => {
             activeDragCard = card;
             card.classList.add('dragging');
             
+            // Кэшируем rect вьюпорта на время жеста
+            dragViewportRect = canvasViewport.getBoundingClientRect();
+
             // Вычисляем оффсет с учетом зума
             const point = clientToCanvasPoint(e.clientX, e.clientY);
             dragOffsetX = point.x - dream.canvasPos.x;
@@ -1761,6 +1851,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const touch = e.touches[0];
+            // Кэшируем rect вьюпорта на время жеста
+            dragViewportRect = canvasViewport.getBoundingClientRect();
             const point = clientToCanvasPoint(touch.clientX, touch.clientY);
             activeDragCard = card;
             touchMode = 'card-drag';
@@ -1774,6 +1866,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         resizer.addEventListener('mousedown', (e) => {
             activeResizeCard = card;
+            // Кэшируем rect вьюпорта на время жеста
+            dragViewportRect = canvasViewport.getBoundingClientRect();
             resizeStartW = dream.canvasPos.width;
             resizeStartH = dream.canvasPos.height;
             resizeStartX = e.clientX;
@@ -1785,6 +1879,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Слушатели на все окно для гладкого драга и ресайза
+    // RAF-coalescing: не более одного DOM-обновления позиции/размера на кадр;
+    // последнее значение читается из dream.canvasPos, поэтому не теряется.
+    let pendingDragCard = null;
+    let pendingResizeCard = null;
+    let cardLayoutFrameRequested = false;
+
+    function applyCardLayoutFrame() {
+        cardLayoutFrameRequested = false;
+        if (pendingDragCard) {
+            const d = dreams.find(x => x.id === pendingDragCard.dataset.id);
+            if (d) {
+                pendingDragCard.style.left = `${d.canvasPos.x}px`;
+                pendingDragCard.style.top = `${d.canvasPos.y}px`;
+            }
+            pendingDragCard = null;
+        }
+        if (pendingResizeCard) {
+            const d = dreams.find(x => x.id === pendingResizeCard.dataset.id);
+            if (d) {
+                pendingResizeCard.style.width = `${d.canvasPos.width}px`;
+                pendingResizeCard.style.height = `${d.canvasPos.height}px`;
+            }
+            pendingResizeCard = null;
+        }
+    }
+
+    function requestCardLayoutUpdate() {
+        if (cardLayoutFrameRequested) return;
+        cardLayoutFrameRequested = true;
+        requestAnimationFrame(applyCardLayoutFrame);
+    }
+
     window.addEventListener('mousemove', (e) => {
         // Логика перетаскивания карточки
         if (activeDragCard) {
@@ -1807,8 +1933,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 dream.canvasPos.x = newX;
                 dream.canvasPos.y = newY;
                 
-                activeDragCard.style.left = `${newX}px`;
-                activeDragCard.style.top = `${newY}px`;
+                pendingDragCard = activeDragCard;
+                requestCardLayoutUpdate();
             }
         }
         
@@ -1835,8 +1961,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 dream.canvasPos.width = newWidth;
                 dream.canvasPos.height = newHeight;
                 
-                activeResizeCard.style.width = `${newWidth}px`;
-                activeResizeCard.style.height = `${newHeight}px`;
+                pendingResizeCard = activeResizeCard;
+                requestCardLayoutUpdate();
             }
         }
     });
@@ -1859,8 +1985,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             dream.canvasPos.x = newX;
             dream.canvasPos.y = newY;
-            activeDragCard.style.left = `${newX}px`;
-            activeDragCard.style.top = `${newY}px`;
+            pendingDragCard = activeDragCard;
+            requestCardLayoutUpdate();
         }
 
         e.preventDefault();
@@ -1871,6 +1997,8 @@ document.addEventListener('DOMContentLoaded', () => {
             activeDragCard.classList.remove('dragging');
             activeDragCard = null;
             touchMode = null;
+            dragViewportRect = null;
+            pendingDragCard = null;
             saveDreams();
         }
     }, { passive: false });
@@ -1879,10 +2007,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (activeDragCard) {
             activeDragCard.classList.remove('dragging');
             activeDragCard = null;
+            dragViewportRect = null;
+            pendingDragCard = null;
             saveDreams();
         }
         if (activeResizeCard) {
             activeResizeCard = null;
+            dragViewportRect = null;
+            pendingResizeCard = null;
             saveDreams();
         }
     });
@@ -2340,9 +2472,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ==========================================================================
+    // PAUSE/RESUME ДЕКОРАТИВНОЙ РАБОТЫ ПРИ СКРЫТОЙ ВКЛАДКЕ
+    // ==========================================================================
+    // Централизованная архитектура: document.hidden останавливает все
+    // декоративные циклы во всех профилях, visible возобновляет только те,
+    // что реально активны (без дубликатов).
+
+    function pauseDecorativeLoops() {
+        pauseAmbientParticles();
+        stopManifestStarfield();
+
+        if (chimeInterval) {
+            clearInterval(chimeInterval);
+            chimeInterval = null;
+        }
+
+        if (manifestOverlay.classList.contains('active')) {
+            if (manifestInterval) {
+                clearInterval(manifestInterval);
+                manifestInterval = null;
+            }
+            if (breathGuideTimer) {
+                clearInterval(breathGuideTimer);
+                breathGuideTimer = null;
+            }
+        }
+
+        // Flush незавершённого debounce-персиста при уходе со вкладки.
+        if (canvasPersistTimer) {
+            clearTimeout(canvasPersistTimer);
+            canvasPersistTimer = null;
+        }
+        persistCanvasViewState();
+    }
+
+    function resumeDecorativeLoops() {
+        if (document.hidden) return;
+
+        resumeAmbientParticles();
+
+        if (manifestOverlay.classList.contains('active')) {
+            resumeManifestStarfield();
+
+            const activeDreams = dreams.filter(d => d.status === 'active');
+            if (!manifestInterval && activeDreams.length > 0) {
+                startManifestLoop(activeDreams); // текущий слайд не сбрасывается
+            }
+            if (!breathGuideTimer) {
+                startBreathingGuide(); // фаза начинается с безопасного «Вдох»
+            }
+            // Звук сам не включается: переливы возобновляются только если
+            // музыка манифестации была активна до скрытия вкладки.
+            if (isSoundOn && ambientSynth && !chimeInterval) {
+                chimeInterval = setInterval(() => {
+                    if (Math.random() > 0.3) {
+                        playSoundEffect('chime-scale');
+                        setTimeout(() => playSoundEffect('chime-scale'), 350);
+                    }
+                }, 6000);
+            }
+        }
+    }
+
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && manifestOverlay.classList.contains('active')) {
-            requestManifestWakeLock();
+        if (document.visibilityState === 'hidden') {
+            pauseDecorativeLoops();
+        } else if (document.visibilityState === 'visible') {
+            resumeDecorativeLoops();
+            // Существующее восстановление Wake Lock сохраняется.
+            if (manifestOverlay.classList.contains('active')) {
+                requestManifestWakeLock();
+            }
         }
     });
 
@@ -2535,6 +2736,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // АНИМИРОВАННЫЙ ЗВЕЗДНЫЙ ФОН НА КАНВАСЕ (MANIFEST OVERLAY)
     let starfieldFrameId = null;
+    let starfieldAnimateFn = null;
     function initManifestStarfield() {
         const canvas = document.getElementById('manifest-starfield');
         const ctx = canvas.getContext('2d');
@@ -2546,7 +2748,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resize();
         
         const stars = [];
-        const starCount = 140;
+        const starCount = starCountLimit; // lite: ≤40, normal: 140
         
         for (let i = 0; i < starCount; i++) {
             stars.push({
@@ -2558,6 +2760,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
+        // В lite-профиле свечение звёзд отключено (shadowBlur дорог на слабом GPU).
+        const starGlow = isLite ? 0 : 10;
+
         function animate() {
             ctx.fillStyle = 'rgba(2, 1, 6, 0.08)'; // Легкий шлейф
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2582,14 +2787,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.beginPath();
                     ctx.arc(px, py, Math.min(size, 4), 0, Math.PI * 2);
                     ctx.fillStyle = star.color;
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = 'rgba(0, 242, 254, 0.2)';
+                    if (starGlow > 0) {
+                        ctx.shadowBlur = starGlow;
+                        ctx.shadowColor = 'rgba(0, 242, 254, 0.2)';
+                    }
                     ctx.fill();
                 }
             });
             
             starfieldFrameId = requestAnimationFrame(animate);
         }
+        starfieldAnimateFn = animate;
         animate();
     }
 
@@ -2597,6 +2805,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (starfieldFrameId) {
             cancelAnimationFrame(starfieldFrameId);
             starfieldFrameId = null;
+        }
+    }
+
+    // Возобновление после hidden: только если манифестация активна и цикл
+    // действительно был запущен; дубликат RAF не создаётся (проверка frameId).
+    function resumeManifestStarfield() {
+        if (!starfieldFrameId && starfieldAnimateFn) {
+            starfieldAnimateFn();
         }
     }
 
