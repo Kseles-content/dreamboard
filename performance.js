@@ -100,11 +100,55 @@
         return !!el && !!el.classList && el.classList.contains('performance-lite');
     }
 
+    // Чистый RAF-coalescer для drag/resize: не более одного DOM-update на кадр,
+    // при завершении жеста синхронный flush отменяет ожидающий кадр и применяет
+    // последнее состояние немедленно (последнее событие не теряется).
+    // handlers: { requestFrame: (fn) -> frameId, cancelFrame: (frameId) -> void,
+    //             apply: () -> void }
+    // frameId — реальный handle (null | id), а не boolean: cancelFrame может
+    // надёжно отменить запланированный callback перед синхронным применением.
+    function createRafCoalescer(handlers) {
+        var h = handlers || {};
+        var requestFrame = typeof h.requestFrame === 'function' ? h.requestFrame : null;
+        var cancelFrame = typeof h.cancelFrame === 'function' ? h.cancelFrame : null;
+        var apply = typeof h.apply === 'function' ? h.apply : function () {};
+        var frameId = null;
+
+        return {
+            // Планирует применение на следующий кадр (не более одного pending).
+            schedule: function () {
+                if (frameId !== null || !requestFrame) return;
+                frameId = requestFrame(function () {
+                    frameId = null;
+                    apply();
+                });
+            },
+            // Синхронный flush: отменяет ожидающий кадр и применяет последнее
+            // состояние немедленно. Безопасный no-op, если кадр не запланирован.
+            flush: function () {
+                if (frameId === null) return;
+                if (cancelFrame) cancelFrame(frameId);
+                frameId = null;
+                apply();
+            },
+            // Полная отмена без применения.
+            cancel: function () {
+                if (frameId === null) return;
+                if (cancelFrame) cancelFrame(frameId);
+                frameId = null;
+            },
+            hasPending: function () {
+                return frameId !== null;
+            }
+        };
+    }
+
     return {
         shouldEnableLiteProfile: shouldEnableLiteProfile,
         getCapabilities: getCapabilities,
         applyPerformanceProfile: applyPerformanceProfile,
         isLite: isLite,
+        createRafCoalescer: createRafCoalescer,
         LITE_STARFIELD_COUNT: LITE_STARFIELD_COUNT,
         NORMAL_STARFIELD_COUNT: NORMAL_STARFIELD_COUNT,
         LITE_CONFETTI_COUNT: LITE_CONFETTI_COUNT,

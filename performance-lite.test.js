@@ -287,8 +287,7 @@ test('24. move-события coalesce через RAF (не более одно�
     assert.ok(reqBody.includes('transformFrameRequested'), 'должен быть флаг coalescing');
     // rAF-обёртка для layout карточек.
     const cardBody = functionBody(APP_JS, 'requestCardLayoutUpdate');
-    assert.ok(cardBody.includes('requestAnimationFrame(applyCardLayoutFrame)'));
-    assert.ok(cardBody.includes('cardLayoutFrameRequested'));
+    assert.ok(cardBody.includes('cardLayoutCoalescer.schedule()'), 'layout идёт через rAF-coalescer helper');
     // Горячие обработчики используют rAF-версии, а не прямой updateCanvasTransform.
     const panMove = APP_JS.slice(APP_JS.indexOf("window.addEventListener('mousemove'"));
     const panPart = panMove.slice(0, panMove.indexOf('window.addEventListener', 10));
@@ -423,4 +422,159 @@ test('34. drag/resize завершение сохраняет данные (save
     const touchend = APP_JS.slice(APP_JS.indexOf("window.addEventListener('touchend'"));
     const teBlock = touchend.slice(0, touchend.indexOf("// =========="));
     assert.ok(teBlock.includes('saveDreams();'), 'saveDreams на touchend сохранён');
+});
+
+// ==========================================================================
+// 35-44. RAF-coalescer для drag/resize (createRafCoalescer) — динамические
+// тесты чистого helper'а с инжектируемыми requestFrame/cancelFrame/apply
+// (без DOM) + статические инварианты порядка вызовов в обработчиках.
+// ==========================================================================
+
+function makeCoalescerHarness(applyFn) {
+    const calls = { request: [], cancel: [], apply: 0 };
+    let cb = null;
+    let nextId = 1;
+    const harness = {
+        calls,
+        requestFrame(fn) {
+            const id = nextId++;
+            calls.request.push(id);
+            cb = fn;
+            return id;
+        },
+        cancelFrame(id) {
+            calls.cancel.push(id);
+            cb = null;
+        },
+        apply() {
+            calls.apply++;
+            if (applyFn) applyFn();
+        },
+        runFrame() {
+            if (cb) {
+                const fn = cb;
+                cb = null;
+                fn();
+            }
+        },
+        get pendingCallback() {
+            return cb !== null;
+        }
+    };
+    const coalescer = perf.createRafCoalescer({
+        requestFrame: harness.requestFrame,
+        cancelFrame: harness.cancelFrame,
+        apply: harness.apply
+    });
+    return { harness, coalescer };
+}
+
+test('35. schedule планирует ровно один кадр; повторный schedule до кадра не планирует второй', () => {
+    const { harness, coalescer } = makeCoalescerHarness();
+    coalescer.schedule();
+    coalescer.schedule();
+    assert.strictEqual(harness.calls.request.length, 1, 'один pending кадр');
+    assert.strictEqual(harness.calls.apply, 0, 'применение только в кадре');
+    assert.strictEqual(harness.pendingCallback, true);
+});
+
+test('36. выполнение кадра вызывает apply ровно один раз и очищает handle', () => {
+    const { harness, coalescer } = makeCoalescerHarness();
+    coalescer.schedule();
+    harness.runFrame();
+    assert.strictEqual(harness.calls.apply, 1, 'apply выполнен в кадре');
+    assert.strictEqual(harness.pendingCallback, false, 'handle очищен');
+    coalescer.schedule();
+    assert.strictEqual(harness.calls.request.length, 2, 'новый schedule планирует новый кадр');
+});
+
+test('37. flush отменяет ожидающий RAF и синхронно применяет последнее состояние', () => {
+    const { harness, coalescer } = makeCoalescerHarness();
+    coalescer.schedule();
+    const scheduledId = harness.calls.request[0];
+    coalescer.flush();
+    assert.deepStrictEqual(harness.calls.cancel, [scheduledId], 'cancelFrame вызван с реальным RAF handle');
+    assert.strictEqual(harness.calls.apply, 1, 'применение синхронно, без ожидания кадра');
+    assert.strictEqual(harness.pendingCallback, false, 'запланированный callback отменён');
+});
+
+test('38. flush без pending — безопасный no-op', () => {
+    const { harness, coalescer } = makeCoalescerHarness();
+    coalescer.flush();
+    assert.strictEqual(harness.calls.cancel.length, 0, 'нечего отменять');
+    assert.strictEqual(harness.calls.apply, 0, 'apply не вызывается');
+});
+
+test('39. повторный flush — no-op (apply выполняется один раз)', () => {
+    const { harness, coalescer } = makeCoalescerHarness();
+    coalescer.schedule();
+    coalescer.flush();
+    const applyAfterFirst = harness.calls.apply;
+    coalescer.flush();
+    assert.strictEqual(harness.calls.apply, applyAfterFirst, 'второй flush ничего не применяет');
+    assert.strictEqual(harness.calls.cancel.length, 1, 'cancel вызван только при первом flush');
+});
+
+test('40. после flush запланированный callback не применяет layout второй раз', () => {
+    const { harness, coalescer } = makeCoalescerHarness();
+    coalescer.schedule();
+    coalescer.flush();
+    harness.runFrame(); // эмуляция прихода кадра после отмены
+    assert.strictEqual(harness.calls.apply, 1, 'layout применён ровно один раз (из flush)');
+});
+
+test('41. flush применяет последнее drag/resize значение из актуального состояния', () => {
+    // apply читает актуальное состояние (как applyCardLayoutFrame в app.js
+    // читает dream.canvasPos), поэтому schedule → обновление → flush
+    // применяет именно последнее значение.
+    const applied = [];
+    let latest = { x: 100, y: 200 };
+    const { harness } = makeCoalescerHarness();
+    const coalescer = perf.createRafCoalescer({
+        requestFrame: harness.requestFrame,
+        cancelFrame: harness.cancelFrame,
+        apply: () => applied.push({ x: latest.x, y: latest.y })
+    });
+    coalescer.schedule();
+    latest = { x: 300, y: 400 }; // последний move до кадра
+    coalescer.flush();
+    assert.deepStrictEqual(applied, [{ x: 300, y: 400 }], 'применяется последнее значение');
+});
+
+test('42. mouseup: flush выполняется до обнуления pending refs и до saveDreams', () => {
+    // lastIndexOf: в app.js есть ранний mouseup-листенер панорамирования (pan),
+    // нас интересует обработчик завершения drag/resize жеста.
+    const muStart = APP_JS.lastIndexOf("window.addEventListener('mouseup'");
+    const muBlock = APP_JS.slice(muStart, APP_JS.indexOf('// ==========', muStart));
+    const flushPos = muBlock.indexOf('cardLayoutCoalescer.flush();');
+    const dragNullPos = muBlock.indexOf('pendingDragCard = null;');
+    const resizeNullPos = muBlock.indexOf('pendingResizeCard = null;');
+    const savePos = muBlock.indexOf('saveDreams();');
+    assert.ok(flushPos > -1, 'flush присутствует в mouseup');
+    assert.ok(flushPos < dragNullPos, 'flush до обнуления pendingDragCard');
+    assert.ok(flushPos < resizeNullPos, 'flush до обнуления pendingResizeCard');
+    assert.ok(flushPos < savePos, 'flush до saveDreams');
+});
+
+test('43. touchend (card-drag): flush выполняется до обнуления pending refs и до saveDreams', () => {
+    const touchend = APP_JS.slice(APP_JS.indexOf("window.addEventListener('touchend'"));
+    const teBlock = touchend.slice(0, touchend.indexOf("window.addEventListener('mouseup'"));
+    const flushPos = teBlock.indexOf('cardLayoutCoalescer.flush();');
+    const dragNullPos = teBlock.indexOf('pendingDragCard = null;');
+    const savePos = teBlock.indexOf('saveDreams();');
+    assert.ok(flushPos > -1, 'flush присутствует в touchend');
+    assert.ok(flushPos < dragNullPos, 'flush до обнуления pendingDragCard');
+    assert.ok(flushPos < savePos, 'flush до saveDreams');
+});
+
+test('44. app.js использует протестированный helper (без собственной копии логики)', () => {
+    const reqUpdate = functionBody(APP_JS, 'requestCardLayoutUpdate');
+    assert.ok(reqUpdate.includes('cardLayoutCoalescer.schedule()'), 'schedule через helper');
+    const applyFrame = functionBody(APP_JS, 'applyCardLayoutFrame');
+    assert.ok(!applyFrame.includes('cardLayoutFrameRequested'), 'apply не управляет boolean-флагом');
+    assert.ok(!APP_JS.includes('cardLayoutFrameRequested'), 'старый boolean-флаг удалён полностью');
+    assert.ok(PERF_JS.includes('function createRafCoalescer'), 'helper определён в performance.js');
+    assert.ok(PERF_JS.includes('cancelFrame(frameId)'), 'отмена по реальному RAF handle');
+    assert.ok(PERF_JS.includes('schedule: function'), 'schedule экспортирован');
+    assert.ok(PERF_JS.includes('flush: function'), 'flush экспортирован');
 });

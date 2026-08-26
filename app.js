@@ -1883,10 +1883,8 @@ document.addEventListener('DOMContentLoaded', () => {
     // последнее значение читается из dream.canvasPos, поэтому не теряется.
     let pendingDragCard = null;
     let pendingResizeCard = null;
-    let cardLayoutFrameRequested = false;
 
     function applyCardLayoutFrame() {
-        cardLayoutFrameRequested = false;
         if (pendingDragCard) {
             const d = dreams.find(x => x.id === pendingDragCard.dataset.id);
             if (d) {
@@ -1905,9 +1903,23 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // RAF-coalescer для drag/resize (реальный RAF handle вместо boolean):
+    // позволяет отменить ожидающий кадр и синхронно применить последнее
+    // состояние при завершении жеста (flush до обнуления pending refs и
+    // saveDreams) — последний drag/resize update не теряется.
+    const cardLayoutCoalescer = perfApi && typeof perfApi.createRafCoalescer === 'function'
+        ? perfApi.createRafCoalescer({
+            requestFrame: (fn) => requestAnimationFrame(fn),
+            cancelFrame: (id) => cancelAnimationFrame(id),
+            apply: applyCardLayoutFrame
+        })
+        : null;
+
     function requestCardLayoutUpdate() {
-        if (cardLayoutFrameRequested) return;
-        cardLayoutFrameRequested = true;
+        if (cardLayoutCoalescer) {
+            cardLayoutCoalescer.schedule();
+            return;
+        }
         requestAnimationFrame(applyCardLayoutFrame);
     }
 
@@ -1995,6 +2007,7 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('touchend', () => {
         if (activeDragCard && touchMode === 'card-drag') {
             activeDragCard.classList.remove('dragging');
+            if (cardLayoutCoalescer) cardLayoutCoalescer.flush();
             activeDragCard = null;
             touchMode = null;
             dragViewportRect = null;
@@ -2006,12 +2019,14 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('mouseup', () => {
         if (activeDragCard) {
             activeDragCard.classList.remove('dragging');
+            if (cardLayoutCoalescer) cardLayoutCoalescer.flush();
             activeDragCard = null;
             dragViewportRect = null;
             pendingDragCard = null;
             saveDreams();
         }
         if (activeResizeCard) {
+            if (cardLayoutCoalescer) cardLayoutCoalescer.flush();
             activeResizeCard = null;
             dragViewportRect = null;
             pendingResizeCard = null;
