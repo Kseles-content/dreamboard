@@ -116,11 +116,11 @@ test('13. error action (Повторить) доступно клавиатур�
 
 test('14. hidden controls Этапа 1A не возвращаются', () => {
     assert.ok(INDEX.includes('<div class="board-selector-group" hidden>'));
-    for (const id of ['export-png-btn', 'export-json-btn', 'import-json-btn', 'import-file-input']) {
+    for (const id of ['export-png-btn', 'import-json-btn', 'import-file-input']) {
         const line = INDEX.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && line.includes('hidden'), `${id} скрыт`);
     }
-    for (const id of ['view-grid-btn', 'view-canvas-btn', 'audio-toggle-btn', 'archive-toggle-btn', 'start-manifest-btn']) {
+    for (const id of ['view-grid-btn', 'view-canvas-btn', 'audio-toggle-btn', 'archive-toggle-btn', 'start-manifest-btn', 'export-json-btn']) {
         const line = INDEX.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && !line.includes('hidden'), `${id} видим`);
     }
