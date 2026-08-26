@@ -494,37 +494,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Скан метаданных записей изображений (id → { size, mimeType }) без чтения blob.
-    // Используется для pre-flight проверки размера перед тяжёлой сериализацией.
-    async function scanLocalImageDb() {
-        const db = await openLocalImageDb();
-        return new Promise((resolve, reject) => {
-            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readonly');
-            const request = tx.objectStore(LOCAL_IMAGE_STORE).openCursor();
-            const meta = {};
-            request.onsuccess = () => {
-                const cursor = request.result;
-                if (cursor) {
-                    const rec = cursor.value;
-                    if (rec && typeof rec.id === 'string') {
-                        meta[rec.id] = {
-                            size: typeof rec.size === 'number' ? rec.size : 0,
-                            mimeType: typeof rec.mimeType === 'string' ? rec.mimeType : ''
-                        };
-                    }
-                    cursor.continue();
-                } else {
-                    db.close();
-                    resolve(meta);
-                }
-            };
-            request.onerror = () => {
-                db.close();
-                reject(request.error);
-            };
-        });
-    }
-
     // Blob → base64 без префикса data: (FileReader).
     function blobToBase64(blob) {
         return new Promise((resolve, reject) => {
@@ -574,28 +543,22 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!seen[r.id]) { seen[r.id] = true; ids.push(r.id); }
         });
 
-        // 2. Pre-flight размера по метаданным записей (без чтения blob).
-        let storeMeta = {};
+        // 2. Pre-flight: оценка размера по метаданным ТОЛЬКО референсных записей
+        //    (без чтения blob и без сканирования неиспользуемых изображений).
+        //    Недоступная IDB при наличии dbimage:*-ссылок — фатально.
+        let sizeEstimate = null;
         if (ids.length > 0) {
             try {
-                storeMeta = await scanLocalImageDb();
+                let sum = 0;
+                for (const id of ids) {
+                    const rec = await getLocalImageRecord(id);
+                    if (rec && typeof rec.size === 'number') sum += rec.size;
+                }
+                sizeEstimate = sum;
             } catch (e) {
                 showToast('Хранилище изображений недоступно — экспорт невозможен', 'error');
                 return;
             }
-        }
-        let rawSum = 0;
-        ids.forEach(id => {
-            if (storeMeta[id]) rawSum += storeMeta[id].size;
-        });
-        const policy = DreamBoardBackup.checkSizePolicy(rawSum, {});
-        if (policy.level === 'block') {
-            showToast(`Экспорт невозможен: изображения (~${formatBytes(rawSum)}) превышают лимит ${formatBytes(policy.blockBytes)}`, 'error');
-            return;
-        }
-        if (policy.level === 'warn') {
-            const ok = window.confirm(`Резервная копия большая: изображения занимают ~${formatBytes(rawSum)}. Экспорт может занять несколько секунд. Продолжить?`);
-            if (!ok) return;
         }
 
         // 3. Экспорт (только чтение: localStorage/IndexedDB не изменяются).
@@ -616,17 +579,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 provider: provider,
                 toBase64: blobToBase64,
                 appVersion: DreamBoardStorage.APP_VERSION,
-                now: new Date()
+                now: new Date(),
+                sizeEstimate: sizeEstimate,
+                confirm: (message) => window.confirm(message)
             });
             if (!result.ok) {
-                showToast(result.fatal && result.fatal.message ? result.fatal.message : 'Экспорт не удался', 'error');
+                if (result.cancelled) {
+                    // Пользователь отказался: ничего не скачиваем, сообщаем об отмене.
+                    showToast('Экспорт отменён', 'info');
+                } else {
+                    showToast(result.fatal && result.fatal.message ? result.fatal.message : 'Экспорт не удался', 'error');
+                }
                 return;
-            }
-
-            // 4. Пропущенные изображения — подтверждение перед скачиванием.
-            if (result.stats.skippedImageCount > 0) {
-                const ok = window.confirm(`Пропущено изображений: ${result.stats.skippedImageCount}. Скачать резервную копию без них?`);
-                if (!ok) return;
             }
 
             // 5. Скачивание (objectURL освобождается модулем).

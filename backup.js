@@ -27,14 +27,19 @@
    - одинаковая ссылка нескольких целей экспортируется один раз;
    - внешние HTTP/HTTPS URL, asset-пути и data URL остаются строками;
    - экспортируются только изображения, на которые ссылается state;
+   - неиспользуемые изображения не сканируются;
    - MIME: blob.type → record.mimeType → application/octet-stream (+warning);
+   - размер записи в metadata НЕ используется как истина: source of truth —
+     фактический blob.size;
    - dataBase64 — только base64 без префикса data:;
    - порядок изображений детерминирован (сортировка по id);
    - warnings содержат только безопасные поля dreamId/imageRef/reason;
    - reason-коды зафиксированы константами REASONS;
    - экспорт работает с независимым deep-клонам state (snapshot);
-   - фатальные ошибки возвращаются структурно, исключения наружу не
-     выбрасываются.
+   - подтверждения (большой размер / пропущенные изображения) — через
+     инжектируемый confirm(message) -> Promise<boolean>|boolean;
+   - фатальные ошибки и отмены возвращаются структурно, исключения наружу
+     не выбрасываются.
    ========================================================================== */
 
 (function (root, factory) {
@@ -57,9 +62,15 @@
         MISSING_MIME: 'missing-mime'
     });
 
-    // Пороги размера (байты): предупреждение и блокирующий порог.
-    var DEFAULT_WARN_BYTES = 15 * 1024 * 1024;   // 15 МБ
-    var DEFAULT_BLOCK_BYTES = 50 * 1024 * 1024;  // 50 МБ
+    // Коды отмены пользователем.
+    var CANCEL_REASONS = Object.freeze({
+        SIZE_WARNING: 'size-warning-cancelled',
+        PARTIAL: 'partial-cancelled'
+    });
+
+    // Пороги размера (бинарные MiB: 1024 * 1024).
+    var DEFAULT_WARN_BYTES = 15 * 1024 * 1024;   // 15 MiB
+    var DEFAULT_BLOCK_BYTES = 50 * 1024 * 1024;  // 50 MiB
 
     var FALLBACK_MIME = 'application/octet-stream';
     var IMAGE_REF_PREFIX = 'dbimage:';
@@ -99,6 +110,12 @@
         return o;
     }
 
+    function formatBytes(bytes) {
+        if (bytes < 1024) return bytes + ' B';
+        if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+        return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+    }
+
     // --- ссылки на изображения ------------------------------------------------
 
     // Возвращает [{ dreamId, ref, id }] в порядке появления в dreams.
@@ -135,16 +152,18 @@
 
     // --- имя файла ---------------------------------------------------------------
 
+    // Локальные компоненты времени с zero-padding: dreamboard-backup-YYYY-MM-DD-HHmm.json
     function backupFileName(now) {
         var d = now || new Date();
         function p(n) { return (n < 10 ? '0' : '') + n; }
-        return 'dreamboard-backup-' + d.getUTCFullYear() + '-' + p(d.getUTCMonth() + 1) + '-' + p(d.getUTCDate()) + '.json';
+        return 'dreamboard-backup-' + d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + '-' + p(d.getHours()) + p(d.getMinutes()) + '.json';
     }
 
     // --- фатальность недоступности хранилища изображений -------------------------
 
     // Если есть хотя бы одна dbimage:*-ссылка, а IndexedDB целиком недоступна —
-    // это фатальная ошибка. При отсутствии ссылок хранилище не требуется.
+    // это фатальная ошибка. При отсутствии ссылок хранилище не требуется и
+    // недоступность IDB не блокирует экспорт.
     function storeFailureIsFatal(refCount, storeAvailable) {
         if (refCount > 0 && !storeAvailable) {
             return {
@@ -162,10 +181,16 @@
     //   provider:     { get(id) -> Promise<{ blob, mimeType } | null> } (throw = read error),
     //   toBase64:     async (blob) -> string (base64, без префикса),
     //   appVersion:   строка версии приложения (например 'v14'),
-    //   now:          Date для exportedAt (инжектируется в тестах),
-    //   sizePolicy:   { warnBytes, blockBytes } — опционально.
+    //   now:          Date для exportedAt и имени файла (инжектируется в тестах),
+    //   sizeEstimate: предварительная сумма размеров референсных записей (байты),
+    //                 из metadata записей; блокирующий порог по оценке срабатывает
+    //                 до чтения blob'ов; после чтения пороги пересчитываются по
+    //                 фактическим blob.size (source of truth),
+    //   sizePolicy:   { warnBytes, blockBytes } — опционально,
+    //   confirm:      async (message) -> boolean — подтверждения пользователя.
     // }
     // Возвращает { ok: true, backup, warnings, stats }
+    //        или { ok: false, cancelled: true, reason }
     //        или { ok: false, fatal: { code, message } }.
     async function exportBackup(opts) {
         opts = opts || {};
@@ -180,6 +205,7 @@
         if (typeof opts.toBase64 !== 'function') {
             return { ok: false, fatal: { code: 'invalid-config', message: 'Некорректная конфигурация экспорта' } };
         }
+        var confirm = typeof opts.confirm === 'function' ? opts.confirm : function () { return true; };
 
         // 2. Независимый snapshot: экспорт работает только с копией state.
         var snapshot = deepClone(opts.state);
@@ -195,7 +221,28 @@
             }
         }
 
-        // 4. Чтение изображений последовательно (контроль пиковой памяти).
+        // 4. Предварительная проверка размера по оценке (records.size из metadata).
+        //    Блокирующий порог по оценке срабатывает ДО чтения blob'ов.
+        var sizeConfirmed = false;
+        if (typeof opts.sizeEstimate === 'number') {
+            var estPolicy = checkSizePolicy(opts.sizeEstimate, opts.sizePolicy);
+            if (estPolicy.level === 'block') {
+                return {
+                    ok: false,
+                    fatal: {
+                        code: 'size-limit',
+                        message: 'Экспорт невозможен: изображения (~' + formatBytes(opts.sizeEstimate) + ') превышают лимит ' + formatBytes(estPolicy.blockBytes)
+                    }
+                };
+            }
+            if (estPolicy.level === 'warn') {
+                var okWarn = await confirm('Резервная копия большая: изображения занимают ~' + formatBytes(opts.sizeEstimate) + '. Экспорт может занять несколько секунд и потребовать память. Продолжить?');
+                if (!okWarn) return { ok: false, cancelled: true, reason: CANCEL_REASONS.SIZE_WARNING };
+                sizeConfirmed = true;
+            }
+        }
+
+        // 5. Чтение изображений последовательно (контроль пиковой памяти).
         var included = [];
         var warnings = [];
         var skippedRefs = {};
@@ -248,6 +295,7 @@
             var comma = b64.indexOf(',');
             if (comma !== -1) b64 = b64.slice(comma + 1);
 
+            // Источник истины размера — фактический blob.size.
             var size = typeof blob.size === 'number' ? blob.size : 0;
             totalRaw += size;
             included.push({
@@ -259,24 +307,28 @@
             });
         }
 
-        // 5. Детерминированный порядок изображений.
+        // 6. Детерминированный порядок изображений.
         included.sort(function (a, b) {
             return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
         });
 
-        // 6. Блокирующий порог (повторная проверка по фактическим данным).
-        var policy = checkSizePolicy(totalRaw, opts.sizePolicy);
-        if (policy.level === 'block') {
+        // 7. Пороги по фактическим размерам (blob.size — source of truth).
+        var actPolicy = checkSizePolicy(totalRaw, opts.sizePolicy);
+        if (actPolicy.level === 'block') {
             return {
                 ok: false,
                 fatal: {
                     code: 'size-limit',
-                    message: 'Экспорт невозможен: изображения превышают лимит размера'
+                    message: 'Экспорт невозможен: изображения (~' + formatBytes(totalRaw) + ') превышают лимит ' + formatBytes(actPolicy.blockBytes)
                 }
             };
         }
+        if (actPolicy.level === 'warn' && !sizeConfirmed) {
+            var okWarn2 = await confirm('Резервная копия большая: изображения занимают ~' + formatBytes(totalRaw) + '. Экспорт может занять несколько секунд и потребовать память. Продолжить?');
+            if (!okWarn2) return { ok: false, cancelled: true, reason: CANCEL_REASONS.SIZE_WARNING };
+        }
 
-        // 7. Сборка контракта.
+        // 8. Сборка контракта.
         var dreams = snapshot.dreams;
         var activeCount = 0;
         var manifestedCount = 0;
@@ -285,13 +337,21 @@
             else activeCount++;
         }
 
+        var skippedCount = Object.keys(skippedRefs).length;
+
+        // 9. Частичный успех: явное подтверждение, что часть изображений не войдёт.
+        if (skippedCount > 0) {
+            var okPartial = await confirm('Пропущено изображений: ' + skippedCount + '. Часть изображений не войдёт в резервную копию. Скачать без них?');
+            if (!okPartial) return { ok: false, cancelled: true, reason: CANCEL_REASONS.PARTIAL };
+        }
+
         var metadata = {
             dreamCount: dreams.length,
             activeCount: activeCount,
             manifestedCount: manifestedCount,
             referencedLocalImageCount: uniqueIds.length,
             includedImageCount: included.length,
-            skippedImageCount: Object.keys(skippedRefs).length,
+            skippedImageCount: skippedCount,
             totalRawImageBytes: totalRaw,
             warnings: warnings
         };
@@ -325,7 +385,7 @@
     //   createObjectURL:  (blob) -> url,
     //   revokeObjectURL:  (url) -> void,
     //   triggerDownload:  (url, filename) -> void,
-    //   filename:         строка (по умолчанию dreamboard-backup-<дата>.json)
+    //   filename:         строка (по умолчанию dreamboard-backup-<локальное время>.json)
     // }
     // objectURL освобождается ровно один раз, включая путь ошибки.
     function downloadJson(backup, opts) {
@@ -368,6 +428,7 @@
         FORMAT: FORMAT,
         FORMAT_VERSION: FORMAT_VERSION,
         REASONS: REASONS,
+        CANCEL_REASONS: CANCEL_REASONS,
         DEFAULT_WARN_BYTES: DEFAULT_WARN_BYTES,
         DEFAULT_BLOCK_BYTES: DEFAULT_BLOCK_BYTES,
         collectImageRefs: collectImageRefs,
