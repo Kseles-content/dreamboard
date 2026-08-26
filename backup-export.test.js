@@ -752,3 +752,68 @@ test('47. size-warning + partial одновременно: два последо
     assert.strictEqual(rC.backup.metadata.skippedImageCount, 1);
     assert.strictEqual(rC.backup.metadata.warnings[0].reason, 'missing-record');
 });
+
+test('48. успешный повторный экспорт после ошибки', async () => {
+    const state = makeState([dream({ id: 'd1', imageUrl: 'dbimage:img-1' })]);
+    const blob = makeBlob([1], 'image/webp');
+    const opts = baseOpts({ state, provider: fakeProvider({ 'img-1': { blob, mimeType: 'image/webp' } }) });
+    // сначала блокирующая ошибка
+    const fail = await Backup.exportBackup(Object.assign({}, opts, { sizeEstimate: 50 * MIB }));
+    assert.strictEqual(fail.ok, false);
+    assert.strictEqual(fail.fatal.code, 'size-limit');
+    // повторный экспорт без ошибки работает
+    const ok = await Backup.exportBackup(opts);
+    assert.strictEqual(ok.ok, true);
+    assert.strictEqual(ok.backup.images.length, 1);
+});
+
+test('49. originalName и служебные поля записи не попадают в JSON', async () => {
+    const state = makeState([dream({ id: 'd1', imageUrl: 'dbimage:img-1' })]);
+    const blob = makeBlob([1], 'image/webp');
+    const provider = {
+        get: async () => ({ blob, mimeType: 'image/webp', originalName: 'SECRET.jpg', createdAt: 123456 })
+    };
+    const res = await Backup.exportBackup(baseOpts({ state, provider }));
+    assert.strictEqual(res.ok, true);
+    const img = res.backup.images[0];
+    assert.ok(!('originalName' in img), 'originalName отсутствует');
+    assert.ok(!('createdAt' in img), 'createdAt отсутствует');
+    const raw = JSON.stringify(res.backup);
+    assert.ok(!raw.includes('SECRET.jpg'), 'originalName не в JSON');
+});
+
+test('50. appVersion берётся из runtime-опций, не из потенциально повреждённого state', async () => {
+    const state = makeState([dream({ id: 'd1', imageUrl: 'dbimage:img-1' })]);
+    state.appVersion = 'v99-injected';
+    const blob = makeBlob([1], 'image/webp');
+    const res = await Backup.exportBackup(baseOpts({
+        state,
+        provider: fakeProvider({ 'img-1': { blob, mimeType: 'image/webp' } }),
+        appVersion: 'v14'
+    }));
+    assert.strictEqual(res.ok, true);
+    assert.strictEqual(res.backup.appVersion, 'v14', 'контрактная версия из доверенного источника');
+    assert.strictEqual(res.backup.state.appVersion, 'v99-injected', 'state не переписывается');
+});
+
+test('51. app.js: appVersion из доверенного runtime-источника (DreamBoardStorage)', () => {
+    const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+    assert.ok(app.includes('appVersion: DreamBoardStorage.APP_VERSION'), 'appVersion из storage runtime, не из state');
+});
+
+test('52. пользовательские строки не вставляются через innerHTML (код экспорта, toast)', () => {
+    const app = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+    const start = app.indexOf('async function handleExportBackup');
+    assert.ok(start !== -1, 'handleExportBackup найдена');
+    // тело функции до следующего 'async function' на том же уровне
+    const end = app.indexOf('\n    async function ', start + 10);
+    const body = end === -1 ? app.slice(start) : app.slice(start, end);
+    assert.ok(!body.includes('innerHTML'), 'в коде экспорта нет innerHTML');
+    // toast: безопасное innerText, не innerHTML
+    const toastStart = app.indexOf('function showToast');
+    assert.ok(toastStart !== -1);
+    const toastEnd = app.indexOf('\n    }', toastStart);
+    const toastBody = app.slice(toastStart, toastEnd);
+    assert.ok(toastBody.includes('toast.innerText'), 'toast через innerText');
+    assert.ok(!toastBody.includes('innerHTML'), 'toast без innerHTML');
+});
