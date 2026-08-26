@@ -377,8 +377,8 @@ test('28. script order storage→backup→import→performance→trash→app и 
     assert.ok(fs.existsSync(path.join(__dirname, 'trash.js')));
 });
 
-test('29. CACHE_NAME остаётся dreamboard-v13', () => {
-    assert.ok(/const CACHE_NAME = 'dreamboard-v13';/.test(SW_JS), 'CACHE_NAME не должен меняться');
+test('29. CACHE_NAME обновлён до dreamboard-v14', () => {
+    assert.ok(/const CACHE_NAME = 'dreamboard-v14';/.test(SW_JS), 'CACHE_NAME должен быть dreamboard-v14');
 });
 
 test('30. DOM IDs без дублей', () => {

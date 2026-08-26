@@ -2,7 +2,7 @@
    DREAMBOARD - SERVICE WORKER (PWA OFFLINE CACHE)
    ========================================================================== */
 
-const CACHE_NAME = 'dreamboard-v13';
+const CACHE_NAME = 'dreamboard-v14';
 
 // Ресурсы для предварительного кэширования (Precache)
 const PRECACHE_URLS = [
@@ -35,13 +35,13 @@ self.addEventListener('install', event => {
     );
 });
 
-// Активация: удаляем старые кэши
+// Активация: удаляем старые DreamBoard-кэши, но не чужие origin-кэши
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys
-                    .filter(key => key !== CACHE_NAME)
+                    .filter(key => key !== CACHE_NAME && key.indexOf('dreamboard-') === 0)
                     .map(key => {
                         console.log('[SW] Удаление старого кэша:', key);
                         return caches.delete(key);

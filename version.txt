@@ -1,4 +1,4 @@
 DreamBoard package: compact mobile landscape manifestation
-Build: 2026-06-06-v13
-Expected cache: dreamboard-v13
+Build: 2026-06-06-v14
+Expected cache: dreamboard-v14
 Includes: v12 gestures/wake lock plus compact low-height landscape layout for mobile browser viewports.
