@@ -1,16 +1,19 @@
 /* ==========================================================================
-   DREAMBOARD - V14 RELEASE METADATA TESTS
+   DREAMBOARD - V14 RELEASE METADATA TESTS (scoped cache isolation)
    ==========================================================================
-   Покрытие (Этап 6 — Release Candidate):
-   - версия: version.txt = v14, CACHE_NAME = dreamboard-v14;
-   - динамическое поведение service worker (vm-песочница):
-     * install создаёт новый кэш dreamboard-v14 со всеми PRECACHE_URLS;
-     * activate удаляет старый dreamboard-v13 (и другие dreamboard-*);
-     * текущий кэш (dreamboard-v14) НЕ удаляется;
-     * чужие cache names (не dreamboard-*) НЕ удаляются;
-   - PRECACHE содержит все 15 entries, все файлы существуют;
+   Покрытие (Этап 6 corrective — FIX: изоляция cache names по scope):
+   - runtime cache names: production и preview вычисляют РАЗНЫЕ имена из
+     одного source-файла во время исполнения;
+   - install создаёт scoped cache со всеми PRECACHE entries;
+   - activate (preview) НЕ удаляет production cache и legacy dreamboard-v13;
+   - activate (production) НЕ удаляет preview cache, но удаляет legacy
+     dreamboard-v13 и старую scoped production версию;
+   - preview удаляет только старую scoped preview версию;
+   - текущие кэши и other-app-v1 сохраняются;
+   - version.txt: честный release identifier 2026-08-26-v14, Expected cache
+     описывает scoped runtime-name;
    - контракты не тронуты: schemaVersion 2, backup formatVersion 1,
-     импорт-контракт, storage-ключи.
+     storage-ключи.
    ========================================================================== */
 'use strict';
 
@@ -26,14 +29,32 @@ const STORAGE_JS = fs.readFileSync(path.join(__dirname, 'storage.js'), 'utf8');
 const BACKUP_JS = fs.readFileSync(path.join(__dirname, 'backup.js'), 'utf8');
 const IMPORT_JS = fs.readFileSync(path.join(__dirname, 'import.js'), 'utf8');
 
+const PROD_SCOPE = 'https://example.com/dreamboard/';
+const PREVIEW_SCOPE = 'https://example.com/dreamboard-v14-preview/';
+const PROD_CACHE = 'dreamboard-dreamboard-v14';
+const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v14';
+const LEGACY_V13 = 'dreamboard-v13';
+const OLD_PROD_SCOPED = 'dreamboard-dreamboard-v13';
+const OLD_PREVIEW_SCOPED = 'dreamboard-dreamboard-v14-preview-v13';
+
+const EXPECTED_PRECACHE = [
+    './', './index.html', './style.css', './storage.js', './backup.js',
+    './import.js', './performance.js', './trash.js', './app.js',
+    './manifest.json',
+    './assets/icons/icon-192.png', './assets/icons/icon-512.png',
+    './assets/images/dream_career.png', './assets/images/dream_travel.png',
+    './assets/images/og-preview.png'
+];
+
 // --- Динамическая песочница SW: исполняем реальный install/activate ---------
 
-function loadSW(existingCacheNames) {
+function loadSW(scopeUrl, existingCacheNames) {
     const listeners = {};
-    const store = new Map(); // cacheName -> Set(urls) | null (не создан)
+    const store = new Map(); // cacheName -> Set(urls) | null
     for (const name of existingCacheNames) store.set(name, null);
     const deleted = [];
     const opened = [];
+    let runtime = null;
 
     const cachesMock = {
         open: async (name) => {
@@ -53,13 +74,15 @@ function loadSW(existingCacheNames) {
         console,
         Promise,
         URL,
-        location: { origin: 'https://example.com' },
+        location: { origin: 'https://example.com', pathname: new URL(scopeUrl).pathname },
         caches: cachesMock,
         fetch: async () => ({ status: 200, clone: () => ({}) }),
         self: {
             addEventListener: (type, fn) => { listeners[type] = fn; },
             skipWaiting: () => { sandbox.__skipWaitingCalled = true; },
-            clients: { claim: () => { sandbox.__claimCalled = true; } }
+            clients: { claim: () => { sandbox.__claimCalled = true; } },
+            registration: { scope: scopeUrl },
+            __DB_SW_RUNTIME__: (info) => { runtime = info; }
         }
     };
     sandbox.__skipWaitingCalled = false;
@@ -67,7 +90,7 @@ function loadSW(existingCacheNames) {
 
     vm.createContext(sandbox);
     vm.runInContext(SW_JS, sandbox, { filename: 'service-worker.js' });
-    return { listeners, store, deleted, opened, sandbox };
+    return { listeners, store, deleted, opened, sandbox, runtime: () => runtime };
 }
 
 function runInstall(sw) {
@@ -84,72 +107,115 @@ function runActivate(sw) {
     });
 }
 
-const EXPECTED_CACHE = 'dreamboard-v14';
-const EXPECTED_PRECACHE = [
-    './', './index.html', './style.css', './storage.js', './backup.js',
-    './import.js', './performance.js', './trash.js', './app.js',
-    './manifest.json',
-    './assets/icons/icon-192.png', './assets/icons/icon-512.png',
-    './assets/images/dream_career.png', './assets/images/dream_travel.png',
-    './assets/images/og-preview.png'
-];
+// --- version.txt -----------------------------------------------------------
 
-// --- Версия ---------------------------------------------------------------
-
-test('1. version.txt содержит v14 и dreamboard-v14', () => {
-    assert.ok(/Build: 2026-06-06-v14/.test(VERSION_TXT), 'Build = v14');
-    assert.ok(/Expected cache: dreamboard-v14/.test(VERSION_TXT), 'Expected cache = dreamboard-v14');
-    assert.ok(!/v13/.test(VERSION_TXT.replace('dreamboard-v14', '')), 'нет упоминаний v13');
+test('1. version.txt: честный release identifier 2026-08-26-v14', () => {
+    assert.ok(/Build: 2026-08-26-v14/.test(VERSION_TXT), 'Build = 2026-08-26-v14');
+    assert.ok(!/2026-06-06-v13/.test(VERSION_TXT), 'нет старого v13 build identifier');
 });
 
-test('2. CACHE_NAME = dreamboard-v14, без остатков dreamboard-v13', () => {
-    assert.ok(/const CACHE_NAME = 'dreamboard-v14';/.test(SW_JS), 'CACHE_NAME = dreamboard-v14');
-    assert.ok(!/dreamboard-v13/.test(SW_JS), 'service-worker.js не содержит dreamboard-v13');
+test('2. version.txt: Expected cache описывает scoped runtime-name, не один глобальный', () => {
+    assert.ok(/Expected cache: runtime scoped cache name/.test(VERSION_TXT), 'описан runtime scoped cache');
+    assert.ok(/dreamboard-<scope>-v14/.test(VERSION_TXT), 'формула dreamboard-<scope>-v14');
+    assert.ok(/dreamboard-dreamboard-v14/.test(VERSION_TXT), 'пример production имени');
+    assert.ok(/dreamboard-dreamboard-v14-preview-v14/.test(VERSION_TXT), 'пример preview имени');
+    assert.ok(!/Expected cache: dreamboard-v14\s*$/.test(VERSION_TXT), 'не обещает один глобальный cache name');
 });
 
-test('3. activate фильтрует только старые dreamboard-* кэши (не все чужие)', () => {
-    const m = SW_JS.match(/\.filter\(key => key !== CACHE_NAME[^)]*\)/);
-    assert.ok(m, 'activate использует filter с key !== CACHE_NAME');
-    assert.ok(/indexOf\('dreamboard-'\) === 0/.test(SW_JS) || /startsWith\('dreamboard-'\)/.test(SW_JS),
-        'фильтр ограничен префиксом dreamboard-');
+// --- Runtime cache names (динамически, из реального исполнения SW) ---------
+
+test('3. production scope: runtime cache name = dreamboard-dreamboard-v14', () => {
+    const sw = loadSW(PROD_SCOPE, []);
+    const rt = sw.runtime();
+    assert.ok(rt, 'SW вызвал __DB_SW_RUNTIME__');
+    assert.strictEqual(rt.cacheName, PROD_CACHE, 'production cache name');
+    assert.strictEqual(rt.scopeName, 'dreamboard', 'scope name нормализован');
+    assert.strictEqual(rt.precacheUrls.length, 15, '15 PRECACHE entries');
 });
 
-// --- Динамическое поведение install/activate ------------------------------
+test('4. preview scope: runtime cache name = dreamboard-dreamboard-v14-preview-v14', () => {
+    const sw = loadSW(PREVIEW_SCOPE, []);
+    const rt = sw.runtime();
+    assert.ok(rt, 'SW вызвал __DB_SW_RUNTIME__');
+    assert.strictEqual(rt.cacheName, PREVIEW_CACHE, 'preview cache name');
+    assert.strictEqual(rt.scopeName, 'dreamboard-v14-preview', 'scope name нормализован');
+    assert.notStrictEqual(rt.cacheName, PROD_CACHE, 'имена различаются');
+});
 
-test('4. install создаёт НОВЫЙ кэш dreamboard-v14 со всеми 15 PRECACHE entries', async () => {
-    const sw = loadSW(['dreamboard-v13']); // старое PWA уже установлено
+test('5. один source-файл вычисляет разные cache names (production != preview)', () => {
+    const prod = loadSW(PROD_SCOPE, []).runtime();
+    const prev = loadSW(PREVIEW_SCOPE, []).runtime();
+    assert.notStrictEqual(prod.cacheName, prev.cacheName, 'cache names изолированы по scope');
+    assert.ok(prod.cacheName.startsWith('dreamboard-') && prev.cacheName.startsWith('dreamboard-'),
+        'оба в namespace DreamBoard');
+    assert.ok(prod.cacheName.endsWith('-v14') && prev.cacheName.endsWith('-v14'), 'оба версии v14');
+});
+
+// --- install ---------------------------------------------------------------
+
+test('6. install (production) создаёт НОВЫЙ scoped cache со всеми 15 PRECACHE entries', async () => {
+    const sw = loadSW(PROD_SCOPE, [LEGACY_V13]);
     await runInstall(sw);
-    assert.ok(sw.opened.includes(EXPECTED_CACHE), 'caches.open(dreamboard-v14) вызван');
-    const urls = sw.store.get(EXPECTED_CACHE);
+    assert.ok(sw.opened.includes(PROD_CACHE), 'caches.open(dreamboard-dreamboard-v14) вызван');
+    const urls = sw.store.get(PROD_CACHE);
     assert.ok(urls, 'новый кэш создан');
     assert.strictEqual(urls.size, 15, 'ровно 15 entries');
     for (const u of EXPECTED_PRECACHE) assert.ok(urls.has(u), 'entry отсутствует: ' + u);
     assert.ok(sw.sandbox.__skipWaitingCalled, 'skipWaiting вызван');
-    // Старый кэш ещё не тронут на этапе install
-    assert.ok(sw.store.has('dreamboard-v13'), 'install не удаляет старый кэш');
+    assert.ok(sw.store.has(LEGACY_V13), 'install не трогает legacy');
 });
 
-test('5. activate удаляет старый dreamboard-v13, но НЕ текущий dreamboard-v14', async () => {
-    const sw = loadSW([EXPECTED_CACHE, 'dreamboard-v13']);
+// --- activate: изоляция по scope -------------------------------------------
+
+test('7. preview activation НЕ удаляет production cache и legacy dreamboard-v13', async () => {
+    const sw = loadSW(PREVIEW_SCOPE, [PREVIEW_CACHE, PROD_CACHE, LEGACY_V13, OLD_PREVIEW_SCOPED]);
     await runActivate(sw);
-    assert.ok(sw.deleted.includes('dreamboard-v13'), 'dreamboard-v13 удалён');
-    assert.ok(!sw.deleted.includes(EXPECTED_CACHE), 'текущий кэш НЕ удалён');
-    assert.ok(sw.store.has(EXPECTED_CACHE), 'текущий кэш остался в store');
+    assert.ok(sw.deleted.includes(OLD_PREVIEW_SCOPED), 'старая scoped preview удалена');
+    assert.ok(!sw.deleted.includes(PROD_CACHE), 'production cache НЕ удалён');
+    assert.ok(!sw.deleted.includes(LEGACY_V13), 'legacy dreamboard-v13 НЕ удалён preview-ом');
+    assert.ok(!sw.deleted.includes(PREVIEW_CACHE), 'текущий preview cache НЕ удалён');
+    assert.ok(sw.store.has(PROD_CACHE) && sw.store.has(LEGACY_V13), 'production и legacy целы');
     assert.ok(sw.sandbox.__claimCalled, 'clients.claim вызван');
 });
 
-test('6. activate НЕ удаляет чужие cache names (не dreamboard-*)', async () => {
-    const sw = loadSW([EXPECTED_CACHE, 'dreamboard-v12', 'other-app-v1', 'google-analytics-cache']);
+test('8. production activation удаляет legacy dreamboard-v13 и старую scoped production', async () => {
+    const sw = loadSW(PROD_SCOPE, [PROD_CACHE, LEGACY_V13, OLD_PROD_SCOPED, PREVIEW_CACHE]);
     await runActivate(sw);
-    assert.ok(sw.deleted.includes('dreamboard-v12'), 'другой старый dreamboard-* удалён');
-    assert.ok(!sw.deleted.includes('other-app-v1'), 'чужой кэш не тронут');
-    assert.ok(!sw.deleted.includes('google-analytics-cache'), 'чужой кэш не тронут');
-    assert.ok(sw.store.has('other-app-v1') && sw.store.has('google-analytics-cache'),
-        'чужие кэши остались в store');
-    assert.strictEqual(sw.deleted.length, 1, 'удалён ровно один dreamboard-* (не текущий)');
+    assert.ok(sw.deleted.includes(LEGACY_V13), 'legacy dreamboard-v13 удалён production-ом');
+    assert.ok(sw.deleted.includes(OLD_PROD_SCOPED), 'старая scoped production удалена');
+    assert.ok(!sw.deleted.includes(PREVIEW_CACHE), 'preview cache НЕ удалён');
+    assert.ok(!sw.deleted.includes(PROD_CACHE), 'текущий production cache НЕ удалён');
+    assert.ok(sw.store.has(PREVIEW_CACHE) && sw.store.has(PROD_CACHE), 'preview и текущий целы');
 });
 
-test('7. PRECACHE_URLS содержит все 15 entries, все файлы существуют на диске', () => {
+test('9. preview удаляет ТОЛЬКО старую scoped preview версию', async () => {
+    const sw = loadSW(PREVIEW_SCOPE, [PREVIEW_CACHE, OLD_PREVIEW_SCOPED, PROD_CACHE, OLD_PROD_SCOPED, LEGACY_V13]);
+    await runActivate(sw);
+    assert.deepStrictEqual(sw.deleted, [OLD_PREVIEW_SCOPED], 'удалён ровно один кэш — старая scoped preview');
+});
+
+test('10. production activation удаляет только dreamboard-* своего scope + legacy', async () => {
+    const sw = loadSW(PROD_SCOPE, [PROD_CACHE, OLD_PROD_SCOPED, LEGACY_V13, PREVIEW_CACHE, 'other-app-v1', 'google-analytics-cache']);
+    await runActivate(sw);
+    assert.deepStrictEqual(sw.deleted.slice().sort(), [LEGACY_V13, OLD_PROD_SCOPED].sort(),
+        'удалены только legacy v13 и старая scoped production');
+    assert.ok(sw.store.has('other-app-v1') && sw.store.has('google-analytics-cache'),
+        'сторонние кэши не тронуты');
+    assert.ok(sw.store.has(PREVIEW_CACHE), 'preview cache не тронут');
+});
+
+test('11. текущие кэши (production и preview) всегда сохраняются', async () => {
+    const p1 = loadSW(PROD_SCOPE, [PROD_CACHE, OLD_PROD_SCOPED]);
+    await runActivate(p1);
+    assert.ok(p1.store.has(PROD_CACHE), 'production текущий сохранён');
+    const p2 = loadSW(PREVIEW_SCOPE, [PREVIEW_CACHE, OLD_PREVIEW_SCOPED]);
+    await runActivate(p2);
+    assert.ok(p2.store.has(PREVIEW_CACHE), 'preview текущий сохранён');
+});
+
+// --- PRECACHE --------------------------------------------------------------
+
+test('12. PRECACHE_URLS содержит все 15 entries, все файлы существуют на диске', () => {
     const m = SW_JS.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
     assert.ok(m, 'PRECACHE_URLS найден');
     const urls = Array.from(m[1].matchAll(/'([^']+)'/g), x => x[1]);
@@ -164,22 +230,21 @@ test('7. PRECACHE_URLS содержит все 15 entries, все файлы с�
 
 // --- Контракты не тронуты --------------------------------------------------
 
-test('8. контракты не изменены: schemaVersion 2, backup formatVersion 1, импорт, ключи storage', () => {
+test('13. контракты не изменены: schemaVersion 2, backup formatVersion 1, ключи storage', () => {
     assert.ok(/SCHEMA_VERSION = 2/.test(STORAGE_JS), 'storage schemaVersion = 2');
     assert.ok(/APP_VERSION = 'v14'/.test(STORAGE_JS), 'storage APP_VERSION = v14');
     assert.ok(/KEY_PRIMARY = 'dreamboard_app_state'/.test(STORAGE_JS), 'KEY_PRIMARY не изменён');
     assert.ok(/KEY_RECOVERY = 'dreamboard_app_state_recovery'/.test(STORAGE_JS), 'KEY_RECOVERY не изменён');
     assert.ok(/KEY_LEGACY = 'dreams_db'/.test(STORAGE_JS), 'KEY_LEGACY (страховка v13) не изменён');
-    assert.ok(/formatVersion: 1/.test(BACKUP_JS) || /formatVersion = 1/.test(BACKUP_JS) || /'dreamboard-backup'/.test(BACKUP_JS),
-        'backup format v1');
+    assert.ok(/'dreamboard-backup'/.test(BACKUP_JS), 'backup format dreamboard-backup');
     assert.ok(/import/.test(IMPORT_JS.toLowerCase()), 'import.js присутствует');
 });
 
-test('9. storage.js: legacy dreams_db (v13) только как страховка, не основной ключ', () => {
-    const legacyLine = STORAGE_JS.split('\n').find(l => l.includes('dreams_db') && l.includes('v13'));
-    assert.ok(legacyLine, 'комментарий про legacy v13 на месте');
-    assert.ok(/KEY_LEGACY = 'dreams_db'/.test(STORAGE_JS), 'KEY_LEGACY объявлен');
-    // dreams_db читается только как fallback после отсутствия основного ключа
-    const legacyUseIdx = STORAGE_JS.indexOf('KEY_LEGACY', STORAGE_JS.indexOf('var KEY_LEGACY') + 1);
-    assert.ok(legacyUseIdx > -1, 'KEY_LEGACY используется в логике');
+test('14. SW: scope-изоляция реализована (SCOPE_NAME, SCOPE_OLD_RE, IS_PRODUCTION_SCOPE)', () => {
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v14';/.test(SW_JS),
+        'CACHE_NAME строится из scope во время исполнения');
+    assert.ok(/SCOPE_OLD_RE/.test(SW_JS) && /IS_PRODUCTION_SCOPE/.test(SW_JS) && /LEGACY_CACHE_RE/.test(SW_JS),
+        'механика activate-фильтра на месте');
+    assert.ok(!/const CACHE_NAME = 'dreamboard-v13'/.test(SW_JS), 'нет статического dreamboard-v13');
+    assert.ok(!/const CACHE_NAME = 'dreamboard-v14'/.test(SW_JS), 'нет статического dreamboard-v14');
 });

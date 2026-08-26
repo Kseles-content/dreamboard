@@ -548,10 +548,10 @@ test('33. backup.js подключён до app.js', () => {
     assert.ok(iStorage < iBackup && iBackup < iApp, 'порядок: storage.js → backup.js → app.js');
 });
 
-test('34. backup.js присутствует в PRECACHE, CACHE_NAME = dreamboard-v14', () => {
+test('34. backup.js присутствует в PRECACHE, CACHE_NAME scoped (dreamboard-<scope>-v14)', () => {
     const sw = fs.readFileSync(path.join(__dirname, 'service-worker.js'), 'utf8');
     assert.ok(sw.includes("'./backup.js'"), 'backup.js в PRECACHE_URLS');
-    assert.ok(sw.includes("const CACHE_NAME = 'dreamboard-v14';"), 'CACHE_NAME = dreamboard-v14');
+    assert.ok(sw.includes("var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v14';"), 'CACHE_NAME scoped по scope');
 });
 
 // --- дополнительные проверки (раздел 9 ТЗ) ------------------------------------
