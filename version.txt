@@ -1,4 +1,4 @@
 DreamBoard package: compact mobile landscape manifestation
-Build: 2026-06-06-v13
-Expected cache: dreamboard-v13
+Build: 2026-08-26-v14
+Expected cache: runtime scoped cache name (dreamboard-<scope>-v14), вычисляется по service-worker scope во время исполнения; production scope /dreamboard/ -> dreamboard-dreamboard-v14; preview scope /dreamboard-v14-preview/ -> dreamboard-dreamboard-v14-preview-v14. Legacy dreamboard-v13 удаляется только production scope.
 Includes: v12 gestures/wake lock plus compact low-height landscape layout for mobile browser viewports.

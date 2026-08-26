@@ -50,8 +50,8 @@
                 <h1>DreamBoard</h1>
             </div>
 
-            <!-- Селектор Мульти-досок -->
-            <div class="board-selector-group">
+            <!-- Селектор Мульти-досок: функции запланированы на следующие этапы v14 (реализация отсутствует) -->
+            <div class="board-selector-group" hidden>
                 <select id="board-selector" class="board-selector" title="Выбрать доску">
                     <!-- Заполняется динамически -->
                 </select>
@@ -110,8 +110,8 @@
                     </svg>
                 </button>
 
-                <!-- Экспорт доски в PNG -->
-                <button id="export-png-btn" class="icon-btn" title="Скачать доску как PNG-изображение">
+                <!-- Экспорт доски в PNG: функция запланирована на следующие этапы v14 (реализация отсутствует) -->
+                <button id="export-png-btn" class="icon-btn" title="Скачать доску как PNG-изображение" hidden>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="7 10 12 15 17 10"/>
@@ -119,7 +119,7 @@
                     </svg>
                 </button>
 
-                <!-- Экспорт / Импорт JSON -->
+                <!-- Экспорт JSON-бэкапа (Этап 3): переносимый экспорт резервной копии -->
                 <button id="export-json-btn" class="icon-btn" title="Экспорт данных (JSON-бэкап)">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
@@ -128,14 +128,15 @@
                         <line x1="16" y1="17" x2="8" y2="17"/>
                     </svg>
                 </button>
-                <button id="import-json-btn" class="icon-btn" title="Импорт данных из JSON-файла">
+                <!-- Безопасное восстановление JSON-бэкапа (Этап 4) -->
+                <button id="import-json-btn" class="icon-btn" title="Восстановить данные из JSON-бэкапа">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
                         <line x1="12" y1="3" x2="12" y2="15"/>
                     </svg>
                 </button>
-                <input type="file" id="import-file-input" accept=".json" style="display:none;">
+                <input type="file" id="import-file-input" accept=".json" hidden>
 
                 <!-- Достижения -->
                 <button id="archive-toggle-btn" class="icon-btn" title="Архив достижений (Архив Благодарности)">
@@ -144,6 +145,21 @@
                         <polyline points="22 4 12 14.01 9 11.01"/>
                     </svg>
                 </button>
+
+                <button id="trash-toggle-btn" class="icon-btn" title="Недавно удалённые" aria-label="Недавно удалённые">
+                    <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="3 6 5 6 21 6"/>
+                        <path d="M19 6l-1 14H6L5 6m3 0V4h8v2"/>
+                    </svg>
+                    <span id="trash-count" class="trash-count" hidden>0</span>
+                </button>
+
+                <!-- Индикатор состояния локального хранения (v14) -->
+                <div class="storage-status" id="storage-status" role="status" aria-live="polite" aria-label="Сохранено на устройстве" title="Сохранено на устройстве" data-status="saved">
+                    <span class="storage-status-dot" aria-hidden="true"></span>
+                    <span class="storage-status-text">Сохранено</span>
+                    <button type="button" class="storage-status-retry" hidden>Повторить</button>
+                </div>
 
                 <!-- Кнопка Медитации -->
                 <button id="start-manifest-btn" class="glow-btn">
@@ -422,12 +438,34 @@
         </div>
     </div>
 
+    <!-- Недавно удалённые цели (persistent trash, Этап 5) -->
+    <div id="trash-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal-content glass-card wide" role="dialog" aria-modal="true" aria-labelledby="trash-modal-title">
+            <header class="modal-header">
+                <h3 id="trash-modal-title">Недавно удалённые</h3>
+                <button type="button" class="close-modal-btn" aria-label="Закрыть">&times;</button>
+            </header>
+            <div class="archive-body">
+                <p class="archive-intro">Удалённые цели хранятся 30 дней. Их можно восстановить или удалить окончательно.</p>
+                <div id="trash-items-list" class="trash-items-list"></div>
+            </div>
+            <footer class="modal-footer">
+                <button type="button" class="btn primary close-modal-btn">Закрыть</button>
+            </footer>
+        </div>
+    </div>
+
     <!-- Элемент для всплывающих уведомлений -->
-    <div id="toast-container" class="toast-container"></div>
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions"></div>
 
     <!-- html2canvas для экспорта PNG -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 
+    <script src="storage.js"></script>
+    <script src="backup.js"></script>
+    <script src="import.js"></script>
+    <script src="performance.js"></script>
+    <script src="trash.js"></script>
     <script src="app.js"></script>
 
     <!-- Регистрация Service Worker (PWA) -->

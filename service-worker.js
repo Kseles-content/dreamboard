@@ -2,13 +2,43 @@
    DREAMBOARD - SERVICE WORKER (PWA OFFLINE CACHE)
    ========================================================================== */
 
-const CACHE_NAME = 'dreamboard-v13';
+// Runtime-имя кэша ИЗОЛИРОВАНО по service-worker scope: один и тот же
+// source-файл вычисляет разные cache names во время исполнения.
+//   production scope /dreamboard/            -> dreamboard-dreamboard-v14
+//   preview scope   /dreamboard-v14-preview/ -> dreamboard-dreamboard-v14-preview-v14
+function normalizeScopeName(scopeUrl) {
+    var path = String(scopeUrl || '').replace(location.origin, '');
+    path = path.replace(/^\/+|\/+$/g, '');
+    return path.replace(/\//g, '-') || 'root';
+}
+
+var SCOPE_NAME = (function () {
+    try {
+        var regScope = self.registration && self.registration.scope ? self.registration.scope : '';
+        if (regScope) return normalizeScopeName(regScope);
+    } catch (e) { /* registration недоступна — fallback ниже */ }
+    return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
+})();
+
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v14';
+
+// Старые scoped-версии ТЕКУЩЕГО scope: dreamboard-<scope>-v<digits>
+var SCOPE_OLD_RE = new RegExp('^dreamboard-' + SCOPE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-v\\d+$');
+// Legacy глобальный кэш (общий для всех scope до v14)
+var LEGACY_CACHE_RE = /^dreamboard-v\d+$/;
+// Legacy dreamboard-v13 разрешено удалять ТОЛЬКО production scope при реальном upgrade
+var IS_PRODUCTION_SCOPE = SCOPE_NAME === 'dreamboard';
 
 // Ресурсы для предварительного кэширования (Precache)
 const PRECACHE_URLS = [
     './',
     './index.html',
     './style.css',
+    './storage.js',
+    './backup.js',
+    './import.js',
+    './performance.js',
+    './trash.js',
     './app.js',
     './manifest.json',
     './assets/icons/icon-192.png',
@@ -30,13 +60,20 @@ self.addEventListener('install', event => {
     );
 });
 
-// Активация: удаляем старые кэши
+// Активация: удаляем только старые кэши ТЕКУЩЕГО scope.
+// Кэши другого DreamBoard scope, legacy dreamboard-v13 (для preview) и
+// сторонние origin-кэши НЕ удаляются.
 self.addEventListener('activate', event => {
     event.waitUntil(
         caches.keys().then(keys => {
             return Promise.all(
                 keys
-                    .filter(key => key !== CACHE_NAME)
+                    .filter(key => {
+                        if (key === CACHE_NAME) return false;           // текущий кэш
+                        if (SCOPE_OLD_RE.test(key)) return true;        // старая версия текущего scope
+                        if (IS_PRODUCTION_SCOPE && LEGACY_CACHE_RE.test(key)) return true; // legacy — только production
+                        return false;                                    // чужой scope / сторонние кэши
+                    })
                     .map(key => {
                         console.log('[SW] Удаление старого кэша:', key);
                         return caches.delete(key);
@@ -101,3 +138,8 @@ self.addEventListener('fetch', event => {
         );
     }
 });
+
+// Runtime-экспорт для тестов (node vm); в браузере no-op.
+if (typeof self !== 'undefined' && typeof self.__DB_SW_RUNTIME__ === 'function') {
+    self.__DB_SW_RUNTIME__({ cacheName: CACHE_NAME, scopeName: SCOPE_NAME, precacheUrls: PRECACHE_URLS.slice() });
+}

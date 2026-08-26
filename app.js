@@ -72,8 +72,31 @@ document.addEventListener('DOMContentLoaded', () => {
     ];
 
     let dreams = [];
+    let appStorageRef = null; // localStorage (или null, если недоступен) для storage layer
+    let appStorageState = null; // результат load(): source / writeProtected / shouldPersist / warnings / state
+    let storageStatusEl = null;      // индикатор #storage-status
+    let pendingStatusLabel = null;   // 'migrated' | 'recovered' — показать один раз после первого успешного save
+    let storageSaving = false;       // защита от повторного клика «Повторить»
+    let importBusy = false;          // защита от повторного запуска импорта
+    let trashItems = [];             // persistent recently-deleted records
+    let trashProtected = false;      // corrupt/future trash must never be overwritten
     let currentCategoryFilter = 'all';
     let currentViewMode = 'grid'; // 'grid' | 'canvas'
+
+    // Performance-профиль: lite для слабых/мобильных устройств (performance.js).
+    // isLite определяется детерминированной чистой функцией shouldEnableLiteProfile
+    // (reducedMotion || coarsePointer && (width<=900 || deviceMemory<=4 || cores<=4))
+    // и применяется классом performance-lite на <html> до DOMContentLoaded.
+    const perfApi = typeof DreamBoardPerformance !== 'undefined' ? DreamBoardPerformance : null;
+    const isLite = !!perfApi && perfApi.isLite();
+
+    // Количество декоративных частиц: lite сокращает (без shadowBlur), normal — как было.
+    const starCountLimit = isLite && perfApi ? perfApi.LITE_STARFIELD_COUNT : (perfApi ? perfApi.NORMAL_STARFIELD_COUNT : 140);
+    const confettiCountLimit = isLite && perfApi ? perfApi.LITE_CONFETTI_COUNT : (perfApi ? perfApi.NORMAL_CONFETTI_COUNT : 120);
+
+    // Управление декоративным RAF (ambient particles) для hidden-паузы.
+    let ambientFrameId = null;
+    let ambientAnimateFn = null;
 
     // Координаты и масштаб холста
     let zoom = 1.0;
@@ -220,6 +243,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const archiveToggleBtn = document.getElementById('archive-toggle-btn');
     const archiveModal = document.getElementById('archive-modal');
     const archivedDreamsGrid = document.getElementById('archived-dreams-grid');
+    const trashToggleBtn = document.getElementById('trash-toggle-btn');
+    const trashModal = document.getElementById('trash-modal');
+    const trashItemsList = document.getElementById('trash-items-list');
+    const trashCount = document.getElementById('trash-count');
 
     // Звук
     const audioToggleBtn = document.getElementById('audio-toggle-btn');
@@ -228,14 +255,131 @@ document.addEventListener('DOMContentLoaded', () => {
     // 2. ИНИЦИАЛИЗАЦИЯ И ХРАНЕНИЕ (STORAGE & SEED)
     // ==========================================================================
     
-    function init() {
-        const storedDreams = localStorage.getItem('dreams_db');
-        if (storedDreams) {
-            dreams = JSON.parse(storedDreams);
-        } else {
-            dreams = [...DEFAULT_DREAMS];
-            saveDreams();
+    // ==========================================================================
+    // 2.1 ИНДИКАТОР СОСТОЯНИЯ ХРАНЕНИЯ (STORAGE STATUS)
+    // ==========================================================================
+
+    // Полные описания (aria-label/title) — без технических ключей и содержимого.
+    const STORAGE_STATUS_TEXT = {
+        saved: 'Сохранено на устройстве',
+        migrated: 'Данные обновлены до нового формата',
+        recovered: 'Данные восстановлены из резервного состояния',
+        saving: 'Сохранение…',
+        error: 'Изменения не сохранены',
+        readonly: 'Только чтение: данные защищены',
+        unavailable: 'Хранилище недоступно'
+    };
+
+    // Короткие визуальные тексты (на мобильном могут скрываться через CSS).
+    const STORAGE_STATUS_SHORT = {
+        saved: 'Сохранено',
+        migrated: 'Формат обновлён',
+        recovered: 'Восстановлено',
+        saving: 'Сохранение…',
+        error: 'Не сохранено',
+        readonly: 'Только чтение',
+        unavailable: 'Хранилище недоступно'
+    };
+
+    function renderStorageStatus(statusKey) {
+        if (!storageStatusEl) return;
+        const full = STORAGE_STATUS_TEXT[statusKey] || STORAGE_STATUS_TEXT.saved;
+        const short = STORAGE_STATUS_SHORT[statusKey] || STORAGE_STATUS_SHORT.saved;
+        storageStatusEl.setAttribute('data-status', statusKey);
+        storageStatusEl.setAttribute('aria-label', full);
+        storageStatusEl.setAttribute('title', full);
+        const textEl = storageStatusEl.querySelector('.storage-status-text');
+        if (textEl) textEl.textContent = short;
+        const retryEl = storageStatusEl.querySelector('.storage-status-retry');
+        if (retryEl) {
+            retryEl.hidden = statusKey !== 'error' || storageSaving;
+            retryEl.disabled = storageSaving;
         }
+    }
+
+    function init() {
+        // Инициализация индикатора состояния хранения.
+        storageStatusEl = document.getElementById('storage-status');
+        const retryEl = storageStatusEl ? storageStatusEl.querySelector('.storage-status-retry') : null;
+        if (retryEl) {
+            retryEl.addEventListener('click', () => {
+                if (storageSaving) return; // повторный клик во время saving блокируется
+                saveDreams();
+            });
+        }
+
+        // Экспорт резервной копии (Этап 3): переносимый JSON-бэкап.
+        const exportJsonBtn = document.getElementById('export-json-btn');
+        if (exportJsonBtn) {
+            exportJsonBtn.addEventListener('click', () => {
+                handleExportBackup();
+            });
+        }
+
+        // Безопасное восстановление полного JSON-бэкапа (Этап 4).
+        const importJsonBtn = document.getElementById('import-json-btn');
+        const importFileInput = document.getElementById('import-file-input');
+        if (importJsonBtn && importFileInput) {
+            importJsonBtn.addEventListener('click', () => {
+                if (!importBusy) importFileInput.click();
+            });
+            importFileInput.addEventListener('change', () => {
+                const file = importFileInput.files && importFileInput.files[0];
+                if (file) handleImportBackup(file);
+            });
+        }
+        if (trashToggleBtn) trashToggleBtn.addEventListener('click', openTrashModal);
+
+        // Безопасная загрузка через versioned storage layer (v14).
+        let appStorage = null;
+        try {
+            appStorage = window.localStorage;
+        } catch (e) {
+            appStorage = null;
+        }
+        appStorageRef = appStorage;
+
+        if (typeof DreamBoardStorage === 'undefined' || !DreamBoardStorage) {
+            // Аварийный read-only режим: storage.js не загрузился (например,
+            // рассинхрон SW-кэша). Без белого экрана и без записи.
+            showToast('Хранилище временно недоступно. Перезагрузите приложение — изменения пока не будут сохранены', 'error');
+            dreams = JSON.parse(JSON.stringify(DEFAULT_DREAMS));
+            appStorageState = {
+                source: 'defaults',
+                state: null,
+                writeProtected: true,
+                shouldPersist: false,
+                warnings: ['storage-module-missing'],
+                unavailable: true
+            };
+            renderStorageStatus('unavailable');
+        } else {
+            const storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
+            appStorageState = storageResult;
+
+            // Миграция/восстановление показываются один раз после первого
+            // успешного сохранения, затем — обычный saved.
+            if (storageResult.source === 'legacy') pendingStatusLabel = 'migrated';
+            else if (storageResult.source === 'recovery') pendingStatusLabel = 'recovered';
+
+            if (storageResult.protected) {
+                showToast('Данные созданы более новой версией приложения. Обновите приложение, чтобы не потерять изменения.', 'info');
+            } else if (storageResult.source === 'defaults' && storageResult.warnings.length > 0) {
+                showToast('Не удалось восстановить сохранённые данные. Приложение запущено с безопасными значениями по умолчанию.', 'info');
+            }
+
+            renderStorageStatus(DreamBoardStorage.deriveStatus(storageResult, null, null));
+
+            dreams = storageResult.dreams;
+
+            // Миграция legacy dreams_db → versioned state или первичный seed.
+            // legacy dreams_db при этом не изменяется (страховка).
+            if (storageResult.shouldPersist) {
+                saveDreams();
+            }
+        }
+
+        initTrashStore();
         
         // Восстановление сохраненных позиций холста
         zoom = parseFloat(localStorage.getItem('canvas_zoom') || '1.0');
@@ -244,12 +388,52 @@ document.addEventListener('DOMContentLoaded', () => {
         
         renderAll();
         updateCanvasTransform();
-        initAmbientParticles();
+        // В lite-профиле фоновые частицы не запускаются вовсе (и не
+        // появятся после resize — слушатель не регистрируется).
+        if (!isLite) {
+            initAmbientParticles();
+        }
         setupAudioToggle();
     }
 
     function saveDreams() {
-        localStorage.setItem('dreams_db', JSON.stringify(dreams));
+        // Каждый вызов сохранения (форма, checkbox, drag/resize, архив) обязан
+        // учитывать write protection; при защите никаких setItem не выполняется.
+        storageSaving = true;
+        renderStorageStatus('saving');
+
+        let result;
+        try {
+            result = DreamBoardStorage.save(appStorageRef, dreams, {
+                writeProtected: appStorageState ? appStorageState.writeProtected === true : true
+            });
+        } catch (e) {
+            result = { ok: false, error: 'unknown' };
+        }
+        storageSaving = false;
+
+        if (result.ok) {
+            // saved показывается только после фактически успешного setItem.
+            if (pendingStatusLabel) {
+                renderStorageStatus(pendingStatusLabel);
+                pendingStatusLabel = null;
+            } else {
+                renderStorageStatus('saved');
+            }
+        } else {
+            renderStorageStatus(DreamBoardStorage.deriveStatus(appStorageState, result, pendingStatusLabel));
+        }
+
+        if (!result.ok) {
+            if (result.error === 'write-protected' || result.error === 'newer-schema-protected') {
+                showToast('Данные защищены от перезаписи. Не закрывайте приложение до восстановления', 'info');
+            } else if (result.error === 'storage-unavailable') {
+                showToast('Хранилище временно недоступно. Перезагрузите приложение — изменения пока не будут сохранены', 'error');
+            } else {
+                showToast('Изменения не сохранены. Освободите место в браузере и повторите сохранение', 'error');
+            }
+        }
+        return result;
     }
 
     function isLocalImageRef(value) {
@@ -337,15 +521,492 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    async function getLocalImageRecord(id) {
+        const db = await openLocalImageDb();
+        return new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readonly');
+            const request = tx.objectStore(LOCAL_IMAGE_STORE).get(id);
+            request.onsuccess = () => {
+                db.close();
+                resolve(request.result || null);
+            };
+            request.onerror = () => {
+                db.close();
+                reject(request.error);
+            };
+        });
+    }
+
+    function initTrashStore() {
+        if (typeof DreamBoardTrash === 'undefined' || !DreamBoardTrash) {
+            trashProtected = true;
+            updateTrashCount();
+            return;
+        }
+        const loaded = DreamBoardTrash.load(appStorageRef);
+        trashProtected = !loaded.ok || loaded.protected === true;
+        trashItems = loaded.ok ? loaded.items : [];
+        updateTrashCount();
+        if (trashProtected) {
+            showToast('Недавно удалённые недоступны: данные защищены от перезаписи', 'info');
+            return;
+        }
+        cleanupExpiredTrash();
+    }
+
+    function reloadTrashItems() {
+        const loaded = DreamBoardTrash.load(appStorageRef);
+        if (!loaded.ok) {
+            trashProtected = true;
+            return false;
+        }
+        trashItems = loaded.items;
+        updateTrashCount();
+        return true;
+    }
+
+    function updateTrashCount() {
+        if (!trashCount) return;
+        trashCount.textContent = String(trashItems.length);
+        trashCount.hidden = trashItems.length === 0;
+        if (trashToggleBtn) trashToggleBtn.setAttribute('aria-label', `Недавно удалённые: ${trashItems.length}`);
+    }
+
+    async function cleanupExpiredTrash() {
+        const result = DreamBoardTrash.pruneExpired(appStorageRef);
+        if (!result.ok) return;
+        trashItems = result.items;
+        updateTrashCount();
+        for (const item of result.removed) {
+            const ref = item && item.dream ? item.dream.imageUrl : '';
+            if (isLocalImageRef(ref) && !DreamBoardTrash.isLocalImageRefInUse(ref, dreams, trashItems)) {
+                try { await deleteLocalImageRef(ref); } catch (e) { /* orphan безопаснее потери данных */ }
+            }
+        }
+    }
+
+    function makeTrashRecordId() {
+        const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+        return `trash-${random}`;
+    }
+
+    function isImageRefInUse(ref, excludingDreamId) {
+        if (typeof DreamBoardTrash === 'undefined' || !DreamBoardTrash) {
+            return dreams.some(dream => dream && dream.id !== excludingDreamId && dream.imageUrl === ref);
+        }
+        return DreamBoardTrash.isLocalImageRefInUse(ref, dreams, trashItems, excludingDreamId);
+    }
+
+    async function restoreTrashRecord(recordId, options = {}) {
+        if (trashProtected) {
+            showToast('Восстановление недоступно: корзина защищена', 'error');
+            return false;
+        }
+        const record = trashItems.find(item => item.id === recordId);
+        if (!record) {
+            showToast('Удалённая цель уже недоступна', 'info');
+            return false;
+        }
+        const plan = DreamBoardTrash.buildRestore(dreams, record);
+        if (!plan.ok) {
+            showToast(plan.error === 'id-conflict' ? 'Цель с таким идентификатором уже существует' : 'Не удалось восстановить цель', 'error');
+            return false;
+        }
+
+        const previousDreams = dreams;
+        dreams = plan.dreams;
+        const saved = saveDreams();
+        if (!saved.ok) {
+            dreams = previousDreams;
+            renderAll();
+            return false;
+        }
+
+        const removed = DreamBoardTrash.remove(appStorageRef, recordId);
+        if (!removed.ok) {
+            // Active state уже безопасно сохранён. Оставшаяся trash-копия не
+            // означает потерю; повторное восстановление блокирует id-conflict.
+            reloadTrashItems();
+            renderAll();
+            showToast('Цель восстановлена, но запись корзины не удалось очистить', 'info');
+            return true;
+        }
+        trashItems = removed.items;
+        updateTrashCount();
+        renderAll();
+        if (trashModal && trashModal.classList.contains('active')) renderTrashItems();
+        if (!options.silent) showToast(`Цель «${plan.restored.title}» восстановлена`, 'success');
+        return true;
+    }
+
+    async function permanentlyDeleteTrashRecord(recordId) {
+        if (trashProtected) return false;
+        const record = trashItems.find(item => item.id === recordId);
+        if (!record) return false;
+        if (!window.confirm(`Удалить цель «${record.dream.title}» окончательно? Это действие нельзя отменить.`)) return false;
+        const removed = DreamBoardTrash.remove(appStorageRef, recordId);
+        if (!removed.ok) {
+            showToast('Не удалось удалить запись из корзины', 'error');
+            return false;
+        }
+        trashItems = removed.items;
+        updateTrashCount();
+        const ref = record.dream.imageUrl;
+        if (isLocalImageRef(ref) && !isImageRefInUse(ref)) {
+            try { await deleteLocalImageRef(ref); } catch (e) { /* orphan non-fatal */ }
+        }
+        renderTrashItems();
+        showToast('Цель удалена окончательно', 'info');
+        return true;
+    }
+
+    function openTrashModal() {
+        if (!trashModal) return;
+        renderTrashItems();
+        trashModal.classList.add('active');
+        trashModal.setAttribute('aria-hidden', 'false');
+    }
+
+    function renderTrashItems() {
+        if (!trashItemsList) return;
+        trashItemsList.textContent = '';
+        if (trashProtected) {
+            const message = document.createElement('p');
+            message.className = 'empty-trash-state';
+            message.textContent = 'Корзина защищена: повреждённый или более новый формат не будет перезаписан.';
+            trashItemsList.appendChild(message);
+            return;
+        }
+        if (!trashItems.length) {
+            const empty = document.createElement('p');
+            empty.className = 'empty-trash-state';
+            empty.textContent = 'Недавно удалённых целей нет.';
+            trashItemsList.appendChild(empty);
+            return;
+        }
+        trashItems.slice().reverse().forEach(record => {
+            const row = document.createElement('article');
+            row.className = 'trash-item';
+            const content = document.createElement('div');
+            content.className = 'trash-item-content';
+            const title = document.createElement('h4');
+            title.textContent = record.dream.title;
+            const date = document.createElement('p');
+            date.textContent = `Удалено: ${new Date(record.deletedAt).toLocaleString()}`;
+            content.append(title, date);
+
+            const actions = document.createElement('div');
+            actions.className = 'trash-item-actions';
+            const restore = document.createElement('button');
+            restore.type = 'button';
+            restore.className = 'btn secondary trash-restore-btn';
+            restore.textContent = 'Восстановить';
+            restore.addEventListener('click', () => restoreTrashRecord(record.id));
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'btn danger trash-delete-btn';
+            remove.textContent = 'Удалить окончательно';
+            remove.addEventListener('click', () => permanentlyDeleteTrashRecord(record.id));
+            actions.append(restore, remove);
+            row.append(content, actions);
+            trashItemsList.appendChild(row);
+        });
+    }
+
+    function writeImportedImages(records) {
+        if (!records.length) return Promise.resolve();
+        return openLocalImageDb().then(db => new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readwrite');
+            const store = tx.objectStore(LOCAL_IMAGE_STORE);
+            records.forEach(record => {
+                const blob = new Blob([record.bytes], { type: record.mimeType });
+                store.add({
+                    id: record.id,
+                    blob,
+                    originalName: '',
+                    mimeType: record.mimeType,
+                    size: blob.size,
+                    createdAt: new Date().toISOString()
+                });
+            });
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onabort = () => { const error = tx.error; db.close(); reject(error || new Error('image-write-aborted')); };
+            tx.onerror = () => { /* onabort завершит Promise и закроет БД */ };
+        }));
+    }
+
+    function cleanupImportedImages(ids) {
+        if (!ids.length) return Promise.resolve();
+        return openLocalImageDb().then(db => new Promise((resolve, reject) => {
+            const tx = db.transaction(LOCAL_IMAGE_STORE, 'readwrite');
+            const store = tx.objectStore(LOCAL_IMAGE_STORE);
+            ids.forEach(id => store.delete(id));
+            tx.oncomplete = () => { db.close(); resolve(); };
+            tx.onabort = () => { const error = tx.error; db.close(); reject(error || new Error('image-cleanup-aborted')); };
+            tx.onerror = () => { /* onabort завершит Promise */ };
+        }));
+    }
+
+    function decodeBase64Bytes(value) {
+        return new Promise((resolve, reject) => {
+            try {
+                const binary = atob(value);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+                resolve(bytes);
+            } catch (e) {
+                reject(e);
+            }
+        });
+    }
+
+    function createImportImageId(index) {
+        const random = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}-${index}`;
+        return `import-${random}`;
+    }
+
+    function readImportFile(file) {
+        if (file && typeof file.text === 'function') return file.text();
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+            reader.onerror = () => reject(reader.error || new Error('file-read-failed'));
+            reader.readAsText(file, 'UTF-8');
+        });
+    }
+
+    async function handleImportBackup(file) {
+        if (importBusy) return;
+        const importBtn = document.getElementById('import-json-btn');
+        const fileInput = document.getElementById('import-file-input');
+
+        if (typeof DreamBoardImport === 'undefined' || !DreamBoardImport || typeof DreamBoardStorage.saveState !== 'function') {
+            showToast('Модуль восстановления недоступен. Обновите страницу', 'error');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+        if (!appStorageState || appStorageState.unavailable || appStorageState.writeProtected) {
+            showToast('Данные защищены от перезаписи — импорт невозможен', 'error');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+        if (!file || typeof file.size !== 'number' || file.size > DreamBoardImport.MAX_FILE_BYTES) {
+            showToast('Файл резервной копии превышает допустимый размер', 'error');
+            if (fileInput) fileInput.value = '';
+            return;
+        }
+
+        importBusy = true;
+        if (importBtn) importBtn.disabled = true;
+        showToast('Проверка резервной копии…', 'info');
+        try {
+            const text = await readImportFile(file);
+            const inspected = DreamBoardImport.inspectBackupText(text, {
+                fileSize: file.size,
+                normalizeState: raw => DreamBoardStorage.normalizeState(raw)
+            });
+            if (!inspected.ok) {
+                showToast(inspected.error.message, 'error');
+                return;
+            }
+
+            const info = inspected.inspected;
+            const missingText = info.missingRefs.length
+                ? ` В файле отсутствует изображений: ${info.missingRefs.length}; вместо них будут показаны заглушки.`
+                : '';
+            const approved = window.confirm(
+                `Заменить текущую доску данными из резервной копии? Целей: ${info.dreamCount}, изображений: ${info.imageCount}.${missingText} Текущие данные останутся в recovery-копии.`
+            );
+            if (!approved) {
+                showToast('Импорт отменён', 'info');
+                return;
+            }
+
+            showToast('Восстановление…', 'info');
+            const prepared = await DreamBoardImport.materializeImport(info, {
+                decodeBase64: decodeBase64Bytes,
+                createId: createImportImageId
+            });
+            if (!prepared.ok) {
+                showToast(prepared.error.message, 'error');
+                return;
+            }
+
+            const applied = await DreamBoardImport.applyImport(prepared.plan, {
+                writeImages: writeImportedImages,
+                cleanupImages: cleanupImportedImages,
+                saveState: state => DreamBoardStorage.saveState(appStorageRef, state, {
+                    writeProtected: appStorageState.writeProtected === true
+                })
+            });
+            if (!applied.ok) {
+                showToast(applied.error.message, 'error');
+                return;
+            }
+
+            const missing = applied.stats.missingImageCount ? `, без изображений: ${applied.stats.missingImageCount}` : '';
+            showToast(`Восстановлено: ${applied.stats.dreamCount} целей, ${applied.stats.imageCount} изображений${missing}`, 'success');
+            setTimeout(() => window.location.reload(), 300);
+        } catch (e) {
+            console.error('[DreamBoard] Backup import failed', e);
+            showToast('Не удалось восстановить резервную копию', 'error');
+        } finally {
+            importBusy = false;
+            if (importBtn) importBtn.disabled = false;
+            if (fileInput) fileInput.value = '';
+        }
+    }
+
+    // Blob → base64 без префикса data: (FileReader).
+    function blobToBase64(blob) {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const text = typeof reader.result === 'string' ? reader.result : '';
+                const comma = text.indexOf(',');
+                resolve(comma >= 0 ? text.slice(comma + 1) : text);
+            };
+            reader.onerror = () => reject(reader.error || new Error('read-failed'));
+            reader.readAsDataURL(blob);
+        });
+    }
+
+    // ==========================================================================
+    // 2.2 ЭКСПОРТ РЕЗЕРВНОЙ КОПИИ (Этап 3: переносимый JSON-бэкап)
+    // ==========================================================================
+    let exportBusy = false;
+
+    async function handleExportBackup() {
+        if (exportBusy) return;
+        if (typeof DreamBoardBackup === 'undefined' || !DreamBoardBackup) {
+            showToast('Модуль экспорта недоступен. Обновите страницу', 'error');
+            return;
+        }
+
+        // 1. Фатальные проверки состояния (файл не создаётся).
+        if (!appStorageState || appStorageState.unavailable) {
+            showToast('Хранилище недоступно — экспорт невозможен', 'error');
+            return;
+        }
+        if (appStorageState.protected) {
+            showToast('Данные созданы более новой версией приложения — экспорт невозможен', 'error');
+            return;
+        }
+        if (appStorageState.source === 'defaults' && appStorageState.warnings && appStorageState.warnings.length > 0) {
+            showToast('Сохранённые данные повреждены — экспорт невозможен', 'error');
+            return;
+        }
+        // State для экспорта: нормализованный v2 (legacy/пустое хранилище → createState).
+        const stateForExport = appStorageState.state || DreamBoardStorage.createState(dreams);
+
+        const refs = DreamBoardBackup.collectImageRefs(stateForExport);
+        const ids = [];
+        const seen = {};
+        refs.forEach(r => {
+            if (!seen[r.id]) { seen[r.id] = true; ids.push(r.id); }
+        });
+
+        // 2. Pre-flight: оценка размера по метаданным ТОЛЬКО референсных записей
+        //    (без чтения blob и без сканирования неиспользуемых изображений).
+        //    Недоступная IDB при наличии dbimage:*-ссылок — фатально.
+        let sizeEstimate = null;
+        if (ids.length > 0) {
+            try {
+                let sum = 0;
+                for (const id of ids) {
+                    const rec = await getLocalImageRecord(id);
+                    if (rec && typeof rec.size === 'number') sum += rec.size;
+                }
+                sizeEstimate = sum;
+            } catch (e) {
+                showToast('Хранилище изображений недоступно — экспорт невозможен', 'error');
+                return;
+            }
+        }
+
+        // 3. Экспорт (только чтение: localStorage/IndexedDB не изменяются).
+        exportBusy = true;
+        const exportBtn = document.getElementById('export-json-btn');
+        if (exportBtn) exportBtn.disabled = true;
+        showToast('Экспорт…', 'info');
+        try {
+            const provider = {
+                get: async (id) => {
+                    const rec = await getLocalImageRecord(id);
+                    if (!rec) return null;
+                    return { blob: rec.blob, mimeType: rec.mimeType };
+                }
+            };
+            const result = await DreamBoardBackup.exportBackup({
+                state: stateForExport,
+                provider: provider,
+                toBase64: blobToBase64,
+                appVersion: DreamBoardStorage.APP_VERSION,
+                now: new Date(),
+                sizeEstimate: sizeEstimate,
+                confirm: (message) => window.confirm(message)
+            });
+            if (!result.ok) {
+                if (result.cancelled) {
+                    // Пользователь отказался: ничего не скачиваем, сообщаем об отмене.
+                    showToast('Экспорт отменён', 'info');
+                } else {
+                    showToast(result.fatal && result.fatal.message ? result.fatal.message : 'Экспорт не удался', 'error');
+                }
+                return;
+            }
+
+            // 5. Скачивание (objectURL освобождается модулем).
+            const dl = DreamBoardBackup.downloadJson(result.backup, {
+                createObjectURL: (blob) => URL.createObjectURL(blob),
+                revokeObjectURL: (url) => URL.revokeObjectURL(url),
+                triggerDownload: (url, filename) => {
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                },
+                filename: DreamBoardBackup.backupFileName(new Date())
+            });
+            if (!dl.ok) {
+                showToast('Не удалось создать файл резервной копии', 'error');
+                return;
+            }
+            const warnText = result.stats.skippedImageCount > 0 ? `, пропущено: ${result.stats.skippedImageCount}` : '';
+            showToast(`Резервная копия: ${result.stats.dreamCount} целей, ${result.stats.includedImageCount} изображений${warnText}`, 'success');
+        } catch (e) {
+            console.error('[DreamBoard] Backup export failed', e);
+            showToast('Экспорт не удался', 'error');
+        } finally {
+            exportBusy = false;
+            if (exportBtn) exportBtn.disabled = false;
+        }
+    }
+
+    function escapeHtml(value) {
+        return String(value == null ? '' : value)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+    }
+
     function getImageHtml(imageUrl, className, altText, lazy = true) {
-        const safeAlt = String(altText || '').replace(/"/g, '&quot;');
+        const safeAlt = escapeHtml(altText);
         if (!isLocalImageRef(imageUrl)) {
-            return `<img src="${imageUrl}" class="${className}" alt="${safeAlt}"${lazy ? ' loading="lazy"' : ''}>`;
+            return `<img src="${escapeHtml(imageUrl)}" class="${className}" alt="${safeAlt}"${lazy ? ' loading="lazy"' : ''}>`;
         }
 
         const id = getLocalImageId(imageUrl);
         const cachedUrl = localImageObjectUrls.get(id) || 'assets/images/og-preview.png';
-        return `<img src="${cachedUrl}" class="${className}" alt="${safeAlt}" data-local-image-id="${id}"${lazy ? ' loading="lazy"' : ''}>`;
+        return `<img src="${escapeHtml(cachedUrl)}" class="${className}" alt="${safeAlt}" data-local-image-id="${escapeHtml(id)}"${lazy ? ' loading="lazy"' : ''}>`;
     }
 
     function hydrateLocalImages(root = document) {
@@ -712,11 +1373,17 @@ document.addEventListener('DOMContentLoaded', () => {
     function initAmbientParticles() {
         const canvas = document.getElementById('ambient-particles');
         const ctx = canvas.getContext('2d');
-        let animationFrameId;
         
+        let resizeFrame = null;
         function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            // RAF-coalescing: не более одного пересоздания canvas на кадр,
+            // цикл animate при resize не перезапускается.
+            if (resizeFrame) return;
+            resizeFrame = requestAnimationFrame(() => {
+                resizeFrame = null;
+                canvas.width = window.innerWidth;
+                canvas.height = window.innerHeight;
+            });
         }
         resize();
         window.addEventListener('resize', resize);
@@ -769,9 +1436,25 @@ document.addEventListener('DOMContentLoaded', () => {
                 ctx.fill();
             });
             
-            animationFrameId = requestAnimationFrame(animate);
+            ambientFrameId = requestAnimationFrame(animate);
         }
+        ambientAnimateFn = animate;
         animate();
+    }
+
+    // Пауза декоративного RAF при скрытой вкладке (без потери состояния).
+    function pauseAmbientParticles() {
+        if (ambientFrameId) {
+            cancelAnimationFrame(ambientFrameId);
+            ambientFrameId = null;
+        }
+    }
+
+    // Возобновление: только если цикл реально был запущен и не создаёт дубликат.
+    function resumeAmbientParticles() {
+        if (!ambientFrameId && ambientAnimateFn) {
+            ambientAnimateFn();
+        }
     }
 
     // Эффект 2: Салют из Конфетти при манифестации карточки цели
@@ -801,7 +1484,7 @@ document.addEventListener('DOMContentLoaded', () => {
         else if (category === 'growth') colors = ['#a18cd1', '#fbc2eb', '#b388ff', '#ffffff'];
         
         const particles = [];
-        const count = 120;
+        const count = confettiCountLimit; // lite: ≤40, normal: 120
         
         for (let i = 0; i < count; i++) {
             const angle = Math.random() * Math.PI * 2;
@@ -871,8 +1554,12 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================================
     
     function renderAll() {
-        renderGrid();
-        renderCanvas();
+        // Рендерим только активное представление: скрытая доска не строится.
+        if (currentViewMode === 'canvas') {
+            renderCanvas();
+        } else {
+            renderGrid();
+        }
     }
 
     // Рендер 1: Режим Сетки (Masonry)
@@ -948,13 +1635,13 @@ document.addEventListener('DOMContentLoaded', () => {
             milestonesHTML = `<div class="card-milestones">`;
             dream.milestones.forEach(m => {
                 milestonesHTML += `
-                    <div class="milestone-item ${m.checked ? 'checked' : ''}" data-mid="${m.id}">
+                    <div class="milestone-item ${m.checked ? 'checked' : ''}" data-mid="${escapeHtml(m.id)}">
                         <div class="milestone-checkbox">
                             <svg width="9" height="7" viewBox="0 0 9 7" fill="none" xmlns="http://www.w3.org/2000/svg">
                                 <path d="M1 3L3.5 5.5L8 1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
                             </svg>
                         </div>
-                        <span>${m.text}</span>
+                        <span>${escapeHtml(m.text)}</span>
                     </div>
                 `;
             });
@@ -965,8 +1652,8 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="card-image-wrapper">
                 ${getImageHtml(dream.imageUrl, 'card-image', dream.title)}
                 <div class="card-image-overlay"></div>
-                <span class="card-badge">${getCategoryNameRU(dream.category)}</span>
-                ${dream.year ? `<span class="card-year">${dream.year} г.</span>` : ''}
+                <span class="card-badge">${escapeHtml(getCategoryNameRU(dream.category))}</span>
+                ${dream.year ? `<span class="card-year">${escapeHtml(dream.year)} г.</span>` : ''}
                 
                 <div class="card-quick-actions">
                     <button class="action-round-btn manifest-btn" title="Воплотить в реальность! (Манифестировано)">
@@ -991,8 +1678,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 </div>
             </div>
             <div class="card-body">
-                <h4 class="card-title">${dream.title}</h4>
-                <p class="card-desc">${dream.desc}</p>
+                <h4 class="card-title">${escapeHtml(dream.title)}</h4>
+                <p class="card-desc">${escapeHtml(dream.desc)}</p>
                 ${milestonesHTML}
             </div>
             ${isCanvasMode ? `<div class="card-resizer"></div>` : ''}
@@ -1065,14 +1752,44 @@ document.addEventListener('DOMContentLoaded', () => {
     // 6. ХОЛСТ: ПЕРЕТАСКИВАНИЕ, ЗУМ, СИСТЕМА СЕТКИ (SPATIAL CANVAS LOGIC)
     // ==========================================================================
 
+    // Визуальное применение transform (без записи в localStorage).
     function updateCanvasTransform() {
         spatialCanvas.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
         canvasZoomIndicator.innerText = `${Math.round(zoom * 100)}%`;
-        
-        // Сохраняем в localStorage
-        localStorage.setItem('canvas_zoom', zoom);
-        localStorage.setItem('canvas_pan_x', panX);
-        localStorage.setItem('canvas_pan_y', panY);
+    }
+
+    // Сохранение zoom/pan: ровно три существующих ключа, вызывается после
+    // завершения жеста (pan/pinch/drag), по debounce для wheel и при hidden.
+    function persistCanvasViewState() {
+        try {
+            localStorage.setItem('canvas_zoom', zoom);
+            localStorage.setItem('canvas_pan_x', panX);
+            localStorage.setItem('canvas_pan_y', panY);
+        } catch (e) {
+            // Ошибки localStorage не должны ломать жесты.
+        }
+    }
+
+    // Debounce персиста для wheel (200-300 мс).
+    let canvasPersistTimer = null;
+    function scheduleCanvasPersist() {
+        if (canvasPersistTimer) clearTimeout(canvasPersistTimer);
+        canvasPersistTimer = setTimeout(() => {
+            canvasPersistTimer = null;
+            persistCanvasViewState();
+        }, 250);
+    }
+
+    // RAF-coalescing: не более одного DOM-update transform на кадр,
+    // последнее значение (panX/panY/zoom) не теряется.
+    let transformFrameRequested = false;
+    function requestCanvasTransformUpdate() {
+        if (transformFrameRequested) return;
+        transformFrameRequested = true;
+        requestAnimationFrame(() => {
+            transformFrameRequested = false;
+            updateCanvasTransform();
+        });
     }
 
     function resetCanvasCardLayout() {
@@ -1136,12 +1853,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isPanning) {
             panX = e.clientX - startX;
             panY = e.clientY - startY;
-            updateCanvasTransform();
+            requestCanvasTransformUpdate();
         }
     });
 
     window.addEventListener('mouseup', () => {
-        isPanning = false;
+        if (isPanning) {
+            isPanning = false;
+            persistCanvasViewState(); // Сохранение после завершения панорамирования
+        }
     });
 
     // Масштабирование холста (Zoom) колесиком мыши
@@ -1165,8 +1885,12 @@ document.addEventListener('DOMContentLoaded', () => {
             target.closest('.card-resizer');
     }
 
+    // Кэш rect вьюпорта на время жеста: getBoundingClientRect не читается
+    // на каждый mousemove/touchmove (избегаем forced layout в горячем цикле).
+    let dragViewportRect = null;
+
     function clientToCanvasPoint(clientX, clientY) {
-        const rect = canvasViewport.getBoundingClientRect();
+        const rect = dragViewportRect || canvasViewport.getBoundingClientRect();
         return {
             x: (clientX - rect.left - panX) / zoom,
             y: (clientY - rect.top - panY) / zoom
@@ -1204,7 +1928,7 @@ document.addEventListener('DOMContentLoaded', () => {
             panY += touch.clientY - lastTouchY;
             lastTouchX = touch.clientX;
             lastTouchY = touch.clientY;
-            updateCanvasTransform();
+            requestCanvasTransformUpdate();
             e.preventDefault();
         } else if (touchMode === 'pinch' && e.touches.length === 2) {
             const distance = getTouchDistance(e.touches);
@@ -1212,7 +1936,7 @@ document.addEventListener('DOMContentLoaded', () => {
             zoom = Math.max(0.2, Math.min(2.0, pinchStartZoom * ratio));
             panX = pinchScreenX - pinchCanvasX * zoom;
             panY = pinchScreenY - pinchCanvasY * zoom;
-            updateCanvasTransform();
+            requestCanvasTransformUpdate();
             e.preventDefault();
         }
     }, { passive: false });
@@ -1222,6 +1946,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         if (e.touches.length === 0) {
             touchMode = null;
+            persistCanvasViewState(); // Сохранение после завершения pan/pinch
             saveDreams();
         } else if (e.touches.length === 1) {
             touchMode = 'pan';
@@ -1253,18 +1978,21 @@ document.addEventListener('DOMContentLoaded', () => {
         panX = mouseX - canvasX * zoom;
         panY = mouseY - canvasY * zoom;
         
-        updateCanvasTransform();
+        requestCanvasTransformUpdate();
+        scheduleCanvasPersist(); // Debounce-сохранение для wheel
     }, { passive: false });
 
     // Кнопки зума
     canvasZoomIn.addEventListener('click', () => {
         zoom = Math.min(2.0, zoom + 0.15);
         updateCanvasTransform();
+        persistCanvasViewState();
     });
 
     canvasZoomOut.addEventListener('click', () => {
         zoom = Math.max(0.2, zoom - 0.15);
         updateCanvasTransform();
+        persistCanvasViewState();
     });
 
     canvasZoomReset.addEventListener('click', () => {
@@ -1274,6 +2002,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resetCanvasCamera();
         // Возвращаем в центр
         updateCanvasTransform();
+        persistCanvasViewState();
         showToast('Холст сброшен в исходную позицию', 'info');
     });
 
@@ -1297,6 +2026,9 @@ document.addEventListener('DOMContentLoaded', () => {
             activeDragCard = card;
             card.classList.add('dragging');
             
+            // Кэшируем rect вьюпорта на время жеста
+            dragViewportRect = canvasViewport.getBoundingClientRect();
+
             // Вычисляем оффсет с учетом зума
             const point = clientToCanvasPoint(e.clientX, e.clientY);
             dragOffsetX = point.x - dream.canvasPos.x;
@@ -1316,6 +2048,8 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             const touch = e.touches[0];
+            // Кэшируем rect вьюпорта на время жеста
+            dragViewportRect = canvasViewport.getBoundingClientRect();
             const point = clientToCanvasPoint(touch.clientX, touch.clientY);
             activeDragCard = card;
             touchMode = 'card-drag';
@@ -1329,6 +2063,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         resizer.addEventListener('mousedown', (e) => {
             activeResizeCard = card;
+            // Кэшируем rect вьюпорта на время жеста
+            dragViewportRect = canvasViewport.getBoundingClientRect();
             resizeStartW = dream.canvasPos.width;
             resizeStartH = dream.canvasPos.height;
             resizeStartX = e.clientX;
@@ -1340,6 +2076,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Слушатели на все окно для гладкого драга и ресайза
+    // RAF-coalescing: не более одного DOM-обновления позиции/размера на кадр;
+    // последнее значение читается из dream.canvasPos, поэтому не теряется.
+    let pendingDragCard = null;
+    let pendingResizeCard = null;
+
+    function applyCardLayoutFrame() {
+        if (pendingDragCard) {
+            const d = dreams.find(x => x.id === pendingDragCard.dataset.id);
+            if (d) {
+                pendingDragCard.style.left = `${d.canvasPos.x}px`;
+                pendingDragCard.style.top = `${d.canvasPos.y}px`;
+            }
+            pendingDragCard = null;
+        }
+        if (pendingResizeCard) {
+            const d = dreams.find(x => x.id === pendingResizeCard.dataset.id);
+            if (d) {
+                pendingResizeCard.style.width = `${d.canvasPos.width}px`;
+                pendingResizeCard.style.height = `${d.canvasPos.height}px`;
+            }
+            pendingResizeCard = null;
+        }
+    }
+
+    // RAF-coalescer для drag/resize (реальный RAF handle вместо boolean):
+    // позволяет отменить ожидающий кадр и синхронно применить последнее
+    // состояние при завершении жеста (flush до обнуления pending refs и
+    // saveDreams) — последний drag/resize update не теряется.
+    const cardLayoutCoalescer = perfApi && typeof perfApi.createRafCoalescer === 'function'
+        ? perfApi.createRafCoalescer({
+            requestFrame: (fn) => requestAnimationFrame(fn),
+            cancelFrame: (id) => cancelAnimationFrame(id),
+            apply: applyCardLayoutFrame
+        })
+        : null;
+
+    function requestCardLayoutUpdate() {
+        if (cardLayoutCoalescer) {
+            cardLayoutCoalescer.schedule();
+            return;
+        }
+        requestAnimationFrame(applyCardLayoutFrame);
+    }
+
     window.addEventListener('mousemove', (e) => {
         // Логика перетаскивания карточки
         if (activeDragCard) {
@@ -1362,8 +2142,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 dream.canvasPos.x = newX;
                 dream.canvasPos.y = newY;
                 
-                activeDragCard.style.left = `${newX}px`;
-                activeDragCard.style.top = `${newY}px`;
+                pendingDragCard = activeDragCard;
+                requestCardLayoutUpdate();
             }
         }
         
@@ -1390,8 +2170,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 dream.canvasPos.width = newWidth;
                 dream.canvasPos.height = newHeight;
                 
-                activeResizeCard.style.width = `${newWidth}px`;
-                activeResizeCard.style.height = `${newHeight}px`;
+                pendingResizeCard = activeResizeCard;
+                requestCardLayoutUpdate();
             }
         }
     });
@@ -1414,8 +2194,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
             dream.canvasPos.x = newX;
             dream.canvasPos.y = newY;
-            activeDragCard.style.left = `${newX}px`;
-            activeDragCard.style.top = `${newY}px`;
+            pendingDragCard = activeDragCard;
+            requestCardLayoutUpdate();
         }
 
         e.preventDefault();
@@ -1424,8 +2204,11 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('touchend', () => {
         if (activeDragCard && touchMode === 'card-drag') {
             activeDragCard.classList.remove('dragging');
+            if (cardLayoutCoalescer) cardLayoutCoalescer.flush();
             activeDragCard = null;
             touchMode = null;
+            dragViewportRect = null;
+            pendingDragCard = null;
             saveDreams();
         }
     }, { passive: false });
@@ -1433,11 +2216,17 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('mouseup', () => {
         if (activeDragCard) {
             activeDragCard.classList.remove('dragging');
+            if (cardLayoutCoalescer) cardLayoutCoalescer.flush();
             activeDragCard = null;
+            dragViewportRect = null;
+            pendingDragCard = null;
             saveDreams();
         }
         if (activeResizeCard) {
+            if (cardLayoutCoalescer) cardLayoutCoalescer.flush();
             activeResizeCard = null;
+            dragViewportRect = null;
+            pendingResizeCard = null;
             saveDreams();
         }
     });
@@ -1521,6 +2310,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         closeDreamModal();
         archiveModal.classList.remove('active');
+        if (trashModal) {
+            trashModal.classList.remove('active');
+            trashModal.setAttribute('aria-hidden', 'true');
+        }
     }));
 
     // Вкладки выбора картинки
@@ -1582,12 +2375,16 @@ document.addEventListener('DOMContentLoaded', () => {
         tempMilestones.forEach(m => {
             const div = document.createElement('div');
             div.className = 'modal-milestone-item';
-            div.innerHTML = `
-                <span>${m.text}</span>
-                <button type="button" class="delete-milestone-btn" data-mid="${m.id}">&times;</button>
-            `;
-            
-            div.querySelector('.delete-milestone-btn').addEventListener('click', () => {
+            const label = document.createElement('span');
+            label.textContent = m.text;
+            const remove = document.createElement('button');
+            remove.type = 'button';
+            remove.className = 'delete-milestone-btn';
+            remove.dataset.mid = m.id;
+            remove.textContent = '×';
+            div.append(label, remove);
+
+            remove.addEventListener('click', () => {
                 tempMilestones = tempMilestones.filter(x => x.id !== m.id);
                 renderModalMilestones();
             });
@@ -1699,10 +2496,19 @@ document.addEventListener('DOMContentLoaded', () => {
             discardPendingLocalUpload();
         }
 
+        let previousDreamSnapshot = null;
+        let changedIndex = -1;
+        let createdDream = null;
+        let imageToCleanup = '';
+
         if (id) {
             // Обновление существующей цели
             const index = dreams.findIndex(d => d.id === id);
             if (index !== -1) {
+                changedIndex = index;
+                previousDreamSnapshot = typeof DreamBoardTrash !== 'undefined'
+                    ? DreamBoardTrash.cloneSafe(dreams[index])
+                    : JSON.parse(JSON.stringify(dreams[index]));
                 const previousImage = dreams[index].imageUrl;
                 dreams[index] = {
                     ...dreams[index],
@@ -1714,9 +2520,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     milestones: [...tempMilestones]
                 };
                 if (previousImage !== finalImage) {
-                    deleteLocalImageRef(previousImage);
+                    imageToCleanup = previousImage;
                 }
-                showToast('Цель успешно обновлена', 'success');
             }
         } else {
             // Создание новой цели
@@ -1737,11 +2542,25 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             
             dreams.push(newDream);
+            createdDream = newDream;
+        }
+
+        const saveResult = saveDreams();
+        if (!saveResult.ok) {
+            if (changedIndex !== -1 && previousDreamSnapshot) dreams[changedIndex] = previousDreamSnapshot;
+            if (createdDream) dreams = dreams.filter(dream => dream !== createdDream);
+            renderAll();
+            return;
+        }
+        if (imageToCleanup && !isImageRefInUse(imageToCleanup)) {
+            deleteLocalImageRef(imageToCleanup);
+        }
+        if (id) {
+            showToast('Цель успешно обновлена', 'success');
+        } else {
             playSoundEffect('manifest-success');
             showToast('Новая мечта визуализирована!', 'success');
         }
-        
-        saveDreams();
         renderAll();
         pendingLocalImageRef = null;
         closeDreamModal();
@@ -1755,15 +2574,42 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Удаление цели
     function deleteDream(id) {
-        const dream = dreams.find(d => d.id === id);
-        if (dream) {
-            deleteLocalImageRef(dream.imageUrl);
+        const originalIndex = dreams.findIndex(dream => dream.id === id);
+        if (originalIndex === -1) return;
+        const dream = dreams[originalIndex];
+        if (!window.confirm(`Удалить цель «${dream.title}»? Её можно будет восстановить в течение 30 дней.`)) return;
+        if (trashProtected || typeof DreamBoardTrash === 'undefined') {
+            showToast('Удаление недоступно: корзина защищена', 'error');
+            return;
         }
-        dreams = dreams.filter(d => d.id !== id);
-        saveDreams();
+
+        const added = DreamBoardTrash.add(appStorageRef, dream, originalIndex, { makeId: makeTrashRecordId });
+        if (!added.ok) {
+            showToast(added.error === 'trash-full' ? 'Корзина заполнена. Восстановите или удалите старые цели.' : 'Не удалось создать безопасную копию цели', 'error');
+            return;
+        }
+        trashItems = added.items;
+        updateTrashCount();
+
+        dreams = dreams.slice(0, originalIndex).concat(dreams.slice(originalIndex + 1));
+        const saved = saveDreams();
+        if (!saved.ok) {
+            dreams.splice(originalIndex, 0, dream);
+            const rollback = DreamBoardTrash.remove(appStorageRef, added.record.id);
+            if (rollback.ok) trashItems = rollback.items;
+            else reloadTrashItems();
+            updateTrashCount();
+            renderAll();
+            return;
+        }
+
         renderAll();
         playSoundEffect('hover');
-        showToast('Цель отпущена и удалена', 'info');
+        showToast(`Цель «${dream.title}» удалена`, 'info', {
+            duration: 10000,
+            actionLabel: 'Отменить',
+            onAction: () => restoreTrashRecord(added.record.id, { silent: true })
+        });
     }
 
     // Манифестация (успешное воплощение мечты)
@@ -1895,9 +2741,78 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // ==========================================================================
+    // PAUSE/RESUME ДЕКОРАТИВНОЙ РАБОТЫ ПРИ СКРЫТОЙ ВКЛАДКЕ
+    // ==========================================================================
+    // Централизованная архитектура: document.hidden останавливает все
+    // декоративные циклы во всех профилях, visible возобновляет только те,
+    // что реально активны (без дубликатов).
+
+    function pauseDecorativeLoops() {
+        pauseAmbientParticles();
+        stopManifestStarfield();
+
+        if (chimeInterval) {
+            clearInterval(chimeInterval);
+            chimeInterval = null;
+        }
+
+        if (manifestOverlay.classList.contains('active')) {
+            if (manifestInterval) {
+                clearInterval(manifestInterval);
+                manifestInterval = null;
+            }
+            if (breathGuideTimer) {
+                clearInterval(breathGuideTimer);
+                breathGuideTimer = null;
+            }
+        }
+
+        // Flush незавершённого debounce-персиста при уходе со вкладки.
+        if (canvasPersistTimer) {
+            clearTimeout(canvasPersistTimer);
+            canvasPersistTimer = null;
+        }
+        persistCanvasViewState();
+    }
+
+    function resumeDecorativeLoops() {
+        if (document.hidden) return;
+
+        resumeAmbientParticles();
+
+        if (manifestOverlay.classList.contains('active')) {
+            resumeManifestStarfield();
+
+            const activeDreams = dreams.filter(d => d.status === 'active');
+            if (!manifestInterval && activeDreams.length > 0) {
+                startManifestLoop(activeDreams); // текущий слайд не сбрасывается
+            }
+            if (!breathGuideTimer) {
+                startBreathingGuide(); // фаза начинается с безопасного «Вдох»
+            }
+            // Звук сам не включается: переливы возобновляются только если
+            // музыка манифестации была активна до скрытия вкладки.
+            if (isSoundOn && ambientSynth && !chimeInterval) {
+                chimeInterval = setInterval(() => {
+                    if (Math.random() > 0.3) {
+                        playSoundEffect('chime-scale');
+                        setTimeout(() => playSoundEffect('chime-scale'), 350);
+                    }
+                }, 6000);
+            }
+        }
+    }
+
     document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible' && manifestOverlay.classList.contains('active')) {
-            requestManifestWakeLock();
+        if (document.visibilityState === 'hidden') {
+            pauseDecorativeLoops();
+        } else if (document.visibilityState === 'visible') {
+            resumeDecorativeLoops();
+            // Существующее восстановление Wake Lock сохраняется.
+            if (manifestOverlay.classList.contains('active')) {
+                requestManifestWakeLock();
+            }
         }
     });
 
@@ -2090,6 +3005,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // АНИМИРОВАННЫЙ ЗВЕЗДНЫЙ ФОН НА КАНВАСЕ (MANIFEST OVERLAY)
     let starfieldFrameId = null;
+    let starfieldAnimateFn = null;
     function initManifestStarfield() {
         const canvas = document.getElementById('manifest-starfield');
         const ctx = canvas.getContext('2d');
@@ -2101,7 +3017,7 @@ document.addEventListener('DOMContentLoaded', () => {
         resize();
         
         const stars = [];
-        const starCount = 140;
+        const starCount = starCountLimit; // lite: ≤40, normal: 140
         
         for (let i = 0; i < starCount; i++) {
             stars.push({
@@ -2113,6 +3029,9 @@ document.addEventListener('DOMContentLoaded', () => {
             });
         }
         
+        // В lite-профиле свечение звёзд отключено (shadowBlur дорог на слабом GPU).
+        const starGlow = isLite ? 0 : 10;
+
         function animate() {
             ctx.fillStyle = 'rgba(2, 1, 6, 0.08)'; // Легкий шлейф
             ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2137,14 +3056,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     ctx.beginPath();
                     ctx.arc(px, py, Math.min(size, 4), 0, Math.PI * 2);
                     ctx.fillStyle = star.color;
-                    ctx.shadowBlur = 10;
-                    ctx.shadowColor = 'rgba(0, 242, 254, 0.2)';
+                    if (starGlow > 0) {
+                        ctx.shadowBlur = starGlow;
+                        ctx.shadowColor = 'rgba(0, 242, 254, 0.2)';
+                    }
                     ctx.fill();
                 }
             });
             
             starfieldFrameId = requestAnimationFrame(animate);
         }
+        starfieldAnimateFn = animate;
         animate();
     }
 
@@ -2152,6 +3074,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (starfieldFrameId) {
             cancelAnimationFrame(starfieldFrameId);
             starfieldFrameId = null;
+        }
+    }
+
+    // Возобновление после hidden: только если манифестация активна и цикл
+    // действительно был запущен; дубликат RAF не создаётся (проверка frameId).
+    function resumeManifestStarfield() {
+        if (!starfieldFrameId && starfieldAnimateFn) {
+            starfieldAnimateFn();
         }
     }
 
@@ -2191,12 +3121,12 @@ document.addEventListener('DOMContentLoaded', () => {
                         <span class="card-badge">Воплощено ★</span>
                     </div>
                     <div class="card-body">
-                        <h4 class="card-title">${dream.title}</h4>
-                        <p class="card-desc" style="margin-bottom:12px;">${dream.desc}</p>
+                        <h4 class="card-title">${escapeHtml(dream.title)}</h4>
+                        <p class="card-desc" style="margin-bottom:12px;">${escapeHtml(dream.desc)}</p>
                         
                         <div class="gratitude-note-box" style="border-top:1px solid rgba(255,255,255,0.06); padding-top:12px; margin-top:auto;">
                             <label style="font-size:10px; color:var(--manifested-color); font-weight:700;">Ваш Дневник Благодарности</label>
-                            <textarea class="gratitude-note-input" rows="2" placeholder="Запишите свои мысли и чувства, когда эта цель реализовалась..." style="font-size:12px; padding:8px; margin-top:6px; background:rgba(0,0,0,0.25); border-color:rgba(255,215,0,0.1);">${note}</textarea>
+                            <textarea class="gratitude-note-input" rows="2" placeholder="Запишите свои мысли и чувства, когда эта цель реализовалась..." style="font-size:12px; padding:8px; margin-top:6px; background:rgba(0,0,0,0.25); border-color:rgba(255,215,0,0.1);">${escapeHtml(note)}</textarea>
                         </div>
                         
                         <button class="simple-btn reactivate-btn" style="margin-top:12px; font-size:11px; padding:6px 10px; width:fit-content; border-color:rgba(255,255,255,0.05); color:var(--text-secondary);">Вернуть на доску</button>
@@ -2279,21 +3209,66 @@ document.addEventListener('DOMContentLoaded', () => {
     // 12. СИСТЕМА УВЕДОМЛЕНИЙ (TOAST NOTIFICATIONS)
     // ==========================================================================
     
-    function showToast(message, type = 'info') {
+    function showToast(message, type = 'info', options = {}) {
         const container = document.getElementById('toast-container');
         const toast = document.createElement('div');
         toast.className = `toast ${type}`;
-        toast.innerText = message;
+        const text = document.createElement('span');
+        text.className = 'toast-message';
+        text.textContent = String(message);
+        toast.appendChild(text);
+
+        let actionButton = null;
+        if (options.actionLabel && typeof options.onAction === 'function') {
+            actionButton = document.createElement('button');
+            actionButton.type = 'button';
+            actionButton.className = 'toast-action';
+            actionButton.textContent = options.actionLabel;
+            toast.appendChild(actionButton);
+        }
         
         container.appendChild(toast);
-        
-        // Плавный уход через 3.5 секунды
-        setTimeout(() => {
+
+        let remaining = typeof options.duration === 'number' ? options.duration : 3500;
+        let startedAt = 0;
+        let timer = null;
+        let dismissed = false;
+
+        const dismiss = () => {
+            if (dismissed) return;
+            dismissed = true;
+            if (timer) clearTimeout(timer);
             toast.style.animation = 'toast-out 0.4s ease forwards';
-            toast.addEventListener('animationend', () => {
-                toast.remove();
+            toast.addEventListener('animationend', () => toast.remove(), { once: true });
+            // Fallback: если browser/reduced-motion не отдаст animationend.
+            setTimeout(() => toast.remove(), 600);
+        };
+
+        const schedule = () => {
+            if (dismissed || remaining <= 0) return dismiss();
+            startedAt = Date.now();
+            timer = setTimeout(dismiss, remaining);
+        };
+        const pause = () => {
+            if (!timer || dismissed) return;
+            clearTimeout(timer);
+            timer = null;
+            remaining = Math.max(0, remaining - (Date.now() - startedAt));
+        };
+
+        toast.addEventListener('focusin', pause);
+        toast.addEventListener('focusout', schedule);
+        if (actionButton) {
+            actionButton.addEventListener('click', async () => {
+                if (actionButton.disabled) return;
+                pause();
+                actionButton.disabled = true;
+                try { await options.onAction(); }
+                finally { dismiss(); }
             });
-        }, 3500);
+        }
+        schedule();
+        return toast;
     }
     
     // Добавляем стиль для ухода тостов в style.css программно
