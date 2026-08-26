@@ -651,3 +651,104 @@ test('43. размер ≥50 MiB по факту (blob.size) → fatal size-limi
     assert.strictEqual(res.ok, false);
     assert.strictEqual(res.fatal.code, 'size-limit');
 });
+
+// --- Ревью PR #17: разделы 2-5 (доп. тесты) ----------------------------------
+
+test('44. разные минуты → разные имена файла', () => {
+    const a = Backup.backupFileName(new Date('2026-08-26T00:05:00.000Z'));
+    const b = Backup.backupFileName(new Date('2026-08-26T00:06:00.000Z'));
+    assert.notStrictEqual(a, b);
+    assert.strictEqual(a, 'dreamboard-backup-2026-08-26-0905.json');
+    assert.strictEqual(b, 'dreamboard-backup-2026-08-26-0906.json');
+});
+
+test('45. PRECACHE existence: все файлы из PRECACHE_URLS существуют на диске', () => {
+    const sw = fs.readFileSync(path.join(__dirname, 'service-worker.js'), 'utf8');
+    const m = sw.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
+    assert.ok(m, 'PRECACHE_URLS найден в service-worker.js');
+    const urls = Array.from(m[1].matchAll(/'([^']+)'/g), x => x[1]);
+    assert.ok(urls.length >= 5, 'PRECACHE_URLS не пуст');
+    assert.ok(urls.includes('./backup.js'), 'backup.js присутствует');
+    for (const u of urls) {
+        const rel = u.replace(/^\.\//, '');
+        const p = path.join(__dirname, rel === '' ? 'index.html' : rel);
+        assert.ok(fs.existsSync(p), 'PRECACHE файл существует: ' + u);
+    }
+});
+
+test('46. неиспользуемая запись (60 MiB) не читается; BLOCK не срабатывает; totalRawImageBytes = 1 MiB', async () => {
+    const state = makeState([dream({ id: 'd1', imageUrl: 'dbimage:img-ref' })]);
+    const calls = [];
+    const oneMiB = new Uint8Array(1024 * 1024);
+    const provider = {
+        get: async (id) => {
+            calls.push(id);
+            if (id === 'img-ref') return { blob: new Blob([oneMiB], { type: 'image/webp' }), mimeType: 'image/webp' };
+            if (id === 'img-unused') return { blob: new Blob([new Uint8Array(60 * 1024 * 1024)], { type: 'image/webp' }), mimeType: 'image/webp' };
+            return null;
+        }
+    };
+    const res = await Backup.exportBackup(baseOpts({ state, provider }));
+    assert.strictEqual(res.ok, true);
+    assert.deepStrictEqual(calls, ['img-ref'], 'читается только референсная запись, ровно 1 раз');
+    assert.strictEqual(res.backup.images.length, 1);
+    assert.strictEqual(res.backup.images[0].id, 'img-ref');
+    assert.strictEqual(res.backup.metadata.totalRawImageBytes, 1024 * 1024, 'неиспользуемые не учитываются');
+    assert.strictEqual(res.backup.metadata.includedImageCount, 1);
+    assert.deepStrictEqual(res.backup.metadata.warnings, []);
+});
+
+test('46b. один используемый ID читается не более одного раза (дедуп вызовов)', async () => {
+    const state = makeState([
+        dream({ id: 'd1', imageUrl: 'dbimage:img-shared' }),
+        dream({ id: 'd2', imageUrl: 'dbimage:img-shared' })
+    ]);
+    const calls = [];
+    const blob = makeBlob([1], 'image/webp');
+    const res = await Backup.exportBackup(baseOpts({
+        state,
+        provider: fakeProvider({ 'img-shared': { blob, mimeType: 'image/webp' } }, { calls })
+    }));
+    assert.strictEqual(res.ok, true);
+    assert.deepStrictEqual(calls, ['img-shared'], 'get вызван ровно 1 раз для общего id');
+    assert.strictEqual(res.backup.images.length, 1);
+});
+
+test('47. size-warning + partial одновременно: два последовательных confirm', async () => {
+    const state = makeState([
+        dream({ id: 'd1', imageUrl: 'dbimage:img-ok' }),
+        dream({ id: 'd2', imageUrl: 'dbimage:img-missing' })
+    ]);
+    const blob = makeBlob([1, 2, 3], 'image/webp');
+    const base = baseOpts({
+        state,
+        provider: fakeProvider({ 'img-ok': { blob, mimeType: 'image/webp' } }),
+        sizeEstimate: 15 * MIB
+    });
+
+    // A: отказ на первом (size) → size-warning-cancelled, второй не спрашивается
+    const logA = [];
+    const rA = await Backup.exportBackup(Object.assign({}, base, { confirm: (m) => { logA.push(m); return false; } }));
+    assert.strictEqual(rA.ok, false);
+    assert.strictEqual(rA.cancelled, true);
+    assert.strictEqual(rA.reason, 'size-warning-cancelled');
+    assert.strictEqual(logA.length, 1);
+
+    // B: согласие на size, отказ на partial → partial-cancelled
+    const logB = [];
+    let nB = 0;
+    const rB = await Backup.exportBackup(Object.assign({}, base, { confirm: () => { nB++; logB.push(nB); return nB !== 2; } }));
+    assert.strictEqual(rB.ok, false);
+    assert.strictEqual(rB.cancelled, true);
+    assert.strictEqual(rB.reason, 'partial-cancelled');
+    assert.strictEqual(logB.length, 2, 'оба подтверждения показаны');
+
+    // C: оба согласия → файл создан с warnings (size + partial)
+    const logC = [];
+    const rC = await Backup.exportBackup(Object.assign({}, base, { confirm: (m) => { logC.push(m); return true; } }));
+    assert.strictEqual(rC.ok, true);
+    assert.strictEqual(logC.length, 2, 'оба подтверждения показаны');
+    assert.strictEqual(rC.backup.metadata.includedImageCount, 1);
+    assert.strictEqual(rC.backup.metadata.skippedImageCount, 1);
+    assert.strictEqual(rC.backup.metadata.warnings[0].reason, 'missing-record');
+});
