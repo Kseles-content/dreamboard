@@ -529,12 +529,14 @@ test('31. export-json-btn visible (index.html)', () => {
     assert.ok(!line.includes('hidden'), 'export-json-btn видима');
 });
 
-test('32. остальные export/import controls hidden (index.html)', () => {
+test('32. PNG и file input hidden; реализованный import-json видим (index.html)', () => {
     const idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    for (const id of ['export-png-btn', 'import-json-btn', 'import-file-input']) {
+    for (const id of ['export-png-btn', 'import-file-input']) {
         const line = idx.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && line.includes('hidden'), `${id} скрыта`);
     }
+    const importLine = idx.split('\n').find(l => l.includes('id="import-json-btn"'));
+    assert.ok(importLine && !importLine.includes('hidden'), 'import-json-btn видима');
 });
 
 test('33. backup.js подключён до app.js', () => {
