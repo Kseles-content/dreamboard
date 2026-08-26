@@ -360,19 +360,21 @@ test('27. import/export controls не меняются (export/import видим
     assert.ok(fileInput.includes('hidden'), 'import-file-input должен быть скрыт');
 });
 
-test('28. script order storage→backup→import→performance→app и PRECACHE содержит performance.js', () => {
+test('28. script order storage→backup→import→performance→trash→app и PRECACHE содержит performance/trash', () => {
     const scripts = [...INDEX_HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
     const local = scripts.filter(s => !s.startsWith('http'));
-    const expected = ['storage.js', 'backup.js', 'import.js', 'performance.js', 'app.js'];
+    const expected = ['storage.js', 'backup.js', 'import.js', 'performance.js', 'trash.js', 'app.js'];
     assert.deepStrictEqual(local, expected, `порядок скриптов: ${local.join(' → ')}`);
     const precache = SW_JS.slice(SW_JS.indexOf('const PRECACHE_URLS'), SW_JS.indexOf('];'));
     const precacheIdx = precache.indexOf("'./performance.js'");
     assert.ok(precacheIdx > -1, 'PRECACHE должен содержать ./performance.js');
     const importIdx = precache.indexOf("'./import.js'");
+    const trashIdx = precache.indexOf("'./trash.js'");
     const appIdx = precache.indexOf("'./app.js'");
-    assert.ok(importIdx < precacheIdx && precacheIdx < appIdx, 'порядок PRECACHE: import → performance → app');
+    assert.ok(importIdx < precacheIdx && precacheIdx < trashIdx && trashIdx < appIdx, 'порядок PRECACHE: import → performance → trash → app');
     // Existence-проверка: файл существует на диске.
     assert.ok(fs.existsSync(path.join(__dirname, 'performance.js')));
+    assert.ok(fs.existsSync(path.join(__dirname, 'trash.js')));
 });
 
 test('29. CACHE_NAME остаётся dreamboard-v13', () => {

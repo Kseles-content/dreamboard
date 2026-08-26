@@ -811,11 +811,11 @@ test('52. пользовательские строки не вставляют�
     const end = app.indexOf('\n    async function ', start + 10);
     const body = end === -1 ? app.slice(start) : app.slice(start, end);
     assert.ok(!body.includes('innerHTML'), 'в коде экспорта нет innerHTML');
-    // toast: безопасное innerText, не innerHTML
+    // toast: безопасное textContent, не innerHTML
     const toastStart = app.indexOf('function showToast');
     assert.ok(toastStart !== -1);
-    const toastEnd = app.indexOf('\n    }', toastStart);
+    const toastEnd = app.indexOf('\n    // Добавляем стиль', toastStart);
     const toastBody = app.slice(toastStart, toastEnd);
-    assert.ok(toastBody.includes('toast.innerText'), 'toast через innerText');
+    assert.ok(toastBody.includes('text.textContent = String(message)'), 'toast через textContent');
     assert.ok(!toastBody.includes('innerHTML'), 'toast без innerHTML');
 });
