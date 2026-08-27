@@ -74,14 +74,13 @@ Users for the cross-user suite are created through the sandbox **Auth Dashboard*
 2. Run. Expected: **PASS notices for T1, T2a/b/c, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13; no FAILED**. Section 7 is **single-use**: it runs inside a transaction that ROLLS BACK, so no test rows persist. To re-run, re-execute section 7 as a whole (or the full file — sections 1–5 are idempotent).
 3. Screenshot or copy the output; attach to the stage report as 7A-gate evidence.
 4. **Real concurrent CAS check (optional but recommended):** open two psql/psql sessions against the sandbox as user A; in both run `BEGIN; SELECT public.sync_push_document('<board>', <current_rev>, '{}'::jsonb, 'dev-1');` — commit the first; the second must return `conflict:true`. Exactly one success.
-5. **Real Storage API checks (A/B, per approved path `{user_id}/{board_id}/{image_id-or-file}`):**
-   - As A: upload to `{A}/{board-A}/{img1}` → **success**; select own object → OK; create signed URL → opens; update/delete own object → OK.
-   - As A: upload to `{B}/...` (other user's path) → **rejected** (segment-1 check).
-   - As A: upload to `{A}/{nonexistent-board-uuid}/{img}` → **rejected** (no `sync_documents` row for that board).
-   - As A: upload to `{A}/{board-B}/{img}` (A's user id, B's board) → **rejected** (board does not belong to A).
-   - As A: upload `{A}/{board-A}` without a file-name segment → **rejected** (segment 3 required).
-   - As B: read A's object / open A's signed URL → **403**; update/delete A's object → **rejected**.
-   - As anon: any object access → **denied**.
+5. **Real Storage API checks (A/B, per approved path `{user_id}/{board_id}/{filename}`):**
+   1. As A: upload `{A}/{board-A}/ok.webp` → **success**; select own object → OK; create signed URL → opens; update/delete own object → OK.
+   2. As A: upload to a path **without a valid board segment** (e.g. `{A}/not-a-uuid/ok.webp` or `{A}/{board-A}` with no file) → **rejected** (segment 2 must be a valid UUID; file name required).
+   3. As A: upload with **extra directory** `{A}/{board-A}/extra/file.webp` → **rejected** (`cardinality(foldername) = 2` — exactly `{user_id}/{board_id}`).
+   4. As A: upload to `{A}/{nonexistent-board-uuid}/ok.webp` → **rejected** (no `sync_documents` row); upload to `{A}/{board-B}/ok.webp` (B's board) → **rejected** (board does not belong to A); upload to `{B}/...` (other user's first segment) → **rejected**.
+   5. As B: select/download A's object, open A's signed URL, update or delete A's object → **all rejected (403/denied)**.
+   6. As anon: any object access → **denied**.
 6. Table Editor as `anon` → no rows visible (and no privileges on sync tables).
 
 ## 7. Security verification
@@ -93,7 +92,7 @@ Users for the cross-user suite are created through the sandbox **Auth Dashboard*
 
 ## 8. Sandbox teardown / rollback
 
-Run the rollback section of `docs/sql/v15-sync-schema.sql` (§8), then delete the project in Dashboard (Settings → Delete project) if the sandbox is no longer needed. Teardown is only after explicit approval.
+Run the **destructive down-section** (§8) of `docs/sql/v15-sync-schema.sql` (DROP TABLE/FUNCTION/policies as teardown), then delete the project in Dashboard (Settings → Delete project) if the sandbox is no longer needed. Teardown is only after explicit approval. Note: §8 is separate from the schema's **safe migration drops** (`DROP POLICY IF EXISTS` recreate patterns and the rev 1 RPC `DROP FUNCTION` in sections 2–4), which are idempotent and run on every normal migration.
 
 ## 9. Do NOT (hard rules)
 

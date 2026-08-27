@@ -72,7 +72,7 @@ create table if not exists public.sync_assets (
     user_id       uuid not null references auth.users(id) on delete cascade,
     board_id      uuid not null,
     image_id      text not null,                         -- logical image id referenced from state
-    storage_path  text not null,                         -- {user_id}/{board_id}/{image_id-or-file}
+    storage_path  text not null,                         -- {user_id}/{board_id}/{filename}
     mime_type     text not null default 'image/webp',
     size_bytes    int check (size_bytes >= 0),
     content_hash  text not null,                         -- dedup key
@@ -84,7 +84,7 @@ create table if not exists public.sync_assets (
 
 comment on table public.sync_assets is
     'Image metadata only. Binary lives in the private Storage bucket at '
-    '{user_id}/{board_id}/{image_id-or-file}; no public URLs, signed URLs only.';
+    '{user_id}/{board_id}/{filename}; no public URLs, signed URLs only.';
 
 create table if not exists public.sync_versions (
     id               bigint generated always as identity primary key,
@@ -206,12 +206,15 @@ insert into storage.buckets (id, name, public)
 values ('dreamboard-assets', 'dreamboard-assets', false)
 on conflict (id) do nothing;
 
--- Object path convention (approved): {user_id}/{board_id}/{image_id-or-file}
+-- Object path convention (approved): {user_id}/{board_id}/{filename}
+-- (filename = image id or the original file name; the policies enforce exactly two
+-- folder segments and a non-empty storage.filename(name))
 -- Every policy (select/insert/update/delete) enforces ALL of:
 --   * segment 1 == auth.uid()::text        (object belongs to caller)
 --   * segment 2 is a valid UUID            (board id shape)
 --   * a sync_documents row exists for      (user_id = auth.uid(), board_id = segment 2)
---   * segment 3 is a non-empty file name
+--   * exactly two folder segments ({user_id}/{board_id}) and a non-empty
+--     file name via storage.filename(name) — extra directories rejected
 -- The CASE guard prevents an invalid-UUID cast error before the regex check.
 -- No fixed prefix segments (the path starts directly with the user id).
 
@@ -229,7 +232,8 @@ create policy dreamboard_assets_insert on storage.objects
                     then (storage.foldername(name))[2]::uuid
                     else null end
         )
-        and coalesce(length((storage.foldername(name))[3]), 0) > 0
+        and cardinality(storage.foldername(name)) = 2
+        and coalesce(length(storage.filename(name)), 0) > 0
     );
 
 drop policy if exists dreamboard_assets_select on storage.objects;
@@ -246,7 +250,8 @@ create policy dreamboard_assets_select on storage.objects
                     then (storage.foldername(name))[2]::uuid
                     else null end
         )
-        and coalesce(length((storage.foldername(name))[3]), 0) > 0
+        and cardinality(storage.foldername(name)) = 2
+        and coalesce(length(storage.filename(name)), 0) > 0
     );
 
 drop policy if exists dreamboard_assets_update on storage.objects;
@@ -263,7 +268,8 @@ create policy dreamboard_assets_update on storage.objects
                     then (storage.foldername(name))[2]::uuid
                     else null end
         )
-        and coalesce(length((storage.foldername(name))[3]), 0) > 0
+        and cardinality(storage.foldername(name)) = 2
+        and coalesce(length(storage.filename(name)), 0) > 0
     ) with check (
         bucket_id = 'dreamboard-assets'
         and (storage.foldername(name))[1] = auth.uid()::text
@@ -276,7 +282,8 @@ create policy dreamboard_assets_update on storage.objects
                     then (storage.foldername(name))[2]::uuid
                     else null end
         )
-        and coalesce(length((storage.foldername(name))[3]), 0) > 0
+        and cardinality(storage.foldername(name)) = 2
+        and coalesce(length(storage.filename(name)), 0) > 0
     );
 
 drop policy if exists dreamboard_assets_delete on storage.objects;
@@ -293,7 +300,8 @@ create policy dreamboard_assets_delete on storage.objects
                     then (storage.foldername(name))[2]::uuid
                     else null end
         )
-        and coalesce(length((storage.foldername(name))[3]), 0) > 0
+        and cardinality(storage.foldername(name)) = 2
+        and coalesce(length(storage.filename(name)), 0) > 0
     );
 
 -- ============================================================================
@@ -516,8 +524,9 @@ grant execute on function public.sync_snapshot(uuid, bigint, text, jsonb, jsonb)
 --        row/version counts unchanged after denied attempts
 --   T8   Policy inventory: documents SELECT-only, versions SELECT-only,
 --        storage 4/4 with required expressions (bucket, foldername,
---        auth.uid(), sync_documents board check) in qual/with_check —
---        normalized marker check, not brittle string equality
+--        filename, cardinality, auth.uid(), sync_documents board check)
+--        in qual/with_check — normalized marker check, not brittle
+--        string equality
 --   T9   CAS insert conflict (A push base=0 again)         -> conflict
 --   T10  CAS concurrency: two pushes with same baseRevision —
 --        exactly one success, the second conflict
@@ -737,6 +746,8 @@ begin
         and policyname='dreamboard_assets_insert' and cmd='INSERT'
         and lower(with_check) like '%dreamboard-assets%'
         and lower(with_check) like '%foldername%'
+        and lower(with_check) like '%filename%'
+        and lower(with_check) like '%cardinality%'
         and lower(with_check) like '%auth.uid()%'
         and lower(with_check) like '%sync_documents%';
     select count(*) into v_st_sel from pg_policies
@@ -744,6 +755,8 @@ begin
         and policyname='dreamboard_assets_select' and cmd='SELECT'
         and lower(qual) like '%dreamboard-assets%'
         and lower(qual) like '%foldername%'
+        and lower(qual) like '%filename%'
+        and lower(qual) like '%cardinality%'
         and lower(qual) like '%auth.uid()%'
         and lower(qual) like '%sync_documents%';
     select count(*) into v_st_upd from pg_policies
@@ -751,10 +764,14 @@ begin
         and policyname='dreamboard_assets_update' and cmd='UPDATE'
         and lower(qual) like '%dreamboard-assets%'
         and lower(qual) like '%foldername%'
+        and lower(qual) like '%filename%'
+        and lower(qual) like '%cardinality%'
         and lower(qual) like '%auth.uid()%'
         and lower(qual) like '%sync_documents%'
         and lower(with_check) like '%dreamboard-assets%'
         and lower(with_check) like '%foldername%'
+        and lower(with_check) like '%filename%'
+        and lower(with_check) like '%cardinality%'
         and lower(with_check) like '%auth.uid()%'
         and lower(with_check) like '%sync_documents%';
     select count(*) into v_st_del from pg_policies
@@ -762,6 +779,8 @@ begin
         and policyname='dreamboard_assets_delete' and cmd='DELETE'
         and lower(qual) like '%dreamboard-assets%'
         and lower(qual) like '%foldername%'
+        and lower(qual) like '%filename%'
+        and lower(qual) like '%cardinality%'
         and lower(qual) like '%auth.uid()%'
         and lower(qual) like '%sync_documents%';
     assert v_st_ins = 1, 'T8: storage INSERT policy guards missing';

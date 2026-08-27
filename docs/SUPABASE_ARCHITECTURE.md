@@ -72,13 +72,13 @@ Authoritative SQL: `docs/sql/v15-sync-schema.sql` (tables, constraints, RLS, Sto
 
 ### 4.2 `sync_assets` — image metadata only
 
-- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path` = **`{user_id}/{board_id}/{image_id-or-file}`**, `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` (guarded by `pg_constraint` check, idempotent). No public URLs; signed URLs only. Full owner policies (metadata lifecycle stays client-side); `authenticated` gets explicit `SELECT/INSERT/UPDATE/DELETE`.
+- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path` = **`{user_id}/{board_id}/{filename}`** (filename = image id or the original file name), `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` (guarded by `pg_constraint` check, idempotent). No public URLs; signed URLs only. Full owner policies (metadata lifecycle stays client-side); `authenticated` gets explicit `SELECT/INSERT/UPDATE/DELETE`.
 
 **Storage object policies** (`dreamboard-assets` bucket, private) enforce ALL of:
 1. path segment 1 = `auth.uid()::text`;
 2. path segment 2 is a valid UUID (board id shape);
 3. a `sync_documents` row exists with `user_id = auth.uid()` and `board_id = segment 2` (foreign/nonexistent boards rejected);
-4. path segment 3 is a non-empty file name.
+4. exactly **two folder segments** (`cardinality(storage.foldername(name)) = 2` — extra directories rejected) and a **non-empty file name** (`storage.filename(name)`).
 
 Applied to SELECT, INSERT, UPDATE (qual + with_check) and DELETE. Signed URLs only, short TTL.
 

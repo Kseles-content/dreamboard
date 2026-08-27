@@ -39,7 +39,7 @@
   3. neither → onboarding;
   4. both → compare UI offers exactly three actions: local / cloud / save-both (two boards), and no fourth hidden merge path.
   Assert local state + safety snapshot preserved in every case (D1).
-- `sync-images.test.js` — dedup by `content_hash`; upload queue with progress/retry/cancel; partial-failure recovery (retry only failed items); path convention `{user_id}/{board_id}/{image_id-or-file}`; no public URLs (only signed).
+- `sync-images.test.js` — dedup by `content_hash`; upload queue with progress/retry/cancel; partial-failure recovery (retry only failed items); path convention `{user_id}/{board_id}/{filename}`; no public URLs (only signed).
 - `sync-offline.test.js` — offline edits queue to outbox (IndexedDB); reconnect flush; watermark pull; two simulated devices conflict → deterministic UI, no silent loss (7C gate).
 - `sync-trash.test.js` — trash envelope `{formatVersion:1,items:[]}` round-trip; `deletedAt` tombstone replication; MAX_ITEMS preserved.
 - `sync-security.test.js` — XSS attempts through import/backup/dream content (rendered via textContent only); CSP directive presence; no `eval`/`new Function` on untrusted data; SDK/html2canvas vendored with pinned versions (no CDN origins in `script-src`).
@@ -57,16 +57,16 @@ Executed in the **sandbox project only** (never production). Users A/B are creat
 | T5 | B direct UPDATE of A row → denied (42501) |
 | T6 | B direct INSERT (incl. user_id=A) → denied (42501) |
 | T7 | versions: RPC snapshot ok; direct INSERT/UPDATE/DELETE denied; counts stable |
-| T8 | policy inventory: documents SELECT-only, versions SELECT-only, storage 4/4 with required guards (bucket id, foldername, auth.uid(), sync_documents board check) in qual/with_check — **normalized marker check, not brittle string equality** |
+| T8 | policy inventory: documents SELECT-only, versions SELECT-only, storage 4/4 with required guards (bucket id, foldername, **filename, cardinality**, auth.uid(), sync_documents board check) in qual/with_check — **normalized marker check, not brittle string equality** |
 | T9 | CAS insert conflict (base=0 on existing board) → conflict |
 | T10 | CAS concurrency: same baseRevision twice → exactly one success, one conflict (true parallel variant in runbook, two psql sessions) |
 | T11 | sync_snapshot for foreign/nonexistent board → board_not_found |
 | T12 | sync_assets insert for foreign/nonexistent board → **only** foreign_key_violation (23503) or insufficient_privilege (42501) expected; any other error fails; separate assert that no asset row persisted |
 | T13 | negative baseRevision → invalid_base_revision |
 
-**Idempotency scope:** schema sections 1–5 are re-runnable — run them twice, both runs must succeed (guarded `DO $$` constraints, `DROP POLICY IF EXISTS`, explicit `DROP FUNCTION` of the rev 1 RPC signature, `CREATE OR REPLACE`). The test section (§7) is **single-use**: wrapped in a transaction that rolls back, so no test rows persist; re-run by re-executing §7 as a whole. The file as a whole is NOT blindly idempotent — the test section is deliberately rolled back.
+**Idempotency scope:** schema sections 1–5 are re-runnable — run them twice, both runs must succeed (guarded `DO $$` constraints, `CREATE OR REPLACE`, `ON CONFLICT DO NOTHING`). The schema intentionally contains **safe migration drops** outside the down-section — `DROP POLICY IF EXISTS` (recreate patterns) and the explicit `DROP FUNCTION` of the rev 1 RPC signature (argument-list change) — these are idempotent and non-destructive. The **destructive down-section (§8)** — `DROP TABLE`, `DROP FUNCTION`, policy drops as teardown — is a separate script meant for explicit sandbox teardown only, never part of a normal migration run. The test section (§7) is **single-use**: wrapped in a transaction that rolls back, so no test rows persist; re-run by re-executing §7 as a whole.
 
-Additional manual checks in the sandbox (runbook §7): real Storage API operations as A and B — upload to own path `{user_id}/{board_id}/...` succeeds; upload into another user's path **or into a nonexistent board UUID** is rejected; select/signed URL of A's object from B → 403; update/delete own objects OK; `service_role` used only from SQL editor/CI (not from any client).
+Additional manual checks in the sandbox (runbook §7): real Storage API operations as A and B — upload to own path `{A}/{boardA}/{filename}` succeeds; path without a valid board segment (not a UUID) is rejected; **extra directory `{A}/{boardA}/extra/file.webp` is rejected**; another user's or a nonexistent board is rejected; select/signed URL of A's object from B → 403; update/delete own objects OK; `service_role` used only from SQL editor/CI (not from any client).
 
 ## 5. L4/L5 integration & device gates
 
