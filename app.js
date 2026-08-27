@@ -1656,6 +1656,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${dream.year ? `<span class="card-year">${escapeHtml(dream.year)} г.</span>` : ''}
                 
                 <div class="card-quick-actions">
+                    <button class="action-round-btn expand-btn" title="Развернуть" aria-label="Открыть просмотр цели">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M15 3h6v6"/><path d="M9 21H3v-6"/><path d="M21 3l-7 7"/><path d="M3 21l7-7"/>
+                        </svg>
+                    </button>
                     <button class="action-round-btn manifest-btn" title="Воплотить в реальность! (Манифестировано)">
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
@@ -1712,6 +1717,23 @@ document.addEventListener('DOMContentLoaded', () => {
         card.querySelector('.delete-btn').addEventListener('click', (e) => {
             e.stopPropagation();
             deleteDream(dream.id);
+        });
+
+        // Обработчик 2b: Развернуть (полноэкранный read-only просмотр)
+        const expandBtn = card.querySelector('.expand-btn');
+        if (expandBtn) {
+            expandBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openDreamViewModal(dream, expandBtn);
+            });
+        }
+
+        // Desktop: двойной клик по карточке открывает просмотр.
+        // Guard: не срабатывает на action/input/button и сразу после drag/resize.
+        card.addEventListener('dblclick', (e) => {
+            if (e.target.closest('.action-round-btn, .milestone-item, .card-resizer, button, input, select, textarea, a')) return;
+            if (Date.now() - lastCardLayoutEnd < 350) return; // не после drag/resize
+            openDreamViewModal(dream, null);
         });
 
         // Обработчик 3: Кнопка редактирования
@@ -2201,6 +2223,10 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
     }, { passive: false });
 
+    // Отметка завершения drag/resize: dblclick по карточке не должен
+    // открывать просмотр сразу после жеста (guard в createDreamCardDOM).
+    let lastCardLayoutEnd = 0;
+
     window.addEventListener('touchend', () => {
         if (activeDragCard && touchMode === 'card-drag') {
             activeDragCard.classList.remove('dragging');
@@ -2209,6 +2235,7 @@ document.addEventListener('DOMContentLoaded', () => {
             touchMode = null;
             dragViewportRect = null;
             pendingDragCard = null;
+            lastCardLayoutEnd = Date.now();
             saveDreams();
         }
     }, { passive: false });
@@ -2220,6 +2247,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activeDragCard = null;
             dragViewportRect = null;
             pendingDragCard = null;
+            lastCardLayoutEnd = Date.now();
             saveDreams();
         }
         if (activeResizeCard) {
@@ -2227,6 +2255,7 @@ document.addEventListener('DOMContentLoaded', () => {
             activeResizeCard = null;
             dragViewportRect = null;
             pendingResizeCard = null;
+            lastCardLayoutEnd = Date.now();
             saveDreams();
         }
     });
@@ -2306,6 +2335,95 @@ document.addEventListener('DOMContentLoaded', () => {
         resetLocalImagePreview(true);
     }
 
+    // ==========================================================================
+    // 8b. ПОЛНОЭКРАННЫЙ ПРОСМОТР ЦЕЛИ (READ-ONLY)
+    // ==========================================================================
+    // Открывается по кнопке «Развернуть» или двойному клику (desktop).
+    // Ничего не записывает в storage/IDB: только чтение dream-объекта и
+    // вывод через textContent/безопасные DOM API.
+
+    const dreamViewModal = document.getElementById('dream-view-modal');
+    const dreamViewCloseBtn = document.getElementById('dream-view-close');
+    const dreamViewImage = document.getElementById('dream-view-image');
+    const dreamViewCategory = document.getElementById('dream-view-category');
+    const dreamViewDreamTitle = document.getElementById('dream-view-dream-title');
+    const dreamViewYear = document.getElementById('dream-view-year');
+    const dreamViewDesc = document.getElementById('dream-view-desc');
+    const dreamViewMilestones = document.getElementById('dream-view-milestones');
+    let dreamViewTrigger = null; // элемент, открывший просмотр (возврат фокуса)
+
+    function openDreamViewModal(dream, triggerEl) {
+        if (!dreamViewModal || !dream) return;
+        dreamViewTrigger = triggerEl || null;
+
+        // Изображение: dbimage-ссылка через объектный URL, иначе напрямую.
+        const url = isLocalImageRef(dream.imageUrl)
+            ? (localImageObjectUrls.get(getLocalImageId(dream.imageUrl)) || 'assets/images/og-preview.png')
+            : (dream.imageUrl || 'assets/images/og-preview.png');
+        dreamViewImage.src = url;
+        dreamViewImage.alt = dream.title || 'Цель';
+
+        // Текстовые поля — только textContent (никаких innerHTML с данными).
+        dreamViewCategory.textContent = getCategoryNameRU(dream.category) || '';
+        dreamViewDreamTitle.textContent = dream.title || '';
+        dreamViewYear.textContent = dream.year ? `${dream.year} г.` : '';
+        dreamViewDesc.textContent = dream.desc || '';
+
+        // Этапы — создаются безопасными DOM API.
+        dreamViewMilestones.textContent = '';
+        if (dream.milestones && dream.milestones.length) {
+            dream.milestones.forEach(m => {
+                const li = document.createElement('li');
+                li.className = 'dream-view-milestone' + (m.checked ? ' checked' : '');
+                const checkbox = document.createElement('span');
+                checkbox.className = 'dream-view-check';
+                checkbox.setAttribute('aria-hidden', 'true');
+                checkbox.textContent = m.checked ? '✓' : '';
+                const text = document.createElement('span');
+                text.textContent = m.text || '';
+                li.appendChild(checkbox);
+                li.appendChild(text);
+                dreamViewMilestones.appendChild(li);
+            });
+        }
+
+        dreamViewModal.classList.add('active');
+        dreamViewModal.setAttribute('aria-hidden', 'false');
+        document.body.style.overflow = 'hidden';
+
+        // Начальный фокус — кнопка закрытия.
+        if (dreamViewCloseBtn) dreamViewCloseBtn.focus();
+    }
+
+    function closeDreamViewModal() {
+        if (!dreamViewModal) return;
+        dreamViewModal.classList.remove('active');
+        dreamViewModal.setAttribute('aria-hidden', 'true');
+        document.body.style.overflow = '';
+        // Возврат фокуса на элемент, открывший просмотр.
+        if (dreamViewTrigger && typeof dreamViewTrigger.focus === 'function') {
+            dreamViewTrigger.focus();
+        }
+        dreamViewTrigger = null;
+    }
+
+    if (dreamViewModal) {
+        if (dreamViewCloseBtn) {
+            dreamViewCloseBtn.addEventListener('click', closeDreamViewModal);
+        }
+        // Клик по backdrop (вне .modal-content) закрывает.
+        dreamViewModal.addEventListener('click', (e) => {
+            if (e.target === dreamViewModal) closeDreamViewModal();
+        });
+        // Escape закрывает просмотр.
+        dreamViewModal.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                e.stopPropagation();
+                closeDreamViewModal();
+            }
+        });
+    }
+
     closeButtons.forEach(btn => btn.addEventListener('click', (e) => {
         e.preventDefault();
         closeDreamModal();
@@ -2313,6 +2431,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if (trashModal) {
             trashModal.classList.remove('active');
             trashModal.setAttribute('aria-hidden', 'true');
+        }
+        if (dreamViewModal) {
+            dreamViewModal.classList.remove('active');
+            dreamViewModal.setAttribute('aria-hidden', 'true');
+            dreamViewTrigger = null;
         }
     }));
 
