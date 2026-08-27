@@ -180,6 +180,72 @@ test('13. landscape/short-height: компактные правила и dvh', (
     assert.ok(landscapeInfos && landscapeInfos.length >= 2, 'overflow-y:auto в ландшафтных/малых блоках');
 });
 
+test('18. сверхнизкий landscape: (orientation: landscape) and (max-height: 500px) с 100dvh/scroll/safe-area', () => {
+    // Достаём весь media-блок (закрывается голым \n} на колонке 0)
+    const bp = STYLE_CSS.match(/@media \(orientation: landscape\) and \(max-height: 500px\)\s*\{([\s\S]*?)\n\}/);
+    assert.ok(bp, 'отдельный breakpoint (orientation: landscape) and (max-height: 500px)');
+    const block = bp[1];
+    // Внутри media правила закрываются с отступом (\n    }) — используем это как границу правила
+    const rule = (sel) => block.match(new RegExp(sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*\\{[\\s\\S]*?\\n    \\}'));
+
+    // Overlay: 100dvh + max-height 100dvh + вертикальный scroll
+    const overlay = rule('.manifest-overlay');
+    assert.ok(overlay, 'overlay-правило в breakpoint');
+    assert.ok(/height:\s*100dvh;/.test(overlay[0]), 'height: 100dvh');
+    assert.ok(/max-height:\s*100dvh;/.test(overlay[0]), 'max-height: 100dvh');
+    assert.ok(/overflow-y:\s*auto;/.test(overlay[0]), 'overflow-y: auto (вертикальный скролл)');
+    assert.ok(/env\(safe-area-inset-left/.test(overlay[0]), 'safe-area слева');
+    assert.ok(/env\(safe-area-inset-right/.test(overlay[0]), 'safe-area справа');
+
+    // Нет фиксированной min-height > viewport: overlay без min-height в px
+    assert.ok(!/min-height:\s*\d+px/.test(overlay[0]), 'нет фикс. min-height в px у overlay');
+
+    // Контент: в потоке (не absolute), height auto, min-height 0 — доскролл до низа
+    const content = rule('.manifest-content');
+    assert.ok(content, 'content-правило в breakpoint');
+    assert.ok(/position:\s*relative;/.test(content[0]), 'content в потоке (relative)');
+    assert.ok(/height:\s*auto;/.test(content[0]), 'height: auto (не фиксирована)');
+    assert.ok(/min-height:\s*0;/.test(content[0]), 'min-height: 0');
+    assert.ok(/flex:\s*1 0 auto/.test(content[0]), 'flex: 1 0 auto');
+
+    // Карточка-инфо: не обрезает название/описание/этапы
+    const info = rule('.manifest-card-info');
+    assert.ok(info, 'card-info-правило в breakpoint');
+    assert.ok(/max-height:\s*none;/.test(info[0]), 'max-height: none (не обрезает)');
+    assert.ok(/overflow-y:\s*visible;/.test(info[0]), 'overflow-y: visible');
+    assert.ok(/min-height:\s*0;/.test(info[0]), 'min-height: 0');
+    // Текст цели видим полностью (сброс line-clamp из других блоков)
+    assert.ok(/#manifest-desc[\s\S]*?-webkit-line-clamp:\s*unset/.test(block), 'desc без line-clamp');
+    assert.ok(/#manifest-title[\s\S]*?-webkit-line-clamp:\s*unset/.test(block), 'title без line-clamp');
+
+    // Кнопка закрытия видима (sticky при скролле)
+    const exit = rule('.exit-manifest-btn');
+    assert.ok(exit, 'exit-btn-правило в breakpoint');
+    assert.ok(/position:\s*sticky;/.test(exit[0]), 'exit-btn sticky (видима при скролле)');
+    assert.ok(/z-index:\s*60;/.test(exit[0]), 'exit-btn поверх');
+
+    // Изображение уменьшено, но видимо (не скрыто)
+    const slider = rule('.manifest-slider-container');
+    assert.ok(slider, 'slider-container в breakpoint');
+    assert.ok(/height:\s*clamp\(110px, 30dvh, 240px\);/.test(slider[0]), 'изображение уменьшено (clamp)');
+    assert.ok(!/display:\s*none/.test(slider[0]), 'изображение не скрыто');
+
+    // Управляющие кнопки доступны (в потоке, доскролл до низа)
+    const controls = rule('.manifest-controls');
+    assert.ok(controls, 'controls-правило в breakpoint');
+    assert.ok(/position:\s*relative;/.test(controls[0]), 'controls в потоке');
+    assert.ok(/display:\s*flex;/.test(controls[0]), 'controls видимы (display: flex)');
+
+    // Affirmation компактнее, но не скрыта
+    const aff = rule('.manifest-affirmation-slider');
+    assert.ok(aff, 'affirmation-правило в breakpoint');
+    assert.ok(!/display:\s*none/.test(aff[0]), 'affirmation не скрыта');
+
+    // Нет фиксированной минимальной высоты, превышающей viewport (проверка по всему блоку)
+    assert.ok(!/min-height:\s*(100|9\d|8\d)dvh/.test(block), 'нет min-height >= 80dvh');
+    assert.ok(!/min-height:\s*(100|9\d|8\d)vh/.test(block), 'нет min-height >= 80vh');
+});
+
 test('14. изображение и карточка помещаются по высоте: max-height + min-height:0 в ландшафте', () => {
     // Блок (max-width:900) landscape absolute: min-height:0 уже был, сохранён
     assert.ok(/@media \(max-width: 900px\) and \(orientation: landscape\)[\s\S]*?\.manifest-content\s*\{[\s\S]*?min-height:\s*0/.test(STYLE_CSS),

@@ -2528,6 +2528,198 @@ textarea:focus {
     }
 }
 
+/* v14-ux: сверхнизкий landscape (полезная высота может быть ~180-200px после
+   панелей Chrome). Overlay становится scroll-контейнером, контент уходит
+   в поток, чтобы можно было доскроллить до самого нижнего элемента.
+   Не используем фиксированную min-height > viewport; уменьшаем только
+   декоративные отступы, affirmation/header и размер изображения. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .manifest-overlay {
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        justify-content: flex-start;
+        align-items: stretch;
+        /* safe-area справа/слева (вырезы/жесты в landscape) */
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* Кнопка закрытия всегда видима при скролле */
+    .exit-manifest-btn {
+        position: sticky;
+        top: calc(8px + env(safe-area-inset-top, 0px));
+        right: calc(8px + env(safe-area-inset-right, 0px));
+        align-self: flex-end;
+        width: 40px;
+        height: 40px;
+        margin: 8px 8px 0 0;
+        flex: 0 0 auto;
+        z-index: 60;
+    }
+
+    /* Контент в потоке: высота определяется содержимым, не фиксирована */
+    .manifest-content {
+        position: relative;
+        left: auto;
+        right: auto;
+        top: auto;
+        bottom: auto;
+        width: 100%;
+        max-width: none;
+        height: auto;
+        min-height: 0;
+        margin: 0;
+        border-radius: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        flex: 1 0 auto;
+        box-shadow: none;
+    }
+
+    /* Изображение: уменьшено, но видимо; задаёт высоту блока */
+    .manifest-slider-container {
+        position: relative;
+        width: 100%;
+        height: clamp(110px, 30dvh, 240px);
+        flex: 0 0 auto;
+        min-height: 0;
+    }
+
+    .manifest-card-info {
+        position: relative;
+        width: 100%;
+        max-width: none;
+        max-height: none;
+        min-height: 0;
+        overflow-y: visible;
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: 0;
+        flex: 1 1 auto;
+    }
+
+    /* Возвращаем полный текст (сброс обрезок из max-height:620/520 блоков) */
+    #manifest-title {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+        font-size: 17px;
+        line-height: 1.15;
+        margin: 2px 0 6px;
+    }
+
+    #manifest-desc,
+    .manifest-milestones-progress {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+    }
+
+    #manifest-desc {
+        font-size: 12px;
+        line-height: 1.35;
+        margin-bottom: 8px;
+    }
+
+    .manifest-milestones-progress {
+        gap: 5px;
+        font-size: 11px;
+    }
+
+    .manifest-card-info .card-badge {
+        position: static;
+        display: inline-block;
+        margin-bottom: 4px;
+        padding: 3px 8px;
+        font-size: 10px;
+    }
+
+    /* Гид по дыханию: компактный, в потоке (не перекрывает контент) */
+    .breath-guide-container {
+        position: relative;
+        top: auto;
+        left: auto;
+        transform: none;
+        width: auto;
+        height: auto;
+        gap: 8px;
+        padding: 4px 12px;
+        margin: 6px 8px 0;
+        flex: 0 0 auto;
+        align-self: flex-start;
+        border-radius: 20px;
+    }
+
+    .breath-circle-outer {
+        width: 28px;
+        height: 28px;
+    }
+
+    .breath-circle-inner {
+        width: 14px;
+        height: 14px;
+    }
+
+    #breath-text {
+        position: static;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+    }
+
+    /* Affirmation: компактная, в потоке */
+    .manifest-affirmation-slider {
+        position: relative;
+        top: auto;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        transform: none;
+        width: auto;
+        padding: 4px 12px;
+        margin: 6px 8px 0;
+        flex: 0 0 auto;
+        border-radius: 14px;
+    }
+
+    #manifest-affirmation-text {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+        font-size: 12px;
+        line-height: 1.25;
+    }
+
+    /* Управление: возвращаем в поток, доступно по скроллу до самого низа */
+    .manifest-controls {
+        position: relative;
+        bottom: auto;
+        display: flex;
+        gap: 10px;
+        padding: 6px 8px;
+        margin: 8px auto 12px;
+        flex: 0 0 auto;
+    }
+
+    .manifest-control-btn {
+        width: 38px;
+        height: 38px;
+        min-width: 38px;
+        min-height: 38px;
+    }
+
+    .manifest-control-btn#manifest-play-btn {
+        width: 46px;
+        height: 46px;
+    }
+
+    .manifest-rotate-prompt {
+        display: none !important;
+    }
+}
+
 @media (hover: none), (pointer: coarse) {
     .card-quick-actions {
         opacity: 1;
