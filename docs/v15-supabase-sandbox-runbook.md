@@ -74,12 +74,14 @@ Users for the cross-user suite are created through the sandbox **Auth Dashboard*
 2. Run. Expected: **PASS notices for T1, T2a/b/c, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13; no FAILED**. Section 7 is **single-use**: it runs inside a transaction that ROLLS BACK, so no test rows persist. To re-run, re-execute section 7 as a whole (or the full file — sections 1–5 are idempotent).
 3. Screenshot or copy the output; attach to the stage report as 7A-gate evidence.
 4. **Real concurrent CAS check (optional but recommended):** open two psql/psql sessions against the sandbox as user A; in both run `BEGIN; SELECT public.sync_push_document('<board>', <current_rev>, '{}'::jsonb, 'dev-1');` — commit the first; the second must return `conflict:true`. Exactly one success.
+4a. **Creating the Storage-gate board via REST (required for the Storage checks below):** call `/rest/v1/rpc/sync_push_document` as user A with JSON keys **matching the function parameter names exactly** (the `p_` prefix is mandatory — they are the plpgsql parameter names):
+    `{"p_board_id":"<uuid>", "p_base_revision":0, "p_state":{"dreams":[]}, "p_device":"manual"}` → expect `{"ok":true,"revision":1}`. Do NOT use unprefixed keys (`board_id`/`base_revision`/…) — they are ignored by PostgREST.
 5. **Real Storage API checks (A/B, per approved path `{user_id}/{board_id}/{filename}`):**
-   1. As A: upload `{A}/{board-A}/ok.webp` → **success**; select own object → OK; create signed URL → opens; update/delete own object → OK.
+   1. As A: upload `{A}/{board-A}/ok.webp` → **success**; select own object → OK; create signed URL → opens (bearer link); update/delete own object → OK.
    2. As A: upload to a path **without a valid board segment** (e.g. `{A}/not-a-uuid/ok.webp` or `{A}/{board-A}` with no file) → **rejected** (segment 2 must be a valid UUID; file name required).
    3. As A: upload with **extra directory** `{A}/{board-A}/extra/file.webp` → **rejected** (`cardinality(foldername) = 2` — exactly `{user_id}/{board_id}`).
    4. As A: upload to `{A}/{nonexistent-board-uuid}/ok.webp` → **rejected** (no `sync_documents` row); upload to `{A}/{board-B}/ok.webp` (B's board) → **rejected** (board does not belong to A); upload to `{B}/...` (other user's first segment) → **rejected**.
-   5. As B: select/download A's object, open A's signed URL, update or delete A's object → **all rejected (403/denied)**.
+   5. As B: select/download A's object **directly**, **create a signed URL for A's object**, update or delete A's object → **rejected (403/denied)**. A signed URL **already issued by A** is a **temporary bearer link**: it is accessible to anyone holding it until expiry — **no 403 is expected when opening it**. This is the intended contract, not a leak; mitigate by short TTL and issuing URLs only per user action.
    6. As anon: any object access → **denied**.
 6. Table Editor as `anon` → no rows visible (and no privileges on sync tables).
 
