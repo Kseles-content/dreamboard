@@ -67,6 +67,7 @@ Additional manual checks (sandbox): upload as A to `dream-images/B-...` → reje
 - **7C gate:** text-only round trip desktop↔simulated-device; offline editing usable with network disabled; conflict UI deterministic; no silent loss.
 - **7D gate:** desktop↔Android (TCL 30) round trip with images; image hashes/counts match; export/import compatibility; quota behavior (IndexedDB pressure); trash and shared-image reference semantics preserved; local blobs never deleted.
 - **7E gate:** download-all-data complete; disable sync keeps local data; account deletion with reauth + grace; export/security review; incident rollback drill.
+- **SMTP production gate (D11, before any production email):** SPF/DKIM records for `mail.kseles.ru` verified (`dig TXT mail.kseles.ru`, Resend domain status = verified); a real confirmation email and a password-reset email are received and clicked successfully; sender shows `DreamBoard <no-reply@mail.kseles.ru>`; only then is custom SMTP enabled in Supabase Auth. No passwords/DNS tokens/API keys in the repo (secrets scan covers `re_…` keys and DNS values).
 
 ## 6. CI
 

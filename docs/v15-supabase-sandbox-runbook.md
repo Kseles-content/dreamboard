@@ -18,7 +18,7 @@ Target environment: one **non-production sandbox project** (EU region). Never po
 
 1. Open https://supabase.com/dashboard → New project.
 2. Organization: (customer's org). Project name: `dreamboard-sandbox` (or similar, clearly non-production).
-3. **Region: choose an EU region** (e.g. `eu-central-1` Frankfurt or `eu-west-1`). This is decision D8 — do not pick US.
+3. **Region: `eu-central-1` (Frankfurt, EU)** — decision D8; do not pick US or another region.
 4. Database password: generate a strong one; store in the team password manager; **do not** commit it anywhere.
 5. Plan: Free tier is sufficient for the sandbox (500 MB DB, 1 GB storage). Note: free projects pause after 1 week of inactivity — keep the sandbox active or accept re-wake.
 6. After creation, copy two values into the (future) `config.js` **only**:
@@ -38,7 +38,7 @@ Target environment: one **non-production sandbox project** (EU region). Never po
    - Provider: **Cloudflare Turnstile**.
    - Create a Turnstile widget at https://dash.cloudflare.com (Sitekey + Secret key).
    - Paste secret key into Supabase; keep the sitekey for the frontend `config.js`.
-5. SMTP: leave the **built-in** SMTP for the sandbox (team addresses only, ~2 msg/h — fine for testing templates). **Custom SMTP (Resend) is NOT configured until a verified sender domain exists** (D11) — that belongs to a later stage.
+5. SMTP in the sandbox: leave the **built-in** SMTP (team addresses only, ~2 msg/h — fine for testing templates). **Production SMTP (Resend) is NOT configured yet**: the customer decision (2026-08-27) is Resend with sending subdomain `mail.kseles.ru` and From `DreamBoard <no-reply@mail.kseles.ru>` (domain `kseles.ru` verified), but **DNS must not be changed and no Resend project created until the docs-only Stage 7A PR (#38) is complete**. When that happens, the production SMTP gate is: (1) add SPF/DKIM records for `mail.kseles.ru` per Resend's instructions, (2) verify domain in Resend, (3) run a successful confirmation/reset email test, (4) only then enable custom SMTP in Supabase Auth. Passwords, DNS tokens and API keys never enter the repo.
 
 ## 3. Storage bucket
 

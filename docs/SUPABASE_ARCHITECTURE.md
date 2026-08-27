@@ -28,16 +28,16 @@
 | D5 | Conflict UX | Automatic snapshots; user chooses **local / cloud / save-both (two boards)**. |
 | D6 | Local conflict history | Conflict versions stored in a **separate IndexedDB store** on the device (never auto-deleted). |
 | D7 | Server-side privacy | **RLS + server-side encryption at rest for MVP.** Schema is encryption-ready, but client-side E2EE is NOT enabled. |
-| D8 | Region | **EU** project region. |
+| D8 | Region | **EU — Frankfurt (`eu-central-1`)** project region (customer decision 2026-08-27). |
 | D9 | Auth MVP | Email + password, email confirmation, password reset. Magic link later (after custom SMTP). |
 | D10 | Abuse protection | **Cloudflare Turnstile** for signup, login and recovery. Generic auth errors, rate limits. |
-| D11 | SMTP | **Resend only after a verified sender domain.** Built-in Supabase SMTP is not production-usable (team addresses only, ~2 msg/h, no SLA). |
+| D11 | SMTP | **Resend** with sending subdomain **`mail.kseles.ru`**; From: **DreamBoard `<no-reply@mail.kseles.ru>`** (domain `kseles.ru` verified by customer 2026-08-27). Built-in Supabase SMTP is not production-usable (team addresses only, ~2 msg/h, no SLA). **Production SMTP is enabled ONLY after SPF/DKIM verification and a successful confirmation/reset email test.** No passwords, DNS tokens or API keys in Git. |
 | D12 | Guests | Fully local. No Supabase anonymous account, no rows in `auth.users`, no uploads until explicit opt-in. |
 | D13 | Profiles | **No `profiles`/username/avatar table.** FK directly on `auth.users(id)` is sufficient for the MVP. |
 | D14 | SDK supply | **Self-hosted pinned Supabase JS SDK** and **self-hosted pinned html2canvas** (vendored, integrity-checked, precached). No runtime CDN dependencies. |
 | D15 | Frontend security | CSP, XSS and session-token threat model enforced (see `docs/v15-sync-threat-model.md`). |
 | D16 | Service role | `service_role` key never enters GitHub Pages, the repository or any client bundle. Only the publishable anon key is public, behind strict RLS. |
-| D17 | Legacy backend | Neither root NestJS (`src/`) nor `apps/api` mock is used for production auth. One stack: Supabase. Legacy code untouched until PR-F. |
+| D17 | Legacy backend | Neither root NestJS (`src/`) nor `apps/api` mock is used for production auth. One stack: Supabase. Legacy code untouched until PR-F. **Render drift investigation and legacy-contour removal are DEFERRED** (customer decision 2026-08-27) — separate follow-up, outside sync scope. |
 
 ## 3. Data inventory (what syncs)
 
@@ -118,9 +118,25 @@ Authoritative SQL: `docs/sql/v15-sync-schema.sql` (tables, constraints, RLS, Sto
 
 Aggregate, consented: guest → first dream completed; sync opt-in rate after value explanation; successful second-device recovery; sync error/conflict rate; weekly return to Today's Dream; milestone completion; wallpaper export counts; deletion/export completion rate. Never collect titles, descriptions, journal text, image URLs/content or canvas contents.
 
-## 11. Open questions for the customer (from 7A audit)
+## 12. Customer locked-in decisions (2026-08-27)
+
+Confirmed and binding for all later stages:
+
+1. **Domain:** `kseles.ru` verified by the customer.
+2. **Production SMTP:** Resend, sending subdomain **`mail.kseles.ru`**, From **DreamBoard `<no-reply@mail.kseles.ru>`**. DNS is NOT changed and no Resend project is created until the docs-only Stage 7A PR (#38) is complete. Production SMTP is enabled only after **SPF/DKIM verification** and a **successful confirmation/reset email test**.
+3. **Secrets:** passwords, DNS tokens and API keys are never committed to Git.
+4. **Privacy MVP:** RLS + server-side encryption at rest; **no E2EE** in the first stage (schema stays encryption-ready).
+5. **Region:** Supabase **EU / Frankfurt (`eu-central-1`)**.
+6. **CAPTCHA:** Cloudflare Turnstile.
+7. **Guests:** fully local; no anonymous accounts, no rows, no uploads without explicit opt-in.
+8. **Deferred:** Render drift investigation and removal of legacy contours (`apps/api`, `apps/web`, `apps/mobile`, `src/migrations`) — separate follow-up.
+9. **Trash:** full envelope `{"formatVersion":1,"items":[]}`; record field `deletedAt`.
+10. **CAS:** atomic SQL/RPC function (no LWW/auto-merge).
+11. **Supply:** Supabase SDK and html2canvas shipped pinned/self-hosted.
+12. **Current scope:** docs/SQL/runbook/threat-model/test-plan PR only — no Supabase resources, no runtime changes.
+
+## 13. Open questions for the customer (from 7A audit)
 
 1. E2EE later? (schema is encryption-ready; MVP = RLS + at-rest by decision D7.)
-2. Magic link timing (needs custom SMTP with verified domain).
-3. Manual cleanup: legacy `apps/api`, `apps/web`, `apps/mobile`, `src/migrations` (TypeORM/SQLite) — removal in PR-F.
-4. Render drift (`/health` 404 on live while main has health) — separate investigation, outside sync scope.
+2. Magic link timing (enabled once custom SMTP with verified domain passes the SPF/DKIM gate).
+3. Manual cleanup of legacy contours — deferred per §12.8; schedule to be set separately.

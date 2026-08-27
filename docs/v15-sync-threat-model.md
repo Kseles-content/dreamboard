@@ -89,7 +89,7 @@
 - **Mitigations:** operational metrics only (plan §9); never log titles/descriptions/journal/images; Sentry/PostHog not wired in v14 frontend — keep it that way; HTTP logging middleware (legacy Nest) must not receive sync traffic (sync traffic goes to Supabase directly, not through Nest).
 
 ### T11 — Phishing / spoofed auth emails
-- **Mitigations:** Resend only with **verified sender domain** (D11); consistent sender name; no links to non-app domains in auth emails; Turnstile reduces bot-driven signups that abuse the sending reputation.
+- **Mitigations:** Resend with **verified sender domain** (D11): sending subdomain `mail.kseles.ru`, From `DreamBoard <no-reply@mail.kseles.ru>`, SPF/DKIM verified and confirmation/reset test passed BEFORE enabling production SMTP; consistent sender name; no links to non-app domains in auth emails; Turnstile reduces bot-driven signups that abuse the sending reputation.
 
 ## 4. Residual risks (accepted for MVP, revisit at 7E)
 
@@ -112,3 +112,6 @@ Reject if any of (case-insensitive):
 - `BEGIN (RSA | EC | OPENSSH) PRIVATE KEY`
 - AWS-style `AKIA[0-9A-Z]{16}`, generic `(password|secret|token)\s*=\s*['"][^'"]{8,}`
 - `.env`-style files with real values (allow only `.env.example` with placeholders)
+- **Resend API keys** shaped `re_[a-zA-Z0-9]{20,}`
+- DNS/SPF/DKIM tokens or TXT values supplied by Resend (e.g. SPF-record payloads starting with `v=spf1`, DKIM selector values under `dkim._domainkey`), i.e. any actual record VALUE, not the record name
+- Supabase dashboard/service tokens (`sbp_`, `sb_secret_`)
