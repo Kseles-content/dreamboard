@@ -52,37 +52,49 @@
 
 ## 4. Sync schema (snapshot-first)
 
-Authoritative SQL: `docs/sql/v15-sync-schema.sql` (tables, constraints, RLS, Storage policies, CAS RPC, append-only versions, retention, cross-user tests, rollback).
+Authoritative SQL: `docs/sql/v15-sync-schema.sql` (tables, constraints, RLS, Storage policies, CAS RPC, append-only versions, retention, explicit privileges, cross-user tests, rollback). **Idempotency scope:** schema sections 1–5 are re-runnable (`IF NOT EXISTS`/`CREATE OR REPLACE`/guarded `DO $$` constraints + explicit drop of the rev 1 RPC signature); the test section is single-use — it runs inside a transaction that rolls back.
 
 ### 4.1 `sync_documents` — one row per board
 
 - `user_id uuid` — FK `auth.users(id)`, RLS-bound;
 - `board_id uuid` — PK component;
-- `format_version int` — v14 state contract;
-- `schema_version int` — `schemaVersion` from state (2);
+- `format_version int` — CHECK `= 1` (v14 state contract);
+- `schema_version int` — CHECK `= 2` (`schemaVersion` from state);
 - `revision bigint` — CAS counter;
-- `state jsonb` — normalized board state;
+- `state jsonb` — normalized board state, CHECK `jsonb_typeof(state) = 'object'`;
 - `trash jsonb` — envelope `{"formatVersion":1,"items":[]}` (CHECK: object, `formatVersion=1`, `items` array);
 - `deleted_at timestamptz` — soft-delete marker (tombstone), API contract name `deletedAt`;
 - `updated_at timestamptz`;
-- `updated_by_device text` — opaque random device id (no fingerprinting);
+- `updated_by_device text` — CHECK non-empty, ≤ 64 chars (opaque random device id);
 - PK `(user_id, board_id)`.
 
-**Client access: SELECT on own rows only.** No INSERT/UPDATE/DELETE policies and explicit `REVOKE` for `anon`/`authenticated` — all mutations go exclusively through the `sync_push_document` RPC (atomic CAS, SECURITY DEFINER, pinned `search_path`, qualified objects, `auth.uid()` null-rejection).
+**Client access: SELECT on own rows only.** No INSERT/UPDATE/DELETE policies, explicit `REVOKE` for `anon`/`authenticated`, and no mutation grants — all mutations go exclusively through the `sync_push_document` RPC (atomic CAS).
 
 ### 4.2 `sync_assets` — image metadata only
 
-- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path` = **`{user_id}/{board_id}/{image_id-or-file}`**, `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE`. No public URLs; signed URLs only. Full owner policies (metadata lifecycle stays client-side).
+- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path` = **`{user_id}/{board_id}/{image_id-or-file}`**, `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` (guarded by `pg_constraint` check, idempotent). No public URLs; signed URLs only. Full owner policies (metadata lifecycle stays client-side); `authenticated` gets explicit `SELECT/INSERT/UPDATE/DELETE`.
+
+**Storage object policies** (`dreamboard-assets` bucket, private) enforce ALL of:
+1. path segment 1 = `auth.uid()::text`;
+2. path segment 2 is a valid UUID (board id shape);
+3. a `sync_documents` row exists with `user_id = auth.uid()` and `board_id = segment 2` (foreign/nonexistent boards rejected);
+4. path segment 3 is a non-empty file name.
+
+Applied to SELECT, INSERT, UPDATE (qual + with_check) and DELETE. Signed URLs only, short TTL.
 
 ### 4.3 `sync_versions` — append-only snapshots
 
-- immutable rows around first migration, conflicts and manual restore; `reason` ∈ `first_migration | conflict_local | conflict_cloud | manual_restore`; `retention_until` (default +30 days) is a **hint only** — no automatic deletion until a separate server-side job exists; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE`.
+- immutable rows around first migration, conflicts and manual restore; `reason` ∈ `first_migration | conflict_local | conflict_cloud | manual_restore`; `retention_until` (default +30 days) is a **hint only** — no automatic deletion until a separate server-side job exists; CHECK: `trash` envelope valid, `state` is an object; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` (idempotent guard).
 - **Client access: SELECT on own rows only.** Writes exclusively through the `sync_snapshot` RPC, which verifies the board exists and belongs to the caller before writing.
+
+### 4.4 RPC security model (SECURITY DEFINER)
+
+Both RPCs are `SECURITY DEFINER` with `search_path = pg_catalog, public` pinned and fully qualified objects. We do **not** rely on `FORCE RLS` to constrain the definer: the owner (typically `postgres`) usually has `BYPASSRLS`, which FORCE does not override. Actual safety comes from: explicit `auth.uid()` null-rejection; every statement filters on `auth.uid()`; pinned search_path; qualified references; **no user-supplied `user_id` parameter**; and strict grants (client roles cannot mutate the tables directly — `anon` has nothing, `authenticated` has SELECT on documents/versions, full CRUD on assets, EXECUTE on RPCs only).
 
 ## 5. Conflict protocol
 
 1. Client stores per board `{baseRevision, payload}`.
-2. Push calls atomic RPC `sync_push_document(...)` with `base_revision`; the function updates only when `revision = base_revision`, then increments; mismatch or missing row → explicit **conflict** result. Never silent LWW. Both RPCs are SECURITY DEFINER with pinned `search_path = pg_catalog, public` and fully qualified objects; RLS is FORCEd on all tables, so the definer is still filtered by owner checks plus the explicit `auth.uid()` null rejection.
+2. Push calls atomic RPC `sync_push_document(...)` with `base_revision` (negative values rejected); the function updates only when `revision = base_revision`, then increments; mismatch or missing row → explicit **conflict** result. Never silent LWW. Both RPCs are SECURITY DEFINER with pinned `search_path = pg_catalog, public`, fully qualified objects, explicit `auth.uid()` null-rejection and no caller-supplied `user_id` (see §4.4 for why FORCE RLS is not the security boundary).
 3. On conflict: automatic snapshot locally (IndexedDB conflict store + `dreamboard_app_state_recovery`) and in cloud (`sync_versions` via `sync_snapshot()`).
 4. UI shows timestamps, device labels, dream counts; user picks **«Оставить локальную» / «Загрузить облачную» / «Сохранить обе как две доски»** (second board = new `board_id` with a copy).
 5. Pull by `updated_at > watermark`; `deleted_at` tombstones replicate; physical cleanup is a later server-side job (never automatic in MVP).

@@ -58,11 +58,11 @@
 ### T4 — RLS bypass / cross-user access
 - **Vector:** SQL injection in RPC args, missing policies, table-owner bypass, storage path traversal.
 - **Mitigations:**
-  - `FORCE ROW LEVEL SECURITY` on all three tables (owner included).
-  - **RPC-only mutations**: clients have SELECT-only policies on `sync_documents`/`sync_versions`, plus explicit `REVOKE INSERT/UPDATE/DELETE` for `anon`/`authenticated`; every write goes through `sync_push_document`/`sync_snapshot` (SECURITY DEFINER, `search_path = pg_catalog, public` pinned, fully qualified objects, `auth.uid()` null-rejection, owner checks inside).
-  - Storage path convention **`{user_id}/{board_id}/{image_id-or-file}`** enforced by `WITH CHECK` on the first path segment; signed URLs only (short TTL).
+  - `FORCE ROW LEVEL SECURITY` on all three tables as defense-in-depth for SELECT visibility (note: it does not reliably constrain a SECURITY DEFINER owner with BYPASSRLS — see below).
+  - **RPC-only mutations**: clients have SELECT-only policies on `sync_documents`/`sync_versions`, plus explicit `REVOKE INSERT/UPDATE/DELETE` and no mutation grants for `anon`/`authenticated`; every write goes through `sync_push_document`/`sync_snapshot` (SECURITY DEFINER, `search_path = pg_catalog, public` pinned, fully qualified objects, `auth.uid()` null-rejection, owner checks inside, **no caller-supplied user_id**).
+  - Storage path **`{user_id}/{board_id}/{image_id-or-file}`** with policies enforcing ALL of: segment 1 = `auth.uid()`, segment 2 = valid UUID **and an existing `sync_documents` board owned by the caller** (foreign/nonexistent boards rejected), segment 3 = non-empty file name; `WITH CHECK` on insert/update; signed URLs only (short TTL).
   - Composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` on assets/versions keeps rows attached to a board owned by the same user.
-  - Cross-user tests T1–T12 in the SQL file (A/B/anon isolation) are part of the 7A gate; re-run in sandbox before 7C.
+  - Cross-user tests T1–T13 in the SQL file (A/B/anon isolation; T12 expects FK violation/42501 only and confirms no row persisted; T2c confirms anon has no access at all) are part of the 7A gate; re-run in sandbox before 7C.
   - RPC arguments are typed (uuid/bigint/jsonb) — no dynamic SQL inside functions (verify at code review).
 
 ### T5 — Supply chain (SDK/CDN compromise)
@@ -101,7 +101,7 @@
 ## 5. Security checklist per stage
 
 - **7B:** CSP baseline in place; no third-party scripts; auth UI renders via textContent; Turnstile integrated; generic error messages; tests: XSS-injection attempt on auth fields, a11y, abuse.
-- **7C:** RLS cross-user suite re-run (T1–T12); CAS RPC fuzz (bad types, huge payloads, missing args); offline/reconnect; two-device conflict; token revocation test.
+- **7C:** RLS cross-user suite re-run (T1–T13); CAS RPC fuzz (bad types, huge payloads, missing args); offline/reconnect; two-device conflict; token revocation test.
 - **7D:** image upload path traversal test; dedup hash collision handling; partial-failure recovery; trash round-trip.
 - **7E:** account deletion cascade (rows + storage objects + versions); export completeness; reauth grace period; incident rollback drill (plan §7 gate).
 

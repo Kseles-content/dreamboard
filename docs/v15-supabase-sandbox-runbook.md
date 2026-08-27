@@ -50,7 +50,7 @@ values ('dreamboard-assets', 'dreamboard-assets', false)
 on conflict (id) do nothing;
 ```
 
-Verify in Storage UI: bucket exists, **Public bucket = OFF**. All access is via signed URLs only (object policies come from the schema file, §4).
+Verify in Storage UI: bucket exists, **Public bucket = OFF**. All access is via signed URLs only (object policies come from the schema file, §3).
 
 ## 4. Create test users A/B (Auth Dashboard / Admin API — NOT direct INSERT)
 
@@ -64,22 +64,25 @@ Users for the cross-user suite are created through the sandbox **Auth Dashboard*
 ## 5. Execute the schema
 
 1. Open Dashboard → SQL Editor → New query.
-2. Paste the full contents of `docs/sql/v15-sync-schema.sql` (sections 1–5: tables, RLS, storage policies, CAS RPC, retention hint).
+2. Paste the full contents of `docs/sql/v15-sync-schema.sql` (sections 1–5: tables, RLS, storage policies, RPCs, explicit privileges, retention hint).
 3. Run. Expected: no errors; tables `sync_documents`, `sync_assets`, `sync_versions` appear in Table Editor.
 4. **Idempotency:** run the same script once more — it must succeed again with no errors (`IF NOT EXISTS`/`CREATE OR REPLACE`/`ON CONFLICT DO NOTHING`/`DROP POLICY IF EXISTS`).
 
 ## 6. Run the cross-user tests
 
-1. In SQL Editor, paste section 6 of `docs/sql/v15-sync-schema.sql` and **replace `USER_A_UUID` / `USER_B_UUID` with the real UUIDs** from §5.
-2. Run. Expected: **PASS notices for T1, T2a/b/c, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12; no FAILED**.
+1. In SQL Editor, paste section 7 of `docs/sql/v15-sync-schema.sql` and **replace `USER_A_UUID` / `USER_B_UUID` with the real UUIDs** from §4.
+2. Run. Expected: **PASS notices for T1, T2a/b/c, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12, T13; no FAILED**. Section 7 is **single-use**: it runs inside a transaction that ROLLS BACK, so no test rows persist. To re-run, re-execute section 7 as a whole (or the full file — sections 1–5 are idempotent).
 3. Screenshot or copy the output; attach to the stage report as 7A-gate evidence.
 4. **Real concurrent CAS check (optional but recommended):** open two psql/psql sessions against the sandbox as user A; in both run `BEGIN; SELECT public.sync_push_document('<board>', <current_rev>, '{}'::jsonb, 'dev-1');` — commit the first; the second must return `conflict:true`. Exactly one success.
 5. **Real Storage API checks (A/B, per approved path `{user_id}/{board_id}/{image_id-or-file}`):**
-   - As A: upload to `{A}/{board}/{img1}` → **success**; select own object → OK; create signed URL → opens; update/delete own object → OK.
-   - As A: upload to `{B}/...` (other user's path) → **rejected** (policy on first path segment).
+   - As A: upload to `{A}/{board-A}/{img1}` → **success**; select own object → OK; create signed URL → opens; update/delete own object → OK.
+   - As A: upload to `{B}/...` (other user's path) → **rejected** (segment-1 check).
+   - As A: upload to `{A}/{nonexistent-board-uuid}/{img}` → **rejected** (no `sync_documents` row for that board).
+   - As A: upload to `{A}/{board-B}/{img}` (A's user id, B's board) → **rejected** (board does not belong to A).
+   - As A: upload `{A}/{board-A}` without a file-name segment → **rejected** (segment 3 required).
    - As B: read A's object / open A's signed URL → **403**; update/delete A's object → **rejected**.
    - As anon: any object access → **denied**.
-6. Table Editor as `anon` → no rows visible.
+6. Table Editor as `anon` → no rows visible (and no privileges on sync tables).
 
 ## 7. Security verification
 
@@ -90,7 +93,7 @@ Users for the cross-user suite are created through the sandbox **Auth Dashboard*
 
 ## 8. Sandbox teardown / rollback
 
-Run the rollback section of `docs/sql/v15-sync-schema.sql` (§7), then delete the project in Dashboard (Settings → Delete project) if the sandbox is no longer needed. Teardown is only after explicit approval.
+Run the rollback section of `docs/sql/v15-sync-schema.sql` (§8), then delete the project in Dashboard (Settings → Delete project) if the sandbox is no longer needed. Teardown is only after explicit approval.
 
 ## 9. Do NOT (hard rules)
 
@@ -103,4 +106,4 @@ Run the rollback section of `docs/sql/v15-sync-schema.sql` (§7), then delete th
 
 ## 10. Deliverables after customer execution
 
-Return to the architect: project URL (non-secret), anon key (public), SQL execution log, T1–T12 output, storage policy listing, and any deviations. The architect then proceeds to Stage 7B planning (auth UI behind a feature flag, no board upload).
+Return to the architect: project URL (non-secret), anon key (public), SQL execution log, T1–T13 output, storage policy listing, and any deviations. The architect then proceeds to Stage 7B planning (auth UI behind a feature flag, no board upload).
