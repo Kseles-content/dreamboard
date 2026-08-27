@@ -14,6 +14,15 @@
    3. Manifestation mobile/landscape: 100dvh + fallback, safe-area-inset,
       компактность при малой высоте/landscape, min-height:0, overflow-y:auto;
       сохранены swipe, breathing, звук, wake lock, lite-профиль.
+   4. Fullscreen Promise: requestFullscreen() возвращает Promise — rejection
+      обработан через .catch (динамический тест: нет unhandledrejection,
+      dialog остаётся открытым как top-layer fallback).
+   5. Mobile menu: один горизонтально прокручиваемый ряд filters и actions
+      (≤600px, nowrap), корзина не переносится, touch targets ≥44×44,
+      native-кнопка сворачивания (aria-label/aria-expanded/aria-controls,
+      состояние только в памяти вкладки), по умолчанию свёрнуто только в
+      коротком landscape (max-height:500px), компактный доступ к «Режиму
+      Манифестации», desktop layout не изменён.
    ========================================================================== */
 'use strict';
 
@@ -26,6 +35,37 @@ const APP_JS = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
 const STYLE_CSS = fs.readFileSync(path.join(__dirname, 'style.css'), 'utf8');
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
 const PERFORMANCE_JS = fs.readFileSync(path.join(__dirname, 'performance.js'), 'utf8');
+
+// --------------------------------------------------------------------------
+// Хелперы: извлечение function-объявления и целого @media-блока
+// (сбалансированные фигурные скобки).
+// --------------------------------------------------------------------------
+function extractFunction(src, name) {
+    const marker = `function ${name}`;
+    const start = src.indexOf(marker);
+    if (start === -1) return null;
+    const brace = src.indexOf('{', start);
+    if (brace === -1) return null;
+    let depth = 0;
+    for (let i = brace; i < src.length; i++) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(start, i + 1); }
+    }
+    return null;
+}
+
+function mediaBlock(css, query) {
+    const start = css.indexOf(`@media ${query}`);
+    if (start === -1) return null;
+    const open = css.indexOf('{', start);
+    if (open === -1) return null;
+    let depth = 0;
+    for (let i = open; i < css.length; i++) {
+        if (css[i] === '{') depth++;
+        else if (css[i] === '}') { depth--; if (depth === 0) return css.slice(open + 1, i); }
+    }
+    return null;
+}
 
 // ==========================================================================
 // 1. DELETE UX
@@ -114,11 +154,55 @@ test('6b. dialog CSS: fixed/inset:0/100vw/100dvh, без max-width/max-height/ma
 });
 
 test('6c. fullscreen: requestFullscreen в том же gesture, не фатально; exitFullscreen только для viewer; fullscreenchange', () => {
-    assert.ok(APP_JS.includes('dreamViewModal.requestFullscreen()'), 'requestFullscreen после showModal');
-    assert.ok(/requestFullscreen\(\)[\s\S]{0,500}catch/.test(APP_JS), 'ошибки fullscreen не фатальны (try/catch)');
+    const fn = extractFunction(APP_JS, 'requestFullscreenForViewer');
+    assert.ok(fn, 'requestFullscreenForViewer есть');
+    assert.ok(APP_JS.includes('requestFullscreenForViewer(dreamViewModal)'),
+        'fullscreen запрашивается сразу после showModal (тот же user gesture)');
+    assert.ok(fn.includes('.catch('), 'rejection обработан через .catch(() => {})');
+    assert.ok(fn.includes('try') && fn.includes('catch'), 'sync-ошибки тоже не фатальны');
     assert.ok(APP_JS.includes('document.fullscreenElement === dreamViewModal'), 'exitFullscreen только если viewer — fullscreen element');
     assert.ok(APP_JS.includes('document.exitFullscreen()'), 'exitFullscreen вызывается при закрытии');
     assert.ok(APP_JS.includes("addEventListener('fullscreenchange'"), 'fullscreenchange поддержан');
+});
+
+test('6d. динамический: rejected Fullscreen Promise → обработан, dialog открыт, нет unhandledrejection', async () => {
+    const fnSrc = extractFunction(APP_JS, 'requestFullscreenForViewer');
+    assert.ok(fnSrc, 'функция извлекается из app.js');
+    const fn = new Function(`return (${fnSrc});`)();
+
+    const unhandled = [];
+    const onUnhandled = (reason) => unhandled.push(reason);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+        // 1) Promise.reject от requestFullscreen — ошибка НЕ выходит наружу
+        const fakeViewer = {
+            open: true,
+            requestFullscreen() {
+                return Promise.reject(new Error('Fullscreen API: NotAllowedError'));
+            },
+        };
+        fn(fakeViewer);
+        await new Promise(r => setTimeout(r, 30));
+        assert.strictEqual(unhandled.length, 0, 'rejection обработан — unhandledrejection не возник');
+        assert.strictEqual(fakeViewer.open, true, 'dialog остаётся открытым (top-layer fallback)');
+
+        // 2) Синхронный throw из requestFullscreen — тоже не фатально
+        const fakeViewer2 = {
+            open: true,
+            requestFullscreen() {
+                throw new Error('Fullscreen API: sync error');
+            },
+        };
+        fn(fakeViewer2); // не должно бросить
+        assert.strictEqual(fakeViewer2.open, true, 'dialog открыт и при sync-ошибке');
+        assert.strictEqual(unhandled.length, 0, 'нет unhandledrejection и после sync-ошибки');
+
+        // 3) Отсутствие API — тихий no-op
+        fn({ open: true });
+        assert.strictEqual(unhandled.length, 0, 'нет unhandledrejection без API');
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+    }
 });
 
 test('7. поля просмотра заполняются только через textContent/безопасные DOM API', () => {
@@ -319,4 +403,112 @@ test('17. script order и PRECACHE: новых runtime-файлов нет (вс
         'порядок скриптов не изменён');
     const SW_JS = fs.readFileSync(path.join(__dirname, 'service-worker.js'), 'utf8');
     assert.ok(SW_JS.includes("'./app.js'") && SW_JS.includes("'./style.css'"), 'PRECACHE без изменений');
+});
+
+// ==========================================================================
+// 5. МОБИЛЬНОЕ МЕНЮ: сворачивание, one-row scroll, touch targets, desktop
+// ==========================================================================
+
+test('19. mobile (≤600px): filters и actions — один ряд, nowrap + horizontal scroll', () => {
+    const block = mediaBlock(STYLE_CSS, '(max-width: 600px)');
+    assert.ok(block, 'есть @media (max-width: 600px)');
+    const filters = block.match(/\.category-filters\s*\{([^}]*)\}/);
+    assert.ok(filters && /flex-wrap:\s*nowrap;/.test(filters[1]), 'filters nowrap');
+    assert.ok(filters && /overflow-x:\s*auto;/.test(filters[1]), 'filters horizontal scroll');
+    const actions = block.match(/\.header-actions\s*\{([^}]*)\}/);
+    assert.ok(actions && /flex-wrap:\s*nowrap;/.test(actions[1]), 'actions nowrap');
+    assert.ok(actions && /overflow-x:\s*auto;/.test(actions[1]), 'actions horizontal scroll');
+    // Уменьшены только gaps и декоративные padding
+    assert.ok(/gap:\s*8px;/.test(block), 'уменьшенные gap в mobile-блоке');
+    assert.ok(!/padding:\s*(20|24|32)px/.test(block), 'нет крупных декоративных padding');
+});
+
+test('20. trash не переносится одна на новую строку (actions — один ряд)', () => {
+    assert.ok(/<div class="header-actions">[\s\S]*?<button id="trash-toggle-btn"/.test(INDEX_HTML),
+        'кнопка корзины внутри .header-actions');
+    const block = mediaBlock(STYLE_CSS, '(max-width: 600px)');
+    assert.ok(block, 'блок 600px есть');
+    assert.ok(/\.header-actions\s*\{[^}]*flex-wrap:\s*nowrap;/.test(block),
+        'actions nowrap — корзина не может перенестись на новую строку');
+    assert.ok(!/\.header-actions\s*\{[^}]*flex-wrap:\s*wrap;/.test(block),
+        'в mobile-блоке нет flex-wrap:wrap у actions');
+});
+
+test('21. touch targets ≥44×44 (toggle, фильтры, иконки, компактная manifest)', () => {
+    const block = mediaBlock(STYLE_CSS, '(max-width: 600px)');
+    assert.ok(block, 'блок 600px есть');
+    assert.ok(/\.mobile-menu-toggle\s*\{[^}]*width:\s*44px;[^}]*height:\s*44px;/.test(block),
+        'toggle 44×44');
+    assert.ok(/min-width:\s*44px;\s*min-height:\s*44px;/.test(block), 'есть правило 44×44');
+    assert.ok(block.includes('.icon-btn') && block.includes('.toggle-btn'), 'охватывает icon/toggle');
+    assert.ok(/\.filter-btn\s*\{[^}]*min-height:\s*44px;/.test(block), 'filter-btn min-height 44px');
+    assert.ok(/\.mobile-manifest-btn\s*\{[^}]*min-height:\s*44px;/.test(block),
+        'компактная manifest-кнопка ≥44px');
+});
+
+test('22. native-кнопка сворачивания: имя, aria-expanded, aria-controls', () => {
+    const toggle = INDEX_HTML.match(/<button id="mobile-menu-toggle"[\s\S]*?<\/button>/);
+    assert.ok(toggle, 'native <button id="mobile-menu-toggle"> есть');
+    assert.ok(/type="button"/.test(toggle[0]), 'type=button');
+    assert.ok(/aria-label=/.test(toggle[0]), 'доступное имя (aria-label)');
+    assert.ok(/title=/.test(toggle[0]), 'доступное имя (title)');
+    assert.ok(/aria-expanded="true"/.test(toggle[0]), 'aria-expanded начальное (развёрнуто)');
+    assert.ok(/aria-controls="mobile-menu-panel"/.test(toggle[0]), 'aria-controls указывает на панель');
+    assert.ok(/id="mobile-menu-panel"/.test(INDEX_HTML), 'панель #mobile-menu-panel есть');
+    // JS обновляет aria-expanded и класс menu-collapsed
+    assert.ok(APP_JS.includes("setAttribute('aria-expanded', String(!mobileMenuCollapsed))"),
+        'JS переключает aria-expanded');
+    assert.ok(APP_JS.includes("classList.toggle('menu-collapsed', mobileMenuCollapsed)"),
+        'JS переключает класс menu-collapsed');
+});
+
+test('23. по умолчанию свёрнуто ТОЛЬКО в коротком landscape (max-height:500px)', () => {
+    assert.ok(APP_JS.includes("'(orientation: landscape) and (max-height: 500px)'"),
+        'JS использует short-landscape breakpoint');
+    assert.ok(APP_JS.includes('window.matchMedia'), 'matchMedia используется');
+    assert.ok(APP_JS.includes('mobileMenuCollapsed = !!('), 'начальное состояние = short landscape');
+    assert.ok(!/matchMedia\('\(max-width: 600px\)'\)/.test(APP_JS),
+        'сворачивание НЕ привязано к ширине (только short landscape)');
+    assert.ok(/\.mobile-menu-toggle,\s*\.mobile-manifest-btn\s*\{[\s\S]*?display:\s*none;/.test(STYLE_CSS),
+        'на desktop кнопки скрыты (базовое правило)');
+});
+
+test('24. переключение меню НЕ пишет в localStorage/sessionStorage/IDB', () => {
+    const fn = extractFunction(APP_JS, 'initMobileMenu');
+    assert.ok(fn, 'initMobileMenu есть');
+    assert.ok(!/localStorage/.test(fn), 'нет localStorage');
+    assert.ok(!/sessionStorage/.test(fn), 'нет sessionStorage');
+    assert.ok(!/indexedDB/.test(fn), 'нет indexedDB');
+    assert.ok(!/IDBDatabase/.test(fn), 'нет IDBDatabase');
+    const applyFn = extractFunction(APP_JS, 'applyMobileMenuState');
+    assert.ok(applyFn, 'applyMobileMenuState есть');
+    assert.ok(!/localStorage|sessionStorage|indexedDB/.test(applyFn), 'apply тоже без storage');
+});
+
+test('25. desktop: layout не изменён (top-row/panel — display:contents, mobile-кнопки скрыты)', () => {
+    assert.ok(/\.header-top-row\s*\{[\s\S]*?display:\s*contents;/.test(STYLE_CSS),
+        '.header-top-row на desktop растворяется (display:contents)');
+    assert.ok(/#mobile-menu-panel\s*\{[\s\S]*?display:\s*contents;/.test(STYLE_CSS),
+        '#mobile-menu-panel на desktop растворяется (display:contents)');
+    assert.ok(/\.mobile-manifest-btn[^{]*\{[\s\S]*?display:\s*none;/.test(STYLE_CSS),
+        'компактная manifest-кнопка скрыта на desktop');
+    // Базовое правило .app-header не получило переносов/скролла
+    const baseHeader = STYLE_CSS.match(/\.app-header\s*\{([^}]*)\}/);
+    assert.ok(baseHeader && !/flex-wrap:\s*wrap/.test(baseHeader[1]), 'desktop .app-header без wrap');
+    assert.ok(baseHeader && !/overflow-x:\s*auto/.test(baseHeader[1]), 'desktop .app-header без скролла');
+    // Основная manifest-кнопка осталась в .header-actions (desktop-вид прежний)
+    assert.ok(/<div class="header-actions">[\s\S]*?id="start-manifest-btn"/.test(INDEX_HTML),
+        'основная manifest-кнопка осталась в actions');
+});
+
+test('26. компактный доступ к «Режиму Манифестации» при свёрнутом меню', () => {
+    const compactBtn = INDEX_HTML.match(/<button id="mobile-manifest-btn"[\s\S]*?Режим Манифестации[\s\S]*?<\/button>/);
+    assert.ok(compactBtn, 'mobile-manifest-btn с текстом «Режим Манифестации» есть');
+    assert.ok(APP_JS.includes("mobileManifestBtn.addEventListener('click'"), 'компактная кнопка привязана');
+    assert.ok(APP_JS.includes('startManifestBtn.click()'), 'использует ту же логику, что основная кнопка');
+    const block = mediaBlock(STYLE_CSS, '(max-width: 600px)');
+    assert.ok(block && /\.mobile-manifest-btn\s*\{[^}]*display:\s*inline-flex;/.test(block),
+        'компактная manifest видна на mobile (в т.ч. при свёрнутом меню)');
+    assert.ok(/\.app-header\.menu-collapsed\s+#mobile-menu-panel\s*\{[\s\S]*?display:\s*none;/.test(STYLE_CSS),
+        'при сворачивании скрывается только панель (filters/actions)');
 });

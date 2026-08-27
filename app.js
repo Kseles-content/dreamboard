@@ -2397,19 +2397,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Fullscreen в рамках того же user gesture. Ошибки/отсутствие API
         // не фатальны: dialog остаётся в top layer (fallback).
-        if (typeof dreamViewModal.requestFullscreen === 'function') {
-            try {
-                const fsPromise = dreamViewModal.requestFullscreen();
-                if (fsPromise && typeof fsPromise.catch === 'function') {
-                    fsPromise.catch(() => { /* Fullscreen отклонён/недоступен — top-layer fallback */ });
-                }
-            } catch (err) {
-                /* не фатально */
-            }
-        }
+        requestFullscreenForViewer(dreamViewModal);
 
         // Начальный фокус — кнопка закрытия.
         if (dreamViewCloseBtn) dreamViewCloseBtn.focus();
+    }
+
+    // requestFullscreen() возвращает Promise — rejection обрабатывается через
+    // .catch(() => {}), чтобы не возникало unhandledrejection; sync-ошибки
+    // (API недоступно/не в user gesture) тоже не фатальны. При любой ошибке
+    // viewer остаётся открытым в browser top layer (fallback).
+    function requestFullscreenForViewer(viewerEl) {
+        if (!viewerEl || typeof viewerEl.requestFullscreen !== 'function') return;
+        let fsPromise;
+        try {
+            fsPromise = viewerEl.requestFullscreen();
+        } catch (err) {
+            return; // Fullscreen API недоступно/отклонено — не фатально
+        }
+        if (fsPromise && typeof fsPromise.then === 'function') {
+            fsPromise.catch(() => { /* Fullscreen отклонён — top-layer dialog fallback */ });
+        }
     }
 
     function closeDreamViewModal() {
@@ -2821,6 +2829,55 @@ document.addEventListener('DOMContentLoaded', () => {
     exitManifestBtn.addEventListener('click', () => {
         exitManifestMode();
     });
+
+    // ==========================================================================
+    // 2d. МОБИЛЬНОЕ МЕНЮ (сворачивание/раскрытие)
+    // ==========================================================================
+    // Состояние хранится ТОЛЬКО в памяти вкладки (переменная) — без
+    // localStorage/sessionStorage/IDB. По умолчанию свёрнуто только в коротком
+    // landscape (max-height: 500px); desktop не затрагивается (кнопки скрыты CSS).
+
+    const mobileMenuToggle = document.getElementById('mobile-menu-toggle');
+    const mobileMenuPanel = document.getElementById('mobile-menu-panel');
+    const mobileManifestBtn = document.getElementById('mobile-manifest-btn');
+    let mobileMenuCollapsed = false; // состояние только в памяти вкладки
+
+    function applyMobileMenuState() {
+        if (!mobileMenuToggle) return;
+        const header = document.querySelector('.app-header');
+        if (header) {
+            header.classList.toggle('menu-collapsed', mobileMenuCollapsed);
+        }
+        mobileMenuToggle.setAttribute('aria-expanded', String(!mobileMenuCollapsed));
+        mobileMenuToggle.setAttribute('aria-label', mobileMenuCollapsed ? 'Развернуть меню' : 'Свернуть меню');
+        mobileMenuToggle.title = mobileMenuCollapsed ? 'Развернуть меню' : 'Свернуть меню';
+    }
+
+    function initMobileMenu() {
+        if (!mobileMenuToggle) return;
+        // По умолчанию свёрнуто ТОЛЬКО в коротком landscape (max-height: 500px).
+        const shortLandscapeQuery = '(orientation: landscape) and (max-height: 500px)';
+        const shortLandscape = typeof window.matchMedia === 'function'
+            ? window.matchMedia(shortLandscapeQuery)
+            : null;
+        mobileMenuCollapsed = !!(shortLandscape && shortLandscape.matches);
+        applyMobileMenuState();
+
+        mobileMenuToggle.addEventListener('click', () => {
+            // Переключение только в памяти вкладки — никаких записей в storage/IDB.
+            mobileMenuCollapsed = !mobileMenuCollapsed;
+            applyMobileMenuState();
+        });
+    }
+    initMobileMenu();
+
+    // Компактная кнопка «Режим Манифестации» (видна при свёрнутом мобильном меню)
+    // использует ту же логику, что и основная кнопка в .header-actions.
+    if (mobileManifestBtn && startManifestBtn) {
+        mobileManifestBtn.addEventListener('click', () => {
+            startManifestBtn.click();
+        });
+    }
 
     function enterManifestMode(activeDreams) {
         initAudioContext();

@@ -300,6 +300,23 @@ body {
     transform: scale(0.97);
 }
 
+/* v14-ux: мобильное меню — desktop (base) состояние.
+   .header-top-row и #mobile-menu-panel на desktop «растворяются»
+   (display: contents), сохраняя прежний flex-layout шапки 1-в-1;
+   мобильные кнопки скрыты. */
+.header-top-row {
+    display: contents;
+}
+
+#mobile-menu-panel {
+    display: contents;
+}
+
+.mobile-menu-toggle,
+.mobile-manifest-btn {
+    display: none;
+}
+
 /* РАБОЧАЯ ОБЛАСТЬ */
 .app-workspace {
     flex-grow: 1;
@@ -2732,6 +2749,177 @@ textarea:focus {
 
     .manifest-rotate-prompt {
         display: none !important;
+    }
+}
+
+/* v14-ux: мобильное меню — один ряд фильтров и один ряд действий (≤600px):
+   nowrap + горизонтальный скролл, корзина не переносится одна на новую
+   строку, touch targets ≥44×44; уменьшены только gaps и декоративные
+   padding. Сворачивание — кнопка #mobile-menu-toggle (native button,
+   aria-expanded/aria-controls; состояние только в памяти вкладки). */
+@media (max-width: 600px) {
+    .header-top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .mobile-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: 12px;
+        background: var(--panel-glass);
+        border: 1px solid var(--panel-glass-border);
+        color: var(--text-primary);
+        cursor: pointer;
+    }
+
+    .menu-collapse-icon { display: block; }
+    .menu-expand-icon { display: none; }
+    .app-header.menu-collapsed .menu-collapse-icon { display: none; }
+    .app-header.menu-collapsed .menu-expand-icon { display: block; }
+
+    #mobile-menu-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .app-header.menu-collapsed #mobile-menu-panel {
+        display: none;
+    }
+
+    .mobile-manifest-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1 1 auto;
+        min-height: 44px;
+        padding: 8px 14px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    /* Один горизонтально прокручиваемый ряд */
+    .category-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .category-filters::-webkit-scrollbar,
+    .header-actions::-webkit-scrollbar {
+        display: none;
+    }
+
+    .header-actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        justify-content: flex-start;
+        gap: 8px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    /* Основная manifest-кнопка скрыта: компактный доступ — в header-top-row */
+    #start-manifest-btn {
+        display: none;
+    }
+
+    /* Touch targets ≥44×44 */
+    .icon-btn,
+    .toggle-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .filter-btn {
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+}
+
+/* v14-ux: короткий landscape (max-height: 500px) — меню по умолчанию свёрнуто
+   (состояние задаёт JS: только short landscape), компактная шапка минимальна,
+   раскрытие доступно пользователю; desktop не затрагивается. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .header-top-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 0;
+    }
+
+    .mobile-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: 12px;
+        background: var(--panel-glass);
+        border: 1px solid var(--panel-glass-border);
+        color: var(--text-primary);
+        cursor: pointer;
+    }
+
+    .menu-collapse-icon { display: block; }
+    .menu-expand-icon { display: none; }
+    .app-header.menu-collapsed .menu-collapse-icon { display: none; }
+    .app-header.menu-collapsed .menu-expand-icon { display: block; }
+
+    .mobile-manifest-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: auto;
+        min-height: 44px;
+        padding: 6px 14px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    #mobile-menu-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 100%;
+        max-height: calc(100dvh - 60px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .app-header.menu-collapsed #mobile-menu-panel {
+        display: none;
+    }
+
+    .header-actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 6px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .category-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
     }
 }
 

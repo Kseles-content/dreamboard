@@ -36,6 +36,7 @@
     <div class="app-container">
         <!-- Шапка / Панель Управления -->
         <header class="app-header">
+            <div class="header-top-row">
             <div class="header-logo">
                 <svg width="28" height="28" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M12 2L14.8 8.4L21.8 9L16.5 13.6L18.1 20.5L12 16.8L5.9 20.5L7.5 13.6L2.2 9L9.2 8.4L12 2Z" fill="url(#star-grad)" stroke="url(#star-grad)" stroke-width="1.5" stroke-linejoin="round"/>
@@ -48,6 +49,27 @@
                     </defs>
                 </svg>
                 <h1>DreamBoard</h1>
+            </div>
+
+            <!-- Компактный доступ к «Режиму Манифестации»: виден на mobile
+                 (в т.ч. при свёрнутом меню); на desktop скрыт — используется
+                 основная кнопка в .header-actions. -->
+            <button id="mobile-manifest-btn" class="glow-btn mobile-manifest-btn" type="button">
+                <span>Режим Манифестации</span>
+            </button>
+
+            <!-- Native-кнопка сворачивания мобильного меню (mobile только):
+                 доступное имя (aria-label/title), aria-expanded, aria-controls;
+                 состояние — только в памяти вкладки. -->
+            <button id="mobile-menu-toggle" class="mobile-menu-toggle" type="button"
+                    aria-label="Свернуть меню" aria-expanded="true" aria-controls="mobile-menu-panel" title="Свернуть меню">
+                <svg class="menu-collapse-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="6 9 12 15 18 9"/>
+                </svg>
+                <svg class="menu-expand-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="6 15 12 9 18 15"/>
+                </svg>
+            </button>
             </div>
 
             <!-- Селектор Мульти-досок: функции запланированы на следующие этапы v14 (реализация отсутствует) -->
@@ -66,6 +88,8 @@
                 </button>
             </div>
 
+            <!-- Мобильное меню: filters + actions (сворачивается кнопкой #mobile-menu-toggle) -->
+            <div id="mobile-menu-panel" class="mobile-menu-panel">
             <!-- Фильтр категорий -->
             <nav class="category-filters">
                 <button class="filter-btn active" data-category="all">Все</button>
@@ -165,6 +189,7 @@
                 <button id="start-manifest-btn" class="glow-btn">
                     <span>Режим Манифестации</span>
                 </button>
+            </div>
             </div>
         </header>
 
