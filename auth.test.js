@@ -89,7 +89,13 @@ test('7. accessible account dialog clearly states local-first consent', () => {
 test('8. scripts are self-hosted, pinned with SRI, and no inline script remains', () => {
     assert.doesNotMatch(INDEX, /cdnjs|unpkg|jsdelivr/);
     assert.match(INDEX, /assets\/vendor\/html2canvas-1\.4\.1\.min\.js" integrity="sha384-/);
-    assert.match(INDEX, /assets\/vendor\/supabase-js-2\.112\.2\.min\.js" integrity="sha384-/);
+    // supabase SDK is NOT a static script in index.html — auth.js loads it dynamically
+    // only when auth is enabled and the configuration validates.
+    assert.doesNotMatch(INDEX, /<script[^>]*assets\/vendor\/supabase-js-2\.112\.2\.min\.js/);
+    assert.match(AUTH, /assets\/vendor\/supabase-js-2\.112\.2\.min\.js/);
+    assert.match(AUTH, /sha384-OUpie84zd1LdwNlK9uJJQRwab0BLqo3eKYKFh7hSVL58FSk7wPp2l0kfUMIIoaQd/);
+    assert.match(AUTH, /SDK_CROSS_ORIGIN = 'anonymous'/);
+    assert.match(AUTH, /script\.crossOrigin = SDK_CROSS_ORIGIN/);
     assert.doesNotMatch(INDEX, /<script(?:\s[^>]*)?>\s*(?!<\/script>)[\s\S]*?<\/script>/);
 });
 
@@ -129,4 +135,93 @@ test('11. Turnstile loads only through the fixed official endpoint and writes to
     assert.equal(input.value, 'verified-token');
     options['expired-callback']();
     assert.equal(input.value, '');
+});
+
+// --- Dynamic SDK loading (FIX REQUIRED): no script when disabled; exactly one
+// --- when enabled; load failures are safe; repeated init never duplicates. ---
+
+function makeFakeWin(config, opts) {
+    const created = [];
+    const appended = [];
+    const document = {
+        createElement(tag) {
+            const el = {
+                tag,
+                addEventListener(name, fn) { this['on' + name] = fn; }
+            };
+            created.push(el);
+            return el;
+        },
+        getElementById() { return null; },
+        querySelector() { return null; },
+        head: { appendChild(node) { appended.push(node); } }
+    };
+    const win = {
+        DreamBoardConfig: config,
+        document,
+        location: { origin: 'https://app.example.test', pathname: '/dreamboard/' }
+    };
+    if (opts && opts.supabase) win.supabase = opts.supabase;
+    return { win, created, appended };
+}
+
+const VALID_AUTH_CONFIG = {
+    authEnabled: true,
+    supabaseUrl: 'https://project.supabase.co',
+    supabasePublishableKey: 'sb_publishable_example123',
+    turnstileSiteKey: 'site-key'
+};
+
+const tick = () => new Promise(resolve => setImmediate(resolve));
+
+test('13. disabled feature creates NO script tag and loads no SDK', async () => {
+    const { win, created } = makeFakeWin({ authEnabled: false });
+    const result = auth.initBrowser(win);
+    assert.equal(result.enabled, false);
+    await tick();
+    assert.equal(created.length, 0, 'no <script> may be created when auth is disabled');
+});
+
+test('14. enabled feature creates exactly one SDK script with pinned SRI; repeated init does not duplicate', async () => {
+    const { win, created } = makeFakeWin(VALID_AUTH_CONFIG);
+    auth.initBrowser(win);
+    await tick();
+    assert.equal(created.length, 1);
+    const script = created[0];
+    assert.equal(script.src, 'assets/vendor/supabase-js-2.112.2.min.js');
+    assert.equal(script.integrity, 'sha384-OUpie84zd1LdwNlK9uJJQRwab0BLqo3eKYKFh7hSVL58FSk7wPp2l0kfUMIIoaQd');
+    assert.equal(script.crossOrigin, 'anonymous');
+    // повторная инициализация (например, повторный DOMContentLoaded-вызов) не дублирует загрузку
+    auth.initBrowser(win);
+    await tick();
+    assert.equal(created.length, 1, 'SDK <script> must be created exactly once');
+});
+
+test('15. SDK load failure is safe: resolves disabled, no exception, no second script', async () => {
+    const { win, created } = makeFakeWin(VALID_AUTH_CONFIG);
+    auth.initBrowser(win);
+    await tick();
+    assert.equal(created.length, 1);
+    // симулируем сетевую ошибку загрузки — не должно быть throw/unhandled rejection
+    created[0].onerror();
+    await tick();
+    // повторный init после ошибки не плодит новые <script> (fail-closed, один шанс за страницу)
+    auth.initBrowser(win);
+    await tick();
+    assert.equal(created.length, 1, 'no duplicate script after a failed load');
+});
+
+test('16. already-loaded SDK is reused: no script tag is created at all', async () => {
+    const authStub = {
+        getSession: () => Promise.resolve({ data: { session: null } }),
+        onAuthStateChange: () => ({}),
+        signInWithPassword() {}, signUp() {}, resetPasswordForEmail() {},
+        updateUser() {}, signOut() {}
+    };
+    const { win, created } = makeFakeWin(VALID_AUTH_CONFIG, {
+        supabase: { createClient() { return { auth: authStub }; } }
+    });
+    auth.initBrowser(win);
+    await tick();
+    assert.equal(created.length, 0, 'no SDK script needed when supabase is already present');
 });

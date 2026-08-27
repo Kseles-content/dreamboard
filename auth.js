@@ -9,6 +9,33 @@
     var EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     var PUBLIC_KEY_RE = /^(?:sb_publishable_[A-Za-z0-9_-]+|eyJ[A-Za-z0-9_-]*\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/;
 
+    // Self-hosted, pinned Supabase SDK: loaded dynamically ONLY when auth is
+    // enabled and the configuration validates (fail-closed). The integrity hash
+    // is the verified SHA384 of assets/vendor/supabase-js-2.112.2.min.js.
+    var SDK_SRC = 'assets/vendor/supabase-js-2.112.2.min.js';
+    var SDK_INTEGRITY = 'sha384-OUpie84zd1LdwNlK9uJJQRwab0BLqo3eKYKFh7hSVL58FSk7wPp2l0kfUMIIoaQd';
+    var SDK_CROSS_ORIGIN = 'anonymous';
+
+    // Per-window loader cache: a second init() never duplicates the <script>.
+    function loadSupabaseSdk(win) {
+        if (win.supabase && typeof win.supabase.createClient === 'function') return Promise.resolve(true);
+        if (win.__dreamBoardSdkPromise) return win.__dreamBoardSdkPromise;
+        var promise = new Promise(function (resolve) {
+            if (!win.document || !win.document.createElement) { resolve(false); return; }
+            var script = win.document.createElement('script');
+            script.src = SDK_SRC;
+            script.integrity = SDK_INTEGRITY;
+            script.crossOrigin = SDK_CROSS_ORIGIN;
+            script.addEventListener('load', function () {
+                resolve(!!(win.supabase && typeof win.supabase.createClient === 'function'));
+            }, { once: true });
+            script.addEventListener('error', function () { resolve(false); }, { once: true });
+            (win.document.head || win.document.documentElement).appendChild(script);
+        });
+        win.__dreamBoardSdkPromise = promise;
+        return promise;
+    }
+
     function normalizeConfig(value) {
         var source = value && typeof value === 'object' ? value : {};
         return Object.freeze({
@@ -105,23 +132,9 @@
         });
     }
 
-    function initBrowser(env) {
-        var win = env || (typeof window !== 'undefined' ? window : null);
-        if (!win || !win.document) return { enabled: false };
-        var config = normalizeConfig(win.DreamBoardConfig);
+    function setupAuthUi(win, config) {
         var button = win.document.getElementById('account-toggle-btn');
         var dialog = win.document.getElementById('auth-modal');
-        if (!config.authEnabled) return { enabled: false };
-        if (button) button.hidden = false;
-        var check = validateConfig(config);
-        if (!check.ok || !win.supabase || typeof win.supabase.createClient !== 'function') {
-            if (button) {
-                button.disabled = true;
-                button.title = 'Аккаунт временно недоступен';
-            }
-            return { enabled: true, ready: false, reason: check.reason || 'sdk_missing' };
-        }
-
         var client = win.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
             auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         });
@@ -213,6 +226,37 @@
         return { enabled: true, ready: true, client: client, service: service };
     }
 
+    function initBrowser(env) {
+        var win = env || (typeof window !== 'undefined' ? window : null);
+        if (!win || !win.document) return { enabled: false };
+        var config = normalizeConfig(win.DreamBoardConfig);
+        var button = win.document.getElementById('account-toggle-btn');
+        if (!config.authEnabled) return { enabled: false };
+        if (button) button.hidden = false;
+        var check = validateConfig(config);
+        if (!check.ok) {
+            if (button) {
+                button.disabled = true;
+                button.title = 'Аккаунт временно недоступен';
+            }
+            return { enabled: true, ready: false, reason: check.reason };
+        }
+        // Dynamic, fail-closed SDK load: no script tag is created unless auth is
+        // enabled AND the configuration is valid. Errors resolve to false and
+        // degrade to a disabled button — never an exception.
+        loadSupabaseSdk(win).then(function (loaded) {
+            if (!loaded || !win.supabase || typeof win.supabase.createClient !== 'function') {
+                if (button) {
+                    button.disabled = true;
+                    button.title = 'Аккаунт временно недоступен';
+                }
+                return;
+            }
+            setupAuthUi(win, config);
+        });
+        return { enabled: true, ready: 'pending' };
+    }
+
     var api = Object.freeze({
         normalizeConfig: normalizeConfig,
         validateConfig: validateConfig,
@@ -220,6 +264,7 @@
         safeMessage: safeMessage,
         createAuthService: createAuthService,
         mountTurnstile: mountTurnstile,
+        loadSupabaseSdk: loadSupabaseSdk,
         initBrowser: initBrowser
     });
     if (typeof window !== 'undefined' && window.document) {

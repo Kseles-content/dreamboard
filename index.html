@@ -549,9 +549,13 @@
     <!-- Элемент для всплывающих уведомлений -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions"></div>
 
-    <!-- html2canvas для экспорта PNG -->
+    <!-- html2canvas для экспорта PNG (всегда нужен; self-hosted, SRI) -->
     <script src="assets/vendor/html2canvas-1.4.1.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"></script>
-    <script src="assets/vendor/supabase-js-2.112.2.min.js" integrity="sha384-OUpie84zd1LdwNlK9uJJQRwab0BLqo3eKYKFh7hSVL58FSk7wPp2l0kfUMIIoaQd"></script>
+
+    <!-- supabase-js НЕ подключается статически: auth.js загружает его динамически
+         (assets/vendor/supabase-js-2.112.2.min.js, с проверенным SRI) ТОЛЬКО после
+         проверки DreamBoardConfig.authEnabled === true и валидной конфигурации.
+         При authEnabled:false SDK не скачивается и не исполняется вовсе. -->
 
     <script src="storage.js"></script>
     <script src="backup.js"></script>
