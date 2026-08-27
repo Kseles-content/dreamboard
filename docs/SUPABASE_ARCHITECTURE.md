@@ -1,864 +1,157 @@
-# DreamBoard — Supabase Backend Architecture
+# DreamBoard v15 — Sync Architecture Specification (approved)
 
-> **Version:** 1.0  
-> **Status:** Draft for review  
-> **Intended reading:** Full-stack developers working on DreamBoard.  
-> **Relationship to other docs:** This document describes the Supabase integration planned *after* local image upload. For the current vanilla-SPA codebase see `app.js` and related.
-
----
-
-## Table of Contents
-
-1. [Overview & Motivation](#1-overview--motivation)
-2. [Current Architecture (Baseline)](#2-current-architecture-baseline)
-3. [Target Architecture](#3-target-architecture)
-4. [Schema: Tables & Relationships](#4-schema-tables--relationships)
-5. [Row-Level Security (RLS) Policies](#5-row-level-security-rls-policies)
-6. [Storage: Dream Images](#6-storage-dream-images)
-7. [Config for GitHub Pages (no Vite)](#7-config-for-github-pages-no-vite)
-8. [API Methods (Supabase JS Client)](#8-api-methods-supabase-js-client)
-9. [Local Storage → Account Migration Flow](#9-local-storage--account-migration-flow)
-10. [Integration Steps](#10-integration-steps)
-11. [File Change Plan](#11-file-change-plan)
+**Status:** APPROVED (Stage 7A revision accepted 2026-08-27)
+**Baseline:** DreamBoard v14 production `main@a7d7c4f`, local-first vanilla SPA (GitHub Pages)
+**Scope of this document:** replaces the previous `SUPABASE_ARCHITECTURE.md` draft (v1.0, 2026-06-06) which predates v14 and must not be executed literally.
+**Stage:** 7B–7E implementation follows; Stage 7B and the Supabase project are NOT started yet.
 
 ---
 
-## 1. Overview & Motivation
-
-DreamBoard is currently a **vanilla (no framework) single-page application** hosted on GitHub Pages. All data—dreams, milestones, images—lives in `localStorage` and / or IndexedDB.
-
-### Why Supabase
-
-| Need | Supabase approach |
-|---|---|
-| User registration & auth | Supabase Auth (email + OAuth providers) |
-| Cross-device board sync | PostgreSQL + Supabase JS client (real-time optional) |
-| Image storage | Supabase Storage (S3-based) |
-| Per-user data isolation | RLS (Row-Level Security) on every table |
-| No backend code to maintain | Direct-to-database client (anon key + RLS) |
-| Future real-time collaboration | Supabase Realtime (Postgres replication) |
-
-### Why NOT Firebase
-
-- Supabase uses **PostgreSQL** — relational schema fits boards → dreams → milestones naturally.
-- Lower vendor lock-in: Postgres + S3 are portable.
-- Supabase has a free tier generous enough for early users.
-
----
-
-## 2. Current Architecture (Baseline)
-
-```
-┌──────────────────────────────────────┐
-│  GitHub Pages (Static SPA)           │
-│                                      │
-│  ├── index.html                      │
-│  ├── style.css                       │
-│  ├── app.js          ← all app logic │
-│  ├── manifest.json                   │
-│  ├── service-worker.js               │
-│  └── assets/                         │
-│       ├── icons/                     │
-│       └── images/  ← static defaults │
-│                                      │
-│  Data: localStorage('dreams_db')     │
-│  Images: unsplash URLs + defaults    │
-│  Auth: none                          │
-└──────────────────────────────────────┘
-```
-
-- Vanilla JS, no build step, no environment variables at build time.
-- `config.js` will supply Supabase credentials at runtime (see §7).
-- Images for user-uploaded content are stored in **IndexedDB** (stage 1, local). In stage 2 they move to Supabase Storage.
-
----
-
-## 3. Target Architecture
-
-```
-┌──────────────────────────────────┐      ┌────────────────────────────────┐
-│  GitHub Pages (Static SPA)       │      │  Supabase Project              │
-│                                  │      │                                │
-│  ├── index.html                  │      │  ├── Auth                      │
-│  ├── style.css                   │      │  │   ├── Email + password      │
-│  ├── app.js                      │      │  │   ├── Google OAuth          │
-│  ├── supabase.js (NEW)           │─────▶│  │   └── GitHub OAuth          │
-│  ├── auth.js (NEW)               │      │  │                              │
-│  ├── config.js (NEW)             │      │  ├── Postgres Database         │
-│  ├── manifest.json               │      │  │   ├── profiles              │
-│  ├── service-worker.js           │      │  │   ├── boards                │
-│  └── assets/                     │      │  │   ├── dreams                │
-│       ├── icons/                 │      │  │   ├── milestones            │
-│       └── images/                │      │  │   └── images                │
-│                                  │      │  │                              │
-│  Data Flow:                      │      │  ├── Storage (S3-compatible)   │
-│  ├── localStorage = session      │      │  │   └── dream-images/ bucket  │
-│  ├── IndexedDB = local images    │      │  │                              │
-│  └── Supabase = source of truth  │      │  └── RLS on all tables         │
-│                                  │      └────────────────────────────────┘
-└──────────────────────────────────┘
-```
-
-**Key principle:** Supabase is the source of truth. `localStorage` becomes a read-only cache for offline support (future).
-
----
-
-## 4. Schema: Tables & Relationships
-
-### 4.1 `profiles`
-
-Extends Supabase `auth.users` with application-specific data.
-
-```sql
-CREATE TABLE profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    username TEXT UNIQUE,
-    display_name TEXT,
-    avatar_url TEXT,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-
--- Auto-create profile on signup
-CREATE FUNCTION handle_new_user()
-RETURNS TRIGGER AS $$
-BEGIN
-    INSERT INTO public.profiles (id, username, display_name)
-    VALUES (
-        NEW.id,
-        COALESCE(NEW.raw_user_meta_data->>'username', 'user_' || substr(NEW.id::text, 1, 8)),
-        COALESCE(NEW.raw_user_meta_data->>'full_name', 'New Dreamer')
-    );
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
-
-CREATE TRIGGER on_auth_user_created
-    AFTER INSERT ON auth.users
-    FOR EACH ROW
-    EXECUTE FUNCTION handle_new_user();
-```
-
-### 4.2 `boards`
-
-A board is a top-level container — a "DreamBoard". Each user has at least one.
-
-```sql
-CREATE TABLE boards (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    title TEXT NOT NULL DEFAULT 'My DreamBoard',
-    description TEXT DEFAULT '',
-    color TEXT DEFAULT '#6366f1',          -- theme accent
-    sort_order INT DEFAULT 0,
-    is_default BOOLEAN DEFAULT false,      -- first auto-created board
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-```
-
-### 4.3 `dreams`
-
-Individual dream cards. Belong to a board.
-
-```sql
-CREATE TABLE dreams (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    board_id UUID NOT NULL REFERENCES boards(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    description TEXT DEFAULT '',
-    category TEXT DEFAULT 'career',
-    target_year INT,
-    status TEXT NOT NULL DEFAULT 'active'
-        CHECK (status IN ('active', 'manifested', 'archived')),
-    image_url TEXT,                       -- legacy Unsplash URL
-    image_path TEXT,                      -- Supabase Storage path (user_id/dream_id/*.webp)
-    canvas_pos_x FLOAT DEFAULT 0,
-    canvas_pos_y FLOAT DEFAULT 0,
-    canvas_width FLOAT DEFAULT 320,
-    canvas_height FLOAT DEFAULT 420,
-    sort_order INT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT now(),
-    updated_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE INDEX idx_dreams_board_id ON dreams(board_id);
-CREATE INDEX idx_dreams_user_id ON dreams(user_id);
-CREATE INDEX idx_dreams_status ON dreams(status);
-```
-
-**Statuses:**
-
-| Status | Meaning |
-|---|---|
-| `active` | Dream in progress, visible on the main board |
-| `manifested` | Achieved / manifested — moved to Archive of Gratitude |
-| `archived` | Archived without achievement (deleted from main view) |
-
-### 4.4 `milestones`
-
-Sub-goals / checklists under a dream.
-
-```sql
-CREATE TABLE milestones (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    dream_id UUID NOT NULL REFERENCES dreams(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    title TEXT NOT NULL,
-    completed BOOLEAN DEFAULT false,
-    completed_at TIMESTAMPTZ,
-    sort_order INT DEFAULT 0,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE INDEX idx_milestones_dream_id ON milestones(dream_id);
-CREATE INDEX idx_milestones_user_id ON milestones(user_id);
-```
-
-### 4.5 `images`
-
-Metadata for uploaded images (kept separate from dreams for reusability).
-
-```sql
-CREATE TABLE images (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
-    storage_path TEXT NOT NULL,            -- full storage object path
-    original_name TEXT,
-    mime_type TEXT DEFAULT 'image/webp',
-    size_bytes INT,
-    width INT,
-    height INT,
-    created_at TIMESTAMPTZ DEFAULT now()
-);
-
-CREATE INDEX idx_images_user_id ON images(user_id);
-```
-
-### 4.6 Entity Relationship
-
-```
-auth.users
-    │
-    ▼
-profiles ──── boards ──── dreams ──── milestones
-    │            │            │
-    │            │            └── images (via image_path / dream_id)
-    │            └── (user_id FK)
-    │
-    └── images (user_id FK)
-
-storage.objects (bucket: dream-images)
-    └── user_id/dream_id/image.webp  ← referenced by dreams.image_path
-```
-
----
-
-## 5. Row-Level Security (RLS) Policies
-
-### 5.1 Enable RLS
-
-```sql
-ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
-ALTER TABLE boards    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE dreams    ENABLE ROW LEVEL SECURITY;
-ALTER TABLE milestones ENABLE ROW LEVEL SECURITY;
-ALTER TABLE images    ENABLE ROW LEVEL SECURITY;
-```
-
-### 5.2 `profiles`
-
-```sql
--- Read: any authenticated user can read basic profile info
-CREATE POLICY "Profiles are publicly readable"
-    ON profiles FOR SELECT
-    USING (true);
-
--- Write: only own profile
-CREATE POLICY "Users can update own profile"
-    ON profiles FOR UPDATE
-    USING (id = auth.uid());
-
-CREATE POLICY "Users can insert own profile"
-    ON profiles FOR INSERT
-    WITH CHECK (id = auth.uid());
-
--- Note: DELETE is deliberately not open — profile deletion is
--- handled via Supabase admin API or trigger.
-```
-
-### 5.3 `boards`
-
-```sql
-CREATE POLICY "Users own their boards"
-    ON boards FOR ALL
-    USING (user_id = auth.uid());
-
--- Insert: must belong to current user
-CREATE POLICY "Users create their own boards"
-    ON boards FOR INSERT
-    WITH CHECK (user_id = auth.uid());
-```
-
-### 5.4 `dreams`
-
-```sql
--- SELECT, UPDATE, DELETE: own dreams only
-CREATE POLICY "Users own their dreams"
-    ON dreams FOR ALL
-    USING (user_id = auth.uid());
-
-CREATE POLICY "Users create their own dreams"
-    ON dreams FOR INSERT
-    WITH CHECK (user_id = auth.uid());
-```
-
-### 5.5 `milestones`
-
-```sql
-CREATE POLICY "Users own their milestones"
-    ON milestones FOR ALL
-    USING (user_id = auth.uid());
-
-CREATE POLICY "Users create their own milestones"
-    ON milestones FOR INSERT
-    WITH CHECK (user_id = auth.uid());
-```
-
-### 5.6 `images`
-
-```sql
-CREATE POLICY "Users own their images"
-    ON images FOR ALL
-    USING (user_id = auth.uid());
-
-CREATE POLICY "Users create their own images"
-    ON images FOR INSERT
-    WITH CHECK (user_id = auth.uid());
-```
-
-### 5.7 `storage.objects` (Supabase Storage)
-
-Bucket: `dream-images` (private bucket)
-
-```sql
-CREATE POLICY "Users can view their own images"
-    ON storage.objects FOR SELECT
-    USING (auth.role() = 'authenticated')
-    -- Additional path-level: auth.uid()::text = (storage.foldername(name))[1]
-    AND (storage.foldername(name))[1] = auth.uid()::text;
-
-CREATE POLICY "Users can upload their own images"
-    ON storage.objects FOR INSERT
-    WITH CHECK (
-        auth.role() = 'authenticated'
-        AND (storage.foldername(name))[1] = auth.uid()::text
-    );
-
-CREATE POLICY "Users can update their own images"
-    ON storage.objects FOR UPDATE
-    USING (
-        auth.role() = 'authenticated'
-        AND (storage.foldername(name))[1] = auth.uid()::text
-    );
-
-CREATE POLICY "Users can delete their own images"
-    ON storage.objects FOR DELETE
-    USING (
-        auth.role() = 'authenticated'
-        AND (storage.foldername(name))[1] = auth.uid()::text
-    );
-```
-
-**Path format enforced by policies:** `{user_id}/{dream_id}/{filename}.webp`
-
-The first folder segment (`user_id`) is compared against `auth.uid()`. This ensures that even if a user knows another user's Storage URL, they cannot read/delete it.
-
----
-
-## 6. Storage: Dream Images
-
-### 6.1 Bucket Configuration
-
-| Property | Value |
-|---|---|
-| Bucket name | `dream-images` |
-| Visibility | **Private** (not public) |
-| File limit | 10 MB per file |
-| Allowed MIME types | `image/jpeg`, `image/png`, `image/webp`, `image/gif` |
-| Allowed file extensions | `.jpg`, `.jpeg`, `.png`, `.webp`, `.gif` |
-
-### 6.2 Upload Path Convention
-
-```
-dream-images/{user_id}/{dream_id}/{timestamp}-{hash}.webp
-```
-
-Example:
-```
-dream-images/a1b2c3d4-e5f6-7890-abcd-ef1234567890/board/uuid/dream/uuid/1687123456-aB3dE9.webp
-```
-
-### 6.3 Client-Side Upload Flow
-
-1. User selects an image from their device
-2. **Client-side processing** (Canvas API):
-   - Auto-crop to 3:2 or 1:1 aspect ratio
-   - Compress to WebP (quality 80-85)
-   - Max dimension 1920px
-3. If user is **not authenticated** → save to IndexedDB
-4. If user is **authenticated** → upload to Supabase Storage:
-   ```js
-   const { data, error } = await supabase.storage
-     .from('dream-images')
-     .upload(filePath, webpBlob, {
-       contentType: 'image/webp',
-       upsert: true
-     });
-   ```
-5. On success, insert row into `images` table + set `dreams.image_path`
-
-### 6.4 Image Serving
-
-- Images are served via Supabase signed URLs (30-day expiry, refreshed client-side).
-- Alternatively, create a Supabase Edge Function that serves images with proper auth checks.
-
-```js
-// Get signed URL (short-lived)
-const { data } = await supabase.storage
-  .from('dream-images')
-  .createSignedUrl(filePath, 3600); // 1 hour
-```
-
----
-
-## 7. Config for GitHub Pages (no Vite)
-
-Since the project is a **vanilla SPA without a build step**, we cannot use `VITE_*` environment variables. Instead:
-
-### 7.1 `config.js` (new file)
-
-```js
-// config.js — loaded before app.js
-const DREAMBOARD_CONFIG = {
-  supabase: {
-    url: 'https://your-project.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIs...',
-  },
-  features: {
-    localImageUpload: true,
-    authEnabled: true,
-  },
-  storage: {
-    bucket: 'dream-images',
-    maxFileSize: 10 * 1024 * 1024, // 10 MB
-  },
-};
-```
-
-### 7.2 Load Order in `index.html`
-
-```html
-<head>
-  <!-- ... -->
-  <script src="config.js"></script>
-  <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-  <script src="supabase.js"></script> <!-- client init -->
-  <script src="auth.js"></script>    <!-- auth UI -->
-  <script src="app.js"></script>    <!-- app logic -->
-</head>
-```
-
-### 7.3 `supabase.js` (new file)
-
-```js
-// supabase.js — depends on config.js
-const { createClient } = supabase;
-
-window.db = createClient(
-  DREAMBOARD_CONFIG.supabase.url,
-  DREAMBOARD_CONFIG.supabase.anonKey
-);
-```
-
-### 7.4 Future: Vite Migration
-
-Vite can be added later. At that point:
-- `config.js` → `.env` + `import.meta.env`
-- `supabase-js` → npm dependency
-- Bundle splitting for PWA
-
----
-
-## 8. API Methods (Supabase JS Client)
-
-These are the primary data access patterns the app will use. All go through the singleton `window.db` created in `supabase.js`.
-
-### 8.1 Auth
-
-```js
-// Sign up
-await db.auth.signUp({ email, password });
-
-// Sign in
-await db.auth.signInWithPassword({ email, password });
-
-// Sign in with OAuth
-await db.auth.signInWithOAuth({ provider: 'google' });
-
-// Sign out
-await db.auth.signOut();
-
-// Current user
-const { data: { user } } = await db.auth.getUser();
-```
-
-### 8.2 Boards
-
-```js
-// Get all boards for current user
-const { data } = await db.from('boards')
-  .select('*')
-  .order('sort_order');
-
-// Create board
-const { data } = await db.from('boards')
-  .insert({ title: 'My DreamBoard', user_id: user.id })
-  .select()
-  .single();
-```
-
-### 8.3 Dreams
-
-```js
-// Get dreams for a board (with milestones)
-const { data } = await db.from('dreams')
-  .select(`
-    *,
-    milestones (
-      id, title, completed, completed_at, sort_order
-    )
-  `)
-  .eq('board_id', boardId)
-  .in('status', ['active', 'manifested'])
-  .order('sort_order');
-
-// Create dream
-const { data } = await db.from('dreams')
-  .insert({
-    board_id,
-    user_id: user.id,
-    title: 'My Dream',
-    category: 'career',
-    status: 'active',
-    milestones: [
-      { title: 'Step 1', user_id: user.id },
-    ],
-  })
-  .select(`
-    *,
-    milestones (*)
-  `)
-  .single();
-
-// Update dream (including image_path)
-await db.from('dreams')
-  .update({ image_path: 'user_id/dream_id/img.webp' })
-  .eq('id', dreamId);
-
-// Archive / Manifest dream
-await db.from('dreams')
-  .update({ status: 'manifested' })
-  .eq('id', dreamId);
-```
-
-### 8.4 Milestones
-
-```js
-// Toggle milestone
-await db.from('milestones')
-  .update({
-    completed: !currentValue,
-    completed_at: currentValue ? null : new Date().toISOString(),
-  })
-  .eq('id', milestoneId);
-```
-
-### 8.5 Images
-
-```js
-// Upload image
-const filePath = `${user.id}/${dreamId}/${Date.now()}-${crypto.randomUUID().slice(0,6)}.webp`;
-
-const { error: uploadError } = await db.storage
-  .from('dream-images')
-  .upload(filePath, webpBlob, { contentType: 'image/webp' });
-
-if (!uploadError) {
-  await db.from('images').insert({
-    user_id: user.id,
-    storage_path: filePath,
-    mime_type: 'image/webp',
-    size_bytes: webpBlob.size,
-  });
-
-  await db.from('dreams')
-    .update({ image_path: filePath })
-    .eq('id', dreamId);
-}
-```
-
----
-
-## 9. Local Storage → Account Migration Flow
-
-This is the critical path for early adopters who already have data.
-
-### 9.1 Data Sources Before Migration
-
-| Source | Content |
-|---|---|
-| `localStorage('dreams_db')` | Array of dream objects (with milestones, canvas positions, statuses) |
-| `IndexedDB` (local images) | Blob/filename pairs uploaded locally (stage 1) |
-
-### 9.2 Migration Trigger
-
-When a user **signs in** (first time or after local use):
-
-```
-┌─────────────────────────────────────────────────────┐
-│  1. User clicks "Sign In / Register"                │
-│  2. Supabase Auth completes                         │
-│  3. Client checks: localStorage('dreams_db') exists?│
-│     └── YES ──▶ Show migration dialog               │
-│     └── NO  ──▶ Normal flow (no migration)          │
-│                                                     │
-│  4. Migration Dialog:                                │
-│     "We found 4 dreams in your browser.              │
-│      Transfer them to your account?"                 │
-│     [Transfer] [Skip]                                │
-│                                                     │
-│  5. On "Transfer":                                   │
-│     a. Create default board                         │
-│     b. For each dream:                               │
-│        - Create board row                           │
-│        - Create dream row                           │
-│        - Create milestone rows                      │
-│        - Upload local image (IndexedDB) → Storage   │
-│        - Update dream.image_path                    │
-│     c. On success:                                  │
-│        - Clear localStorage('dreams_db')            │
-│        - Clear IndexedDB images                     │
-│        - Show success toast                          │
-│     d. On error:                                     │
-│        - Show error, keep local data                 │
-│        - User can retry                              │
-│                                                     │
-│  6. On "Skip":                                      │
-│     - Keep local data intact                         │
-│     - Future sessions start from Supabase            │
-│     - Re-prompt on next sign-in? (TBD)              │
-└─────────────────────────────────────────────────────┘
-```
-
-### 9.3 API Pattern for Migration
-
-```js
-async function migrateLocalData(userId) {
-  const localData = JSON.parse(localStorage.getItem('dreams_db') || '[]');
-  if (!localData.length) return;
-
-  // 1. Create default board
-  const { data: board } = await db.from('boards')
-    .insert({
-      user_id: userId,
-      title: 'My DreamBoard',
-      is_default: true,
-    })
-    .select()
-    .single();
-
-  // 2. Process each dream
-  for (const dream of localData) {
-    let imagePath = null;
-
-    // Upload local image if present
-    if (dream.imageUrl && !dream.imageUrl.startsWith('http')) {
-      const localImage = await getLocalImage(dream.imageUrl);
-      if (localImage) {
-        imagePath = await uploadDreamImage(userId, dream.id, localImage);
-      }
-    }
-
-    // Create dream
-    const { data: newDream } = await db.from('dreams')
-      .insert({
-        board_id: board.id,
-        user_id: userId,
-        title: dream.title,
-        description: dream.desc,
-        category: dream.category || 'career',
-        target_year: dream.year || null,
-        status: dream.status || 'active',
-        image_url: dream.imageUrl?.startsWith('http') ? dream.imageUrl : null,
-        image_path: imagePath,
-        canvas_pos_x: dream.canvasPos?.x || 0,
-        canvas_pos_y: dream.canvasPos?.y || 0,
-        canvas_width: dream.canvasPos?.width || 320,
-        canvas_height: dream.canvasPos?.height || 420,
-      })
-      .select()
-      .single();
-
-    // Create milestones
-    if (dream.milestones?.length) {
-      await db.from('milestones')
-        .insert(
-          dream.milestones.map((m, i) => ({
-            dream_id: newDream.id,
-            user_id: userId,
-            title: m.text,
-            completed: m.checked || false,
-            completed_at: m.checked ? new Date().toISOString() : null,
-            sort_order: i,
-          }))
-        );
-    }
-  }
-
-  // 3. Clean up
-  localStorage.removeItem('dreams_db');
-  await clearLocalImages();
-
-  return { transferred: localData.length };
-}
-```
-
-### 9.4 Rollback Safety
-
-- Local data is **only cleared after all Supabase writes succeed**.
-- Each write is individually reliable (Supabase returns 200 or error).
-- If any step fails, local data is preserved and user is prompted to retry.
-
----
-
-## 10. Integration Steps
-
-### Phase 0: Current (pre-Supabase)
-- [x] Local image upload with crop + compress + IndexedDB (stage 1)
-- [x] All data in localStorage
-- [ ] This architecture doc reviewed and approved
-
-### Phase 1: Supabase Foundation
-- [ ] Create Supabase project
-- [ ] Run SQL schema + RLS policies
-- [ ] Create `dream-images` storage bucket (private)
-- [ ] Create `config.js` with Supabase credentials
-- [ ] Add `supabase-js` CDN script to `index.html`
-- [ ] Create `supabase.js` (client init)
-- [ ] Verify connection works in browser console
-
-### Phase 2: Auth UI
-- [ ] Create `auth.js` (sign-up, sign-in, OAuth, sign-out UI)
-- [ ] Add auth modal/overlay to the app
-- [ ] Handle session persistence (Supabase handles cookies/localStorage)
-- [ ] Show authenticated state in header (avatar / username)
-
-### Phase 3: Data Operations
-- [ ] Replace localStorage reads with Supabase queries (boards, dreams, milestones)
-- [ ] Implement real-time optimistic UI (write to local state first, then sync)
-- [ ] Handle offline: cache last-fetched data in localStorage as fallback
-
-### Phase 4: Image Migration
-- [ ] Upload IndexedDB images → Supabase Storage
-- [ ] Replace image URLs in dreams with Storage paths
-- [ ] Generate and refresh signed URLs
-
-### Phase 5: Migration Flow
-- [ ] Implement migration dialog on first sign-in
-- [ ] Test: localStorage → account, verify all data intact
-- [ ] Test: multiple devices, verify sync
-
----
-
-## 11. File Change Plan
-
-### Files to create
-
-| File | Contents |
-|---|---|
-| `config.js` | Runtime config: Supabase URL, anon key, feature flags |
-| `supabase.js` | Supabase client singleton (`window.db`) |
-| `auth.js` | Auth modals, OAuth buttons, session state indicator |
-
-### Files to modify
-
-| File | Changes |
-|---|---|
-| `index.html` | Add `<script>` tags for `config.js`, `supabase.js`, `auth.js` before `app.js` |
-| `app.js` | Replace `localStorage.getItem('dreams_db')` → Supabase queries (guarded: offline fallback) |
-| `app.js` | Add `window.__authenticated` flag, conditional between local ↔ remote data |
-| `style.css` | Styles for auth modal, user avatar, sign-out button (minimal) |
-
-### Files to keep unchanged (in this patch)
-
-| File | Reason |
-|---|---|
-| `packages/`, `prisma/`, `src/`, `apps/`, `docker-compose.yml` | Legacy backend skeleton — to be cleaned in a separate commit |
-| `service-worker.js` | PWA caching — only needs update when new static files added |
-
-### Git strategy
-
-```
-1. commit-a: "local: add image upload with crop, compress, and IndexedDB storage"
-2. commit-b: "docs: add SUPABASE_ARCHITECTURE.md"
-3. commit-c: "legacy: remove unused backend skeleton"        ← separate, later
-4. commit-d: "feat: add Supabase client, auth, and data sync" ← major, after planning
-5. commit-e: "feat: add localStorage→account migration flow"  ← after auth works
-```
-
----
-
-## Appendix A: Supabase Free Tier Limits
-
-| Resource | Limit |
-|---|---|
-| Database | 500 MB |
-| Storage | 1 GB |
-| File upload | 10 MB per file |
-| Auth users | 50,000 |
-| Bandwidth | 5 GB/month |
-| Daily requests | 50,000 |
-
-These limits are generous for early development. Monitor usage at `app.supabase.com`.
-
----
-
-## Appendix B: Supabase Setup Quickstart
-
-```bash
-# 1. Create project at https://app.supabase.com
-# 2. Copy Project URL and anon key → config.js
-# 3. Run SQL from this document:
-#    - Table creations (§4)
-#    - RLS policies (§5)
-#    - Trigger for auto-profile creation (§4.1)
-# 4. Create storage bucket:
-#    SQL Editor → New Query → INSERT INTO storage.buckets ...
-#    Or UI: Storage → New bucket → dream-images → private
-
-# SQL to create bucket:
-INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-VALUES (
-  'dream-images',
-  'dream-images',
-  false,
-  10485760, -- 10 MB
-  ARRAY['image/jpeg', 'image/png', 'image/webp', 'image/gif']
-);
-```
-
----
-
-*Document version: 1.0 — Last updated: 2026-06-06*
+## 1. Product principles (from DREAMBOARD_V15_PRODUCT_SYNC_PLAN.md)
+
+1. **No account required.** A guest remains fully local. No anonymous cloud user, database row or image upload is created without an explicit choice.
+2. **Local-first remains the operating model.** Local state is the working copy, always readable/writable offline. Cloud is an optional encrypted transport/backup and multi-device replica, never a reason to block the UI.
+3. **No silent replacement.** Sign-in never overwrites local or cloud data automatically. The user sees what was found and chooses an action.
+4. **Collect the minimum.** Email is required only for an account. No display name, avatar, public username, contacts, analytics or social graph in the sync MVP.
+5. **Private by default.** Boards, images, trash and journal/gratitude text are private. Sharing is a later explicit feature.
+6. **Every server mutation is recoverable.** Keep local state, JSON export and version snapshots. Never clear local data automatically, including after migration.
+7. **Useful before clever.** Daily visual focus, next steps and reliable sync outrank AI generation, social feeds and collaboration.
+
+## 2. Approved architecture decisions (binding)
+
+| # | Decision | Value |
+|---|----------|-------|
+| D1 | Operating model | **Local-first forever.** localStorage/IndexedDB are the working copy before and after sync; never cleared automatically. |
+| D2 | Cloud role | Optional voluntary replica/backup, multi-device sync. No UI blocking on cloud state. |
+| D3 | MVP data model | **Snapshot-first**: one row per board, `state jsonb` + `trash jsonb` envelope, `revision`, `updated_by_device`. |
+| D4 | Conflict control | **CAS** via an atomic SQL/RPC function. No LWW, no auto-merge, no hidden field merge. |
+| D5 | Conflict UX | Automatic snapshots; user chooses **local / cloud / save-both (two boards)**. |
+| D6 | Local conflict history | Conflict versions stored in a **separate IndexedDB store** on the device (never auto-deleted). |
+| D7 | Server-side privacy | **RLS + server-side encryption at rest for MVP.** Schema is encryption-ready, but client-side E2EE is NOT enabled. |
+| D8 | Region | **EU — Frankfurt (`eu-central-1`)** project region (customer decision 2026-08-27). |
+| D9 | Auth MVP | Email + password, email confirmation, password reset. Magic link later (after custom SMTP). |
+| D10 | Abuse protection | **Cloudflare Turnstile** for signup, login and recovery. Generic auth errors, rate limits. |
+| D11 | SMTP | **Resend** with sending subdomain **`mail.kseles.ru`**; From: **DreamBoard `<no-reply@mail.kseles.ru>`** (domain `kseles.ru` verified by customer 2026-08-27). Built-in Supabase SMTP is not production-usable (team addresses only, ~2 msg/h, no SLA). **Production SMTP is enabled ONLY after SPF/DKIM verification and a successful confirmation/reset email test.** No passwords, DNS tokens or API keys in Git. |
+| D12 | Guests | Fully local. No Supabase anonymous account, no rows in `auth.users`, no uploads until explicit opt-in. |
+| D13 | Profiles | **No `profiles`/username/avatar table.** FK directly on `auth.users(id)` is sufficient for the MVP. |
+| D14 | SDK supply | **Self-hosted pinned Supabase JS SDK** and **self-hosted pinned html2canvas** (vendored, integrity-checked, precached). No runtime CDN dependencies. |
+| D15 | Frontend security | CSP, XSS and session-token threat model enforced (see `docs/v15-sync-threat-model.md`). |
+| D16 | Service role | `service_role` key never enters GitHub Pages, the repository or any client bundle. Only the publishable anon key is public, behind strict RLS. |
+| D17 | Legacy backend | Neither root NestJS (`src/`) nor `apps/api` mock is used for production auth. One stack: Supabase. Legacy code untouched until PR-F. **Render drift investigation and legacy-contour removal are DEFERRED** (customer decision 2026-08-27) — separate follow-up, outside sync scope. |
+
+## 3. Data inventory (what syncs)
+
+| Source | Key / store | Notes |
+|--------|-------------|-------|
+| State | `dreamboard_app_state` (schemaVersion 2, + `_recovery`) | `dreams[] {id,title,category,year,desc,imageUrl,milestones[{id,text,checked}],status,canvasPos,gratitudeNote}`, `settings`, `uiState` |
+| Legacy safety | `dreams_db` (v13) | Read-only fallback; never cleared |
+| Viewport | `canvas_pan_x/y`, `canvas_zoom` | Part of board-level state |
+| Trash | `dreamboard_trash_v1` | Items `{dream, trashedAt, id}`, MAX_ITEMS; envelope `{formatVersion:1, items:[]}` |
+| Images | IndexedDB `dreamboard-local-images`/`images` | Local blobs; external Unsplash URLs are referenced, not uploaded |
+| Conflict history (new) | IndexedDB store (e.g. `dreamboard-sync-conflicts`) | Automatic snapshots of every conflict resolution |
+
+## 4. Sync schema (snapshot-first)
+
+Authoritative SQL: `docs/sql/v15-sync-schema.sql` (tables, constraints, RLS, Storage policies, CAS RPC, append-only versions, retention, explicit privileges, cross-user tests, rollback). **Idempotency scope:** schema sections 1–5 are re-runnable (`IF NOT EXISTS`/`CREATE OR REPLACE`/guarded `DO $$` constraints + explicit drop of the rev 1 RPC signature); the test section is single-use — it runs inside a transaction that rolls back.
+
+### 4.1 `sync_documents` — one row per board
+
+- `user_id uuid` — FK `auth.users(id)`, RLS-bound;
+- `board_id uuid` — PK component;
+- `format_version int` — CHECK `= 1` (v14 state contract);
+- `schema_version int` — CHECK `= 2` (`schemaVersion` from state);
+- `revision bigint` — CAS counter;
+- `state jsonb` — normalized board state, CHECK `jsonb_typeof(state) = 'object'`;
+- `trash jsonb` — envelope `{"formatVersion":1,"items":[]}` (CHECK: object, `formatVersion=1`, `items` array);
+- `deleted_at timestamptz` — soft-delete marker (tombstone), API contract name `deletedAt`;
+- `updated_at timestamptz`;
+- `updated_by_device text` — CHECK non-empty, ≤ 64 chars (opaque random device id);
+- PK `(user_id, board_id)`.
+
+**Client access: SELECT on own rows only.** No INSERT/UPDATE/DELETE policies, explicit `REVOKE` for `anon`/`authenticated`, and no mutation grants — all mutations go exclusively through the `sync_push_document` RPC (atomic CAS).
+
+### 4.2 `sync_assets` — image metadata only
+
+- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path` = **`{user_id}/{board_id}/{filename}`** (filename = image id or the original file name), `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` (guarded by `pg_constraint` check, idempotent). No public URLs; signed URLs only. Full owner policies (metadata lifecycle stays client-side); `authenticated` gets explicit `SELECT/INSERT/UPDATE/DELETE`.
+
+**Storage object policies** (`dreamboard-assets` bucket, private) enforce ALL of:
+1. path segment 1 = `auth.uid()::text`;
+2. path segment 2 is a valid UUID (board id shape);
+3. a `sync_documents` row exists with `user_id = auth.uid()` and `board_id = segment 2` (foreign/nonexistent boards rejected);
+4. exactly **two folder segments** (`cardinality(storage.foldername(name)) = 2` — extra directories rejected) and a **non-empty file name** (`storage.filename(name)`).
+
+Applied to SELECT, INSERT, UPDATE (qual + with_check) and DELETE. Signed URLs only, short TTL.
+
+### 4.3 `sync_versions` — append-only snapshots
+
+- immutable rows around first migration, conflicts and manual restore; `reason` ∈ `first_migration | conflict_local | conflict_cloud | manual_restore`; `retention_until` (default +30 days) is a **hint only** — no automatic deletion until a separate server-side job exists; CHECK: `trash` envelope valid, `state` is an object; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE` (idempotent guard).
+- **Client access: SELECT on own rows only.** Writes exclusively through the `sync_snapshot` RPC, which verifies the board exists and belongs to the caller before writing.
+
+### 4.4 RPC security model (SECURITY DEFINER)
+
+Both RPCs are `SECURITY DEFINER` with `search_path = pg_catalog, public` pinned and fully qualified objects. We do **not** rely on `FORCE RLS` to constrain the definer: the owner (typically `postgres`) usually has `BYPASSRLS`, which FORCE does not override. Actual safety comes from: explicit `auth.uid()` null-rejection; every statement filters on `auth.uid()`; pinned search_path; qualified references; **no user-supplied `user_id` parameter**; and strict grants (client roles cannot mutate the tables directly — `anon` has nothing, `authenticated` has SELECT on documents/versions, full CRUD on assets, EXECUTE on RPCs only).
+
+## 5. Conflict protocol
+
+1. Client stores per board `{baseRevision, payload}`.
+2. Push calls atomic RPC `sync_push_document(...)` with `base_revision` (negative values rejected); the function updates only when `revision = base_revision`, then increments; mismatch or missing row → explicit **conflict** result. Never silent LWW. Both RPCs are SECURITY DEFINER with pinned `search_path = pg_catalog, public`, fully qualified objects, explicit `auth.uid()` null-rejection and no caller-supplied `user_id` (see §4.4 for why FORCE RLS is not the security boundary).
+3. On conflict: automatic snapshot locally (IndexedDB conflict store + `dreamboard_app_state_recovery`) and in cloud (`sync_versions` via `sync_snapshot()`).
+4. UI shows timestamps, device labels, dream counts; user picks **«Оставить локальную» / «Загрузить облачную» / «Сохранить обе как две доски»** (second board = new `board_id` with a copy).
+5. Pull by `updated_at > watermark`; `deleted_at` tombstones replicate; physical cleanup is a later server-side job (never automatic in MVP).
+
+## 6. Auth experience
+
+- Guest: «Локально на этом устройстве»; all v14 features unchanged; non-blocking entry «Синхронизировать устройства».
+- Registration/sign-in MVP: email + password (min 10 chars), email confirmation, password reset; Turnstile on signup/login/recovery; PKCE via official SDK; «Выйти на этом устройстве»; account & cloud-data deletion flow before public launch.
+- Later (not MVP): magic link after custom SMTP; Google login; «Выйти на всех устройствах».
+
+## 7. First sign-in / migration (4 deterministic cases, plan §6)
+
+1. Explicit «Включить синхронизацию» → 2. auth → 3. local safety snapshot (export-compatible) → 4. inspect local board + cloud document **without writing** → 5. present case:
+   - **local only** → «Загрузить копию в облако» (push rev=1 + assets with progress/retry/cancel);
+   - **cloud only** → «Скачать на это устройство»;
+   - **neither** → start empty/onboarding;
+   - **both** → compare and choose local/cloud/save-both (no merge).
+6. Upload images (dedup by `content_hash`, progress, retry, cancellation) → 7. verify round-trip hashes/counts → 8. mark sync enabled only after verification. **Local data and the safety snapshot are always kept.**
+
+## 8. Delivery stages and gates (from plan §7)
+
+- **7A (done):** audit + approved spec. Gate: User A cannot read/write User B documents/assets; `service_role` absent from frontend.
+- **7B (not started):** optional Auth UI, no board upload; feature flag off in production. Gate: guest behavior and 264+ v14 regression unchanged; auth abuse/error/a11y tests pass.
+- **7C:** snapshot API/RLS, CAS RPC, version snapshots; local sync adapter + outbox (IndexedDB) behind a feature flag; text-only round trip; offline/reconnect and conflict tests with two simulated devices. Gate: no silent loss; deterministic conflict UI; local editing usable with network disabled.
+- **7D:** explicit migration (4 cases) + image sync (dedup, progress, retry, partial-failure recovery), trash semantics; never delete local blobs. Gate: desktop↔Android round trip, hash/count verification, export/import compatibility, quota behavior.
+- **7E:** account lifecycle & privacy release (download all data, disable sync without deleting local data, delete account with reauth + grace, privacy notice, retention policy, operational metrics only — no dream content in logs/analytics).
+
+## 9. Frontend security baseline (details in threat model)
+
+- Self-hosted pinned Supabase JS SDK and html2canvas; integrity hashes; precached by service worker; CSP `script-src`/`connect-src` allow only same-origin + `https://<project>.supabase.co` (EU) + Turnstile.
+- Session tokens: PKCE; short-lived; revoke-all; CSP mitigates XSS token theft; no third-party scripts at runtime.
+- Service worker: new files must join PRECACHE_URLS; bump CACHE_NAME v14 → v15; `skipWaiting`/`clients.claim` already present in v14 SW.
+- Secrets: anon key in `config.js` is public by design; `service_role` never in repo/Pages.
+
+## 10. Metrics (no dream content)
+
+Aggregate, consented: guest → first dream completed; sync opt-in rate after value explanation; successful second-device recovery; sync error/conflict rate; weekly return to Today's Dream; milestone completion; wallpaper export counts; deletion/export completion rate. Never collect titles, descriptions, journal text, image URLs/content or canvas contents.
+
+## 12. Customer locked-in decisions (2026-08-27)
+
+Confirmed and binding for all later stages:
+
+1. **Domain:** `kseles.ru` verified by the customer.
+2. **Production SMTP:** Resend, sending subdomain **`mail.kseles.ru`**, From **DreamBoard `<no-reply@mail.kseles.ru>`**. DNS is NOT changed and no Resend project is created until the docs-only Stage 7A PR (#38) is complete. Production SMTP is enabled only after **SPF/DKIM verification** and a **successful confirmation/reset email test**.
+3. **Secrets:** passwords, DNS tokens and API keys are never committed to Git.
+4. **Privacy MVP:** RLS + server-side encryption at rest; **no E2EE** in the first stage (schema stays encryption-ready).
+5. **Region:** Supabase **EU / Frankfurt (`eu-central-1`)**.
+6. **CAPTCHA:** Cloudflare Turnstile.
+7. **Guests:** fully local; no anonymous accounts, no rows, no uploads without explicit opt-in.
+8. **Deferred:** Render drift investigation and removal of legacy contours (`apps/api`, `apps/web`, `apps/mobile`, `src/migrations`) — separate follow-up.
+9. **Trash:** full envelope `{"formatVersion":1,"items":[]}`; record field `deletedAt`.
+10. **CAS:** atomic SQL/RPC function (no LWW/auto-merge).
+11. **Supply:** Supabase SDK and html2canvas shipped pinned/self-hosted.
+12. **Current scope:** docs/SQL/runbook/threat-model/test-plan PR only — no Supabase resources, no runtime changes.
+
+## 13. Open questions for the customer (from 7A audit)
+
+1. E2EE later? (schema is encryption-ready; MVP = RLS + at-rest by decision D7.)
+2. Magic link timing (enabled once custom SMTP with verified domain passes the SPF/DKIM gate).
+3. Manual cleanup of legacy contours — deferred per §12.8; schedule to be set separately.
