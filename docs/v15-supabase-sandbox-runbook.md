@@ -52,34 +52,47 @@ on conflict (id) do nothing;
 
 Verify in Storage UI: bucket exists, **Public bucket = OFF**. All access is via signed URLs only (object policies come from the schema file, §4).
 
-## 4. Execute the schema
+## 4. Create test users A/B (Auth Dashboard / Admin API — NOT direct INSERT)
+
+Users for the cross-user suite are created through the sandbox **Auth Dashboard** (Authentication → Users → Add user) or the **Auth Admin API** — never via a direct `INSERT INTO auth.users` and never with `service_role` keys in files/chats.
+
+1. Dashboard → Authentication → Users → **Add user**: create `sync-test-a@example.test` (auto-generated or chosen password).
+2. Copy the user's UUID (id) from the Users table → it replaces `USER_A_UUID` in the test template.
+3. Repeat for `sync-test-b@example.test` → `USER_B_UUID`.
+4. Confirm both emails if confirmation is enabled (Dashboard → user → confirm) so they can authenticate.
+
+## 5. Execute the schema
 
 1. Open Dashboard → SQL Editor → New query.
 2. Paste the full contents of `docs/sql/v15-sync-schema.sql` (sections 1–5: tables, RLS, storage policies, CAS RPC, retention hint).
 3. Run. Expected: no errors; tables `sync_documents`, `sync_assets`, `sync_versions` appear in Table Editor.
+4. **Idempotency:** run the same script once more — it must succeed again with no errors (`IF NOT EXISTS`/`CREATE OR REPLACE`/`ON CONFLICT DO NOTHING`/`DROP POLICY IF EXISTS`).
 
-## 5. Run the cross-user tests
+## 6. Run the cross-user tests
 
-1. In SQL Editor, run section 6 of `docs/sql/v15-sync-schema.sql` (sandbox-only seed + T1–T9).
-2. Expected: **11 PASS notices (T1…T9, T7 contains 3 asserts), 0 FAILED**.
+1. In SQL Editor, paste section 6 of `docs/sql/v15-sync-schema.sql` and **replace `USER_A_UUID` / `USER_B_UUID` with the real UUIDs** from §5.
+2. Run. Expected: **PASS notices for T1, T2a/b/c, T3, T4, T5, T6, T7, T8, T9, T10, T11, T12; no FAILED**.
 3. Screenshot or copy the output; attach to the stage report as 7A-gate evidence.
-4. Manual spot-checks (Storage UI or API):
-   - Upload as A into `dream-images/{B}/...` → rejected;
-   - Signed URL for A's object, opened while signed in as B → 403;
-   - Table Editor as `anon` → no rows visible.
+4. **Real concurrent CAS check (optional but recommended):** open two psql/psql sessions against the sandbox as user A; in both run `BEGIN; SELECT public.sync_push_document('<board>', <current_rev>, '{}'::jsonb, 'dev-1');` — commit the first; the second must return `conflict:true`. Exactly one success.
+5. **Real Storage API checks (A/B, per approved path `{user_id}/{board_id}/{image_id-or-file}`):**
+   - As A: upload to `{A}/{board}/{img1}` → **success**; select own object → OK; create signed URL → opens; update/delete own object → OK.
+   - As A: upload to `{B}/...` (other user's path) → **rejected** (policy on first path segment).
+   - As B: read A's object / open A's signed URL → **403**; update/delete A's object → **rejected**.
+   - As anon: any object access → **denied**.
+6. Table Editor as `anon` → no rows visible.
 
-## 6. Security verification
+## 7. Security verification
 
 - [ ] `config.js` (future) contains only project URL + **anon** key; grep for `service_role`/`eyJ`/`sbp_` across the repo returns nothing (CI enforces too).
 - [ ] RLS enabled + forced on all three tables (`pg_policies` shows the 10 table policies + 4 storage policies).
 - [ ] `sync_versions` append-only: UPDATE/DELETE denied (covered by T7).
 - [ ] No automatic deletion configured (no triggers/cron; `retention_until` is a hint only).
 
-## 7. Sandbox teardown / rollback
+## 8. Sandbox teardown / rollback
 
 Run the rollback section of `docs/sql/v15-sync-schema.sql` (§7), then delete the project in Dashboard (Settings → Delete project) if the sandbox is no longer needed. Teardown is only after explicit approval.
 
-## 8. Do NOT (hard rules)
+## 9. Do NOT (hard rules)
 
 - Do not create the sandbox or any resource until the architect commands Stage 7B.
 - Do not copy `service_role` (or any secret) into the repo, `.env`, `config.js`, GitHub Actions, Pages, or chat.
@@ -88,6 +101,6 @@ Run the rollback section of `docs/sql/v15-sync-schema.sql` (§7), then delete th
 - Do not add custom SMTP without a verified sender domain (D11).
 - Do not merge the docs PR (this runbook ships with it) — the docs PR stays OPEN until the architecture is accepted.
 
-## 9. Deliverables after customer execution
+## 10. Deliverables after customer execution
 
-Return to the architect: project URL (non-secret), anon key (public), SQL execution log, T1–T9 output, storage policy listing, and any deviations. The architect then proceeds to Stage 7B planning (auth UI behind a feature flag, no board upload).
+Return to the architect: project URL (non-secret), anon key (public), SQL execution log, T1–T12 output, storage policy listing, and any deviations. The architect then proceeds to Stage 7B planning (auth UI behind a feature flag, no board upload).

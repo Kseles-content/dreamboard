@@ -62,24 +62,27 @@ Authoritative SQL: `docs/sql/v15-sync-schema.sql` (tables, constraints, RLS, Sto
 - `schema_version int` — `schemaVersion` from state (2);
 - `revision bigint` — CAS counter;
 - `state jsonb` — normalized board state;
-- `trash jsonb` — envelope `{"formatVersion":1,"items":[]}`;
+- `trash jsonb` — envelope `{"formatVersion":1,"items":[]}` (CHECK: object, `formatVersion=1`, `items` array);
 - `deleted_at timestamptz` — soft-delete marker (tombstone), API contract name `deletedAt`;
 - `updated_at timestamptz`;
 - `updated_by_device text` — opaque random device id (no fingerprinting);
 - PK `(user_id, board_id)`.
 
+**Client access: SELECT on own rows only.** No INSERT/UPDATE/DELETE policies and explicit `REVOKE` for `anon`/`authenticated` — all mutations go exclusively through the `sync_push_document` RPC (atomic CAS, SECURITY DEFINER, pinned `search_path`, qualified objects, `auth.uid()` null-rejection).
+
 ### 4.2 `sync_assets` — image metadata only
 
-- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path`, `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`. No public URLs; signed URLs only.
+- `user_id`, `board_id`, `image_id` (logical id from state), private `storage_path` = **`{user_id}/{board_id}/{image_id-or-file}`**, `mime_type`, `size_bytes`, `content_hash` (dedup), timestamps; UNIQUE `(user_id, board_id, image_id)`; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE`. No public URLs; signed URLs only. Full owner policies (metadata lifecycle stays client-side).
 
 ### 4.3 `sync_versions` — append-only snapshots
 
-- immutable rows around first migration, conflicts and manual restore; `reason` ∈ `first_migration | conflict_local | conflict_cloud | manual_restore`; `retention_until` (default +30 days) is a **hint only** — no automatic deletion until a separate server-side job exists.
+- immutable rows around first migration, conflicts and manual restore; `reason` ∈ `first_migration | conflict_local | conflict_cloud | manual_restore`; `retention_until` (default +30 days) is a **hint only** — no automatic deletion until a separate server-side job exists; composite FK `(user_id, board_id) → sync_documents ON DELETE CASCADE`.
+- **Client access: SELECT on own rows only.** Writes exclusively through the `sync_snapshot` RPC, which verifies the board exists and belongs to the caller before writing.
 
 ## 5. Conflict protocol
 
 1. Client stores per board `{baseRevision, payload}`.
-2. Push calls atomic RPC `sync_push_document(...)` with `base_revision`; the function updates only when `revision = base_revision`, then increments; mismatch or missing row → explicit **conflict** result. Never silent LWW.
+2. Push calls atomic RPC `sync_push_document(...)` with `base_revision`; the function updates only when `revision = base_revision`, then increments; mismatch or missing row → explicit **conflict** result. Never silent LWW. Both RPCs are SECURITY DEFINER with pinned `search_path = pg_catalog, public` and fully qualified objects; RLS is FORCEd on all tables, so the definer is still filtered by owner checks plus the explicit `auth.uid()` null rejection.
 3. On conflict: automatic snapshot locally (IndexedDB conflict store + `dreamboard_app_state_recovery`) and in cloud (`sync_versions` via `sync_snapshot()`).
 4. UI shows timestamps, device labels, dream counts; user picks **«Оставить локальную» / «Загрузить облачную» / «Сохранить обе как две доски»** (second board = new `board_id` with a copy).
 5. Pull by `updated_at > watermark`; `deleted_at` tombstones replicate; physical cleanup is a later server-side job (never automatic in MVP).

@@ -12,7 +12,7 @@
 |-------|---------|-------|
 | L1 static | `node --check`, markdown/SQL static checks, secrets scan | CI + local |
 | L2 unit (client) | `node --test *.test.js` (node:test) | repo root |
-| L3 SQL/RLS | `docs/sql/v15-sync-schema.sql` §6 (T1–T9), executed in sandbox | Supabase SQL editor / psql |
+| L3 SQL/RLS | `docs/sql/v15-sync-schema.sql` §6 (T1–T12), executed in sandbox | Supabase SQL editor / psql |
 | L4 integration | sandbox project (non-production, EU) + browser | Stage 7C+ |
 | L5 E2E/device | preview deployment + real devices (TCL 30, desktop) | Stage 7D gates |
 
@@ -39,28 +39,33 @@
   3. neither → onboarding;
   4. both → compare UI offers exactly three actions: local / cloud / save-both (two boards), and no fourth hidden merge path.
   Assert local state + safety snapshot preserved in every case (D1).
-- `sync-images.test.js` — dedup by `content_hash`; upload queue with progress/retry/cancel; partial-failure recovery (retry only failed items); path convention `dream-images/{user_id}/...`; no public URLs (only signed).
+- `sync-images.test.js` — dedup by `content_hash`; upload queue with progress/retry/cancel; partial-failure recovery (retry only failed items); path convention `{user_id}/{board_id}/{image_id-or-file}`; no public URLs (only signed).
 - `sync-offline.test.js` — offline edits queue to outbox (IndexedDB); reconnect flush; watermark pull; two simulated devices conflict → deterministic UI, no silent loss (7C gate).
 - `sync-trash.test.js` — trash envelope `{formatVersion:1,items:[]}` round-trip; `deletedAt` tombstone replication; MAX_ITEMS preserved.
 - `sync-security.test.js` — XSS attempts through import/backup/dream content (rendered via textContent only); CSP directive presence; no `eval`/`new Function` on untrusted data; SDK/html2canvas vendored with pinned versions (no CDN origins in `script-src`).
 
 ## 4. L3 SQL/RLS cross-user suite (A/B/anon)
 
-Executed in the **sandbox project only** (never production). Source: `docs/sql/v15-sync-schema.sql` §6.
+Executed in the **sandbox project only** (never production). Users A/B are created via the sandbox Auth Dashboard (Authentication → Users → Add user) or the Auth Admin API — **never** via direct `INSERT INTO auth.users` (see runbook). Their UUIDs replace the `USER_A_UUID`/`USER_B_UUID` placeholders in the template. Source: `docs/sql/v15-sync-schema.sql` §6.
 
 | Test | Assertion |
 |------|-----------|
-| T1 | A creates document (base=0) → ok, revision 1 |
+| T1 | A creates document via RPC (base=0) → ok, revision 1 |
 | T2a/b/c | A sees 1 row; B sees 0; anon sees 0 |
 | T3 | A push base=1 → ok, revision 2 |
 | T4 | A push stale base=1 → conflict, currentRevision=2 |
-| T5 | B UPDATE of A row → 0 rows |
-| T6 | B INSERT with user_id=A → denied (42501) |
-| T7 | versions: snapshot ok; UPDATE/DELETE denied (append-only) |
-| T8 | ≥4 Storage policies present for `dreamboard-assets` |
+| T5 | B direct UPDATE of A row → denied (42501) |
+| T6 | B direct INSERT (incl. user_id=A) → denied (42501) |
+| T7 | versions: RPC snapshot ok; direct INSERT/UPDATE/DELETE denied; counts stable |
+| T8 | exact policy inventory: documents SELECT-only, versions SELECT-only, storage 4/4 (names/commands/qual/with_check) |
 | T9 | CAS insert conflict (base=0 on existing board) → conflict |
+| T10 | CAS concurrency: same baseRevision twice → exactly one success, one conflict (true parallel variant in runbook, two psql sessions) |
+| T11 | sync_snapshot for foreign/nonexistent board → board_not_found |
+| T12 | sync_assets insert for foreign/nonexistent board → denied (42501/FK) |
 
-Additional manual checks (sandbox): upload as A to `dream-images/B-...` → rejected; signed URL for A's object rendered by B → 403; `service_role` used only from SQL editor/CI (not from any client).
+**Idempotency check:** re-run the full schema SQL (§1–§5) a second time — must succeed without errors (all DDL is `IF NOT EXISTS`/`CREATE OR REPLACE`/`ON CONFLICT DO NOTHING`/`DROP POLICY IF EXISTS`).
+
+Additional manual checks in the sandbox (runbook §5): real Storage API operations as A and B — upload to own path `{user_id}/{board_id}/...` succeeds; upload into another user's path is rejected; select/signed URL of A's object from B → 403; update/delete own objects OK; `service_role` used only from SQL editor/CI (not from any client).
 
 ## 5. L4/L5 integration & device gates
 
