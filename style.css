@@ -300,6 +300,23 @@ body {
     transform: scale(0.97);
 }
 
+/* v14-ux: мобильное меню — desktop (base) состояние.
+   .header-top-row и #mobile-menu-panel на desktop «растворяются»
+   (display: contents), сохраняя прежний flex-layout шапки 1-в-1;
+   мобильные кнопки скрыты. */
+.header-top-row {
+    display: contents;
+}
+
+#mobile-menu-panel {
+    display: contents;
+}
+
+.mobile-menu-toggle,
+.mobile-manifest-btn {
+    display: none;
+}
+
 /* РАБОЧАЯ ОБЛАСТЬ */
 .app-workspace {
     flex-grow: 1;
@@ -550,16 +567,33 @@ body {
     box-shadow: 0 0 15px var(--manifested-color);
 }
 
-.action-round-btn.delete-btn:hover {
+.action-round-btn.delete-btn {
+    /* Нейтральное состояние — как остальные quick actions (danger только на hover/focus-visible/active) */
+}
+
+.action-round-btn.delete-btn:hover,
+.action-round-btn.delete-btn:focus-visible,
+.action-round-btn.delete-btn:active {
     background: #ff2d55;
     color: #ffffff;
     box-shadow: 0 0 15px #ff2d55;
+    border-color: #ff2d55;
 }
 
-.action-round-btn.delete-btn {
-    color: #ff6b83;
-    border-color: rgba(255, 45, 85, 0.55);
-    background: rgba(80, 8, 28, 0.88);
+/* На touch-устройствах без взаимодействия красного акцента быть не должно:
+   убираем постоянный danger-стиль; активная (нажатая) кнопка сохраняет индикацию */
+@media (hover: none), (pointer: coarse) {
+    .action-round-btn.delete-btn {
+        color: #ffffff;
+        border-color: rgba(255,255,255,0.15);
+        background: rgba(13, 10, 26, 0.85);
+    }
+    .action-round-btn.delete-btn:active {
+        background: #ff2d55;
+        color: #ffffff;
+        box-shadow: 0 0 15px #ff2d55;
+        border-color: #ff2d55;
+    }
 }
 
 /* Тело карточки */
@@ -1218,6 +1252,7 @@ textarea:focus {
     left: 0;
     width: 100vw;
     height: 100vh;
+    height: 100dvh; /* динамическая высота вьюпорта (мобильные) с fallback */
     background: #020106;
     z-index: 5000;
     display: flex;
@@ -1227,6 +1262,12 @@ textarea:focus {
     opacity: 0;
     pointer-events: none;
     transition: opacity 1s cubic-bezier(0.25, 1, 0.5, 1);
+    /* Безопасные зоны (вырезы/жесты): контент не уходит под них */
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    box-sizing: border-box;
 }
 
 .manifest-overlay.active {
@@ -1275,6 +1316,8 @@ textarea:focus {
     width: 85%;
     max-width: 1100px;
     height: 60vh;
+    height: 60dvh;
+    min-height: 0;
     display: flex;
     align-items: center;
     z-index: 5;
@@ -1346,6 +1389,10 @@ textarea:focus {
     border-radius: var(--radius-md);
     background: rgba(2, 1, 6, 0.6) !important;
     border-color: rgba(255, 255, 255, 0.05);
+    /* Страховка при малой высоте: внутренняя прокрутка вместо обрезки */
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 .manifest-card-info h2 {
@@ -1610,6 +1657,177 @@ textarea:focus {
     font: inherit;
     font-weight: 700;
     cursor: pointer;
+}
+
+/* ==========================================================================
+   ПОЛНОЭКРАННЫЙ ПРОСМОТР ЦЕЛИ (READ-ONLY)
+   ========================================================================== */
+/* Нативный <dialog> — browser top layer: выше header и всех stacking contexts.
+   Полноэкранный viewer: fixed, inset 0, 100vw x 100dvh, без рамок/отступов. */
+#dream-view-modal.dream-view-dialog {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background: rgba(7, 5, 15, 0.96);
+    color: var(--text-primary);
+    overflow: hidden;
+}
+
+#dream-view-modal.dream-view-dialog::backdrop {
+    background: rgba(2, 1, 6, 0.88);
+}
+
+.dream-view-content {
+    max-width: 720px;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+    overflow: hidden;
+    margin: 0 auto;
+}
+
+.dream-view-content .modal-header {
+    flex: 0 0 auto;
+}
+
+.dream-view-body {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    padding: 20px 28px 28px;
+    overflow-y: auto;
+    min-height: 0;
+    flex: 1 1 auto;
+}
+
+.dream-view-image-wrap {
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    flex: 0 0 auto;
+    background: rgba(255,255,255,0.04);
+}
+
+.dream-view-image {
+    display: block;
+    width: 100%;
+    max-height: 46vh;
+    max-height: 46dvh;
+    object-fit: cover;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.dream-view-info {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 0;
+}
+
+.dream-view-info .card-badge {
+    align-self: flex-start;
+}
+
+#dream-view-dream-title {
+    font-family: 'Outfit', sans-serif;
+    font-size: 22px;
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0;
+}
+
+.dream-view-year {
+    color: var(--text-secondary);
+    font-size: 13px;
+    margin: 0;
+}
+
+.dream-view-desc {
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin: 0;
+    white-space: pre-wrap;
+}
+
+.dream-view-milestones {
+    list-style: none;
+    padding: 0;
+    margin: 4px 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.dream-view-milestone {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.4;
+}
+
+.dream-view-milestone.checked {
+    color: var(--text-primary);
+}
+
+.dream-view-check {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 1px solid rgba(255,255,255,0.3);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    margin-top: 1px;
+}
+
+.dream-view-milestone.checked .dream-view-check {
+    background: var(--wealth-color, #00b09b);
+    border-color: var(--wealth-color, #00b09b);
+    color: #fff;
+}
+
+/* Expand-кнопка: как остальные quick actions; на телефоне touch target >= 44x44 */
+.action-round-btn.expand-btn:hover {
+    background: #ffffff;
+    color: #07050f;
+    border-color: #ffffff;
+}
+
+@media (hover: none), (pointer: coarse) {
+    .action-round-btn.expand-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+
+@media (max-width: 620px) {
+    .dream-view-body {
+        padding: 14px 16px 20px;
+        gap: 14px;
+    }
+    .dream-view-image {
+        max-height: 38vh;
+        max-height: 38dvh;
+    }
+    #dream-view-dream-title {
+        font-size: 19px;
+    }
 }
 
 .toast-action:focus-visible,
@@ -1944,6 +2162,7 @@ textarea:focus {
     .app-header {
         padding: 6px 10px;
         gap: 6px;
+        padding-top: calc(6px + env(safe-area-inset-top, 0px));
     }
 
     .header-logo h1 {
@@ -1991,14 +2210,18 @@ textarea:focus {
 
     .manifest-content {
         width: 82%;
+        height: calc(100dvh - 118px);
         height: calc(100vh - 118px);
         margin-top: 10px;
+        min-height: 0;
     }
 
     .manifest-card-info {
         width: 54%;
         max-height: 78%;
-        overflow: hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
         padding: 16px;
         margin-left: 18px;
         margin-right: auto;
@@ -2115,7 +2338,9 @@ textarea:focus {
     .manifest-card-info {
         width: min(43%, 520px);
         max-height: calc(100% - 24px);
-        overflow: hidden;
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
         margin-left: 20px;
         margin-right: auto;
         padding: 14px 18px;
@@ -2237,6 +2462,9 @@ textarea:focus {
     .manifest-card-info {
         width: min(42%, 360px);
         max-height: calc(100% - 18px);
+        overflow-y: auto;
+        overflow-x: hidden;
+        min-height: 0;
         padding: 10px 14px;
         margin-left: 16px;
     }
@@ -2329,6 +2557,369 @@ textarea:focus {
     .manifest-affirmation-slider {
         left: 118px;
         right: 112px;
+    }
+}
+
+/* v14-ux: сверхнизкий landscape (полезная высота может быть ~180-200px после
+   панелей Chrome). Overlay становится scroll-контейнером, контент уходит
+   в поток, чтобы можно было доскроллить до самого нижнего элемента.
+   Не используем фиксированную min-height > viewport; уменьшаем только
+   декоративные отступы, affirmation/header и размер изображения. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .manifest-overlay {
+        height: 100dvh;
+        max-height: 100dvh;
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+        justify-content: flex-start;
+        align-items: stretch;
+        /* safe-area справа/слева (вырезы/жесты в landscape) */
+        padding-left: env(safe-area-inset-left, 0px);
+        padding-right: env(safe-area-inset-right, 0px);
+    }
+
+    /* Кнопка закрытия всегда видима при скролле */
+    .exit-manifest-btn {
+        position: sticky;
+        top: calc(8px + env(safe-area-inset-top, 0px));
+        right: calc(8px + env(safe-area-inset-right, 0px));
+        align-self: flex-end;
+        width: 40px;
+        height: 40px;
+        margin: 8px 8px 0 0;
+        flex: 0 0 auto;
+        z-index: 60;
+    }
+
+    /* Контент в потоке: высота определяется содержимым, не фиксирована */
+    .manifest-content {
+        position: relative;
+        left: auto;
+        right: auto;
+        top: auto;
+        bottom: auto;
+        width: 100%;
+        max-width: none;
+        height: auto;
+        min-height: 0;
+        margin: 0;
+        border-radius: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        flex: 1 0 auto;
+        box-shadow: none;
+    }
+
+    /* Изображение: уменьшено, но видимо; задаёт высоту блока */
+    .manifest-slider-container {
+        position: relative;
+        width: 100%;
+        height: clamp(110px, 30dvh, 240px);
+        flex: 0 0 auto;
+        min-height: 0;
+    }
+
+    .manifest-card-info {
+        position: relative;
+        width: 100%;
+        max-width: none;
+        max-height: none;
+        min-height: 0;
+        overflow-y: visible;
+        margin: 0;
+        padding: 10px 14px;
+        border-radius: 0;
+        flex: 1 1 auto;
+    }
+
+    /* Возвращаем полный текст (сброс обрезок из max-height:620/520 блоков) */
+    #manifest-title {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+        font-size: 17px;
+        line-height: 1.15;
+        margin: 2px 0 6px;
+    }
+
+    #manifest-desc,
+    .manifest-milestones-progress {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+    }
+
+    #manifest-desc {
+        font-size: 12px;
+        line-height: 1.35;
+        margin-bottom: 8px;
+    }
+
+    .manifest-milestones-progress {
+        gap: 5px;
+        font-size: 11px;
+    }
+
+    .manifest-card-info .card-badge {
+        position: static;
+        display: inline-block;
+        margin-bottom: 4px;
+        padding: 3px 8px;
+        font-size: 10px;
+    }
+
+    /* Гид по дыханию: компактный, в потоке (не перекрывает контент) */
+    .breath-guide-container {
+        position: relative;
+        top: auto;
+        left: auto;
+        transform: none;
+        width: auto;
+        height: auto;
+        gap: 8px;
+        padding: 4px 12px;
+        margin: 6px 8px 0;
+        flex: 0 0 auto;
+        align-self: flex-start;
+        border-radius: 20px;
+    }
+
+    .breath-circle-outer {
+        width: 28px;
+        height: 28px;
+    }
+
+    .breath-circle-inner {
+        width: 14px;
+        height: 14px;
+    }
+
+    #breath-text {
+        position: static;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+    }
+
+    /* Affirmation: компактная, в потоке */
+    .manifest-affirmation-slider {
+        position: relative;
+        top: auto;
+        left: auto;
+        right: auto;
+        bottom: auto;
+        transform: none;
+        width: auto;
+        padding: 4px 12px;
+        margin: 6px 8px 0;
+        flex: 0 0 auto;
+        border-radius: 14px;
+    }
+
+    #manifest-affirmation-text {
+        display: block;
+        -webkit-line-clamp: unset;
+        overflow: visible;
+        font-size: 12px;
+        line-height: 1.25;
+    }
+
+    /* Управление: возвращаем в поток, доступно по скроллу до самого низа */
+    .manifest-controls {
+        position: relative;
+        bottom: auto;
+        display: flex;
+        gap: 10px;
+        padding: 6px 8px;
+        margin: 8px auto 12px;
+        flex: 0 0 auto;
+    }
+
+    .manifest-control-btn {
+        width: 38px;
+        height: 38px;
+        min-width: 38px;
+        min-height: 38px;
+    }
+
+    .manifest-control-btn#manifest-play-btn {
+        width: 46px;
+        height: 46px;
+    }
+
+    .manifest-rotate-prompt {
+        display: none !important;
+    }
+}
+
+/* v14-ux: мобильное меню — один ряд фильтров и один ряд действий (≤600px):
+   nowrap + горизонтальный скролл, корзина не переносится одна на новую
+   строку, touch targets ≥44×44; уменьшены только gaps и декоративные
+   padding. Сворачивание — кнопка #mobile-menu-toggle (native button,
+   aria-expanded/aria-controls; состояние только в памяти вкладки). */
+@media (max-width: 600px) {
+    .header-top-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .mobile-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: 12px;
+        background: var(--panel-glass);
+        border: 1px solid var(--panel-glass-border);
+        color: var(--text-primary);
+        cursor: pointer;
+    }
+
+    .menu-collapse-icon { display: block; }
+    .menu-expand-icon { display: none; }
+    .app-header.menu-collapsed .menu-collapse-icon { display: none; }
+    .app-header.menu-collapsed .menu-expand-icon { display: block; }
+
+    #mobile-menu-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .app-header.menu-collapsed #mobile-menu-panel {
+        display: none;
+    }
+
+    .mobile-manifest-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex: 1 1 auto;
+        min-height: 44px;
+        padding: 8px 14px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    /* Один горизонтально прокручиваемый ряд */
+    .category-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .category-filters::-webkit-scrollbar,
+    .header-actions::-webkit-scrollbar {
+        display: none;
+    }
+
+    .header-actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        justify-content: flex-start;
+        gap: 8px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    /* Основная manifest-кнопка скрыта: компактный доступ — в header-top-row */
+    #start-manifest-btn {
+        display: none;
+    }
+
+    /* Touch targets ≥44×44 */
+    .icon-btn,
+    .toggle-btn {
+        min-width: 44px;
+        min-height: 44px;
+    }
+
+    .filter-btn {
+        min-height: 44px;
+        padding: 8px 14px;
+    }
+}
+
+/* v14-ux: короткий landscape (max-height: 500px) — меню по умолчанию свёрнуто
+   (состояние задаёт JS: только short landscape), компактная шапка минимальна,
+   раскрытие доступно пользователю; desktop не затрагивается. */
+@media (orientation: landscape) and (max-height: 500px) {
+    .header-top-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        padding: 0;
+    }
+
+    .mobile-menu-toggle {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        border-radius: 12px;
+        background: var(--panel-glass);
+        border: 1px solid var(--panel-glass-border);
+        color: var(--text-primary);
+        cursor: pointer;
+    }
+
+    .menu-collapse-icon { display: block; }
+    .menu-expand-icon { display: none; }
+    .app-header.menu-collapsed .menu-collapse-icon { display: none; }
+    .app-header.menu-collapsed .menu-expand-icon { display: block; }
+
+    .mobile-manifest-btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        margin-left: auto;
+        min-height: 44px;
+        padding: 6px 14px;
+        font-size: 13px;
+        white-space: nowrap;
+    }
+
+    #mobile-menu-panel {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
+        width: 100%;
+        max-height: calc(100dvh - 60px);
+        overflow-y: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .app-header.menu-collapsed #mobile-menu-panel {
+        display: none;
+    }
+
+    .header-actions {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        gap: 6px;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+    }
+
+    .category-filters {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
     }
 }
 
