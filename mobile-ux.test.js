@@ -4,9 +4,11 @@
    Покрытие:
    1. Delete UX: нейтральная кнопка удаления, danger только на
       hover/focus-visible/active; на touch без взаимодействия красного нет.
-   2. Fullscreen view: кнопка «Развернуть» на grid/canvas-карточках,
-      touch target >= 44x44, read-only диалог (role=dialog/aria-modal),
-      закрытие (кнопка/Escape/backdrop), начальный фокус и возврат фокуса,
+   2. Fullscreen view: нативный <dialog> с showModal() (browser top layer — выше
+      header и всех stacking contexts), кнопка «Развернуть» на grid/canvas-карточках,
+      touch target >= 44x44, read-only диалог (ARIA), requestFullscreen в том же
+      user gesture (не фатально), exitFullscreen только для этого viewer,
+      закрытие (кнопка/Escape/backdrop/close), начальный фокус и возврат фокуса,
       desktop dblclick с guard (не action/input/button, не после drag/resize),
       отсутствие mobile double-tap, никакой записи в storage/IDB.
    3. Manifestation mobile/landscape: 100dvh + fallback, safe-area-inset,
@@ -85,14 +87,38 @@ test('5. touch target expand-кнопки >= 44x44 на телефоне', () =>
         '44x44 min touch target');
 });
 
-test('6. read-only диалог: role=dialog, aria-modal, заголовок, aria-hidden', () => {
-    const modal = INDEX_HTML.match(/<div id="dream-view-modal"[\s\S]*?<\/div>\s*<\/div>\s*<\/div>/);
-    assert.ok(modal, 'view-модалка есть в index.html');
-    assert.ok(/role="dialog"/.test(modal[0]), 'role=dialog');
-    assert.ok(/aria-modal="true"/.test(modal[0]), 'aria-modal');
-    assert.ok(/aria-labelledby="dream-view-title"/.test(modal[0]), 'aria-labelledby');
-    assert.ok(/id="dream-view-title"/.test(modal[0]), 'заголовок');
-    assert.ok(/aria-hidden="true"/.test(modal[0]), 'aria-hidden при закрытии');
+test('6. read-only viewer: нативный <dialog> в browser top layer (выше header), ARIA', () => {
+    const dialog = INDEX_HTML.match(/<dialog id="dream-view-modal"[\s\S]*?<\/dialog>/);
+    assert.ok(dialog, 'нативный <dialog> есть в index.html');
+    assert.ok(/class="dream-view-dialog"/.test(dialog[0]), 'класс dream-view-dialog');
+    assert.ok(/aria-labelledby="dream-view-title"/.test(dialog[0]), 'aria-labelledby');
+    assert.ok(/id="dream-view-title"/.test(dialog[0]), 'заголовок');
+    assert.ok(!/class="modal-overlay dream-view-overlay"/.test(INDEX_HTML), 'старый overlay-div заменён на dialog');
+    assert.ok(APP_JS.includes('dreamViewModal.showModal()'), 'showModal() — browser top layer выше header');
+});
+
+test('6b. dialog CSS: fixed/inset:0/100vw/100dvh, без max-width/max-height/margin/border, ::backdrop', () => {
+    const rule = STYLE_CSS.match(/#dream-view-modal\.dream-view-dialog\s*\{([\s\S]*?)\n\}/);
+    assert.ok(rule, 'правило #dream-view-modal.dream-view-dialog есть');
+    assert.ok(/position:\s*fixed;/.test(rule[1]), 'position:fixed');
+    assert.ok(/inset:\s*0;/.test(rule[1]), 'inset:0');
+    assert.ok(/width:\s*100vw;/.test(rule[1]), 'width:100vw');
+    assert.ok(/height:\s*100dvh;/.test(rule[1]), 'height:100dvh');
+    assert.ok(/max-width:\s*none;/.test(rule[1]), 'max-width:none');
+    assert.ok(/max-height:\s*none;/.test(rule[1]), 'max-height:none');
+    assert.ok(/margin:\s*0;/.test(rule[1]), 'margin:0');
+    assert.ok(/border:\s*0;/.test(rule[1]), 'border:0');
+    assert.ok(/::backdrop/.test(STYLE_CSS), '::backdrop есть');
+    // Контент viewer'а скроллится (ничего не обрезается)
+    assert.ok(/flex:\s*1 1 auto;/.test(STYLE_CSS) || /flex:\s*1 1 auto/.test(STYLE_CSS), 'body viewer растягивается');
+});
+
+test('6c. fullscreen: requestFullscreen в том же gesture, не фатально; exitFullscreen только для viewer; fullscreenchange', () => {
+    assert.ok(APP_JS.includes('dreamViewModal.requestFullscreen()'), 'requestFullscreen после showModal');
+    assert.ok(/requestFullscreen\(\)[\s\S]{0,500}catch/.test(APP_JS), 'ошибки fullscreen не фатальны (try/catch)');
+    assert.ok(APP_JS.includes('document.fullscreenElement === dreamViewModal'), 'exitFullscreen только если viewer — fullscreen element');
+    assert.ok(APP_JS.includes('document.exitFullscreen()'), 'exitFullscreen вызывается при закрытии');
+    assert.ok(APP_JS.includes("addEventListener('fullscreenchange'"), 'fullscreenchange поддержан');
 });
 
 test('7. поля просмотра заполняются только через textContent/безопасные DOM API', () => {
@@ -108,12 +134,15 @@ test('7. поля просмотра заполняются только чер�
     assert.ok(!viewFn[0].includes('indexedDB'), 'нет IDB записи');
 });
 
-test('8. закрытие: кнопка, Escape, клик по backdrop; начальный фокус и возврат фокуса', () => {
+test('8. закрытие: кнопка, Escape (нативный dialog), клик по backdrop, close-событие; фокус', () => {
     assert.ok(APP_JS.includes("dreamViewCloseBtn.addEventListener('click', closeDreamViewModal)"), 'кнопка закрытия');
-    assert.ok(/dreamViewModal\.addEventListener\('keydown'[\s\S]*?e\.key === 'Escape'/.test(APP_JS), 'Escape закрывает');
+    // Escape обрабатывается нативным <dialog> (cancel → close), очистка в close-событии
+    assert.ok(APP_JS.includes("dreamViewModal.addEventListener('close', closeDreamViewModal)"), 'close-событие (Escape/нативное закрытие)');
+    assert.ok(!/dreamViewModal\.addEventListener\('keydown'/.test(APP_JS), 'Escape отдан нативному dialog (нет ручного keydown)');
     assert.ok(/dreamViewModal\.addEventListener\('click'[\s\S]*?e\.target === dreamViewModal/.test(APP_JS), 'backdrop закрывает');
     assert.ok(APP_JS.includes('dreamViewCloseBtn.focus()'), 'начальный фокус на кнопке закрытия');
-    assert.ok(APP_JS.includes('dreamViewTrigger.focus()'), 'возврат фокуса на открывшую кнопку');
+    assert.ok(APP_JS.includes('trigger.focus()'), 'возврат фокуса на открывшую кнопку');
+    assert.ok(APP_JS.includes('document.body.style.overflow = \'\''), 'снятие блокировки скролла при закрытии');
 });
 
 test('9. desktop dblclick открывает просмотр с guard (не action/input/button, не после drag/resize)', () => {

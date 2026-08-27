@@ -455,9 +455,10 @@
         </div>
     </div>
 
-    <!-- Полноэкранный просмотр цели (read-only, Этап hotfix: mobile-ux-polish) -->
-    <div id="dream-view-modal" class="modal-overlay dream-view-overlay" aria-hidden="true">
-        <div class="modal-content glass-card dream-view-content" role="dialog" aria-modal="true" aria-labelledby="dream-view-title">
+    <!-- Полноэкранный просмотр цели (read-only, native <dialog> в browser top layer:
+         выше header и всех stacking contexts; fullscreen через requestFullscreen) -->
+    <dialog id="dream-view-modal" class="dream-view-dialog" aria-labelledby="dream-view-title">
+        <div class="modal-content glass-card dream-view-content">
             <header class="modal-header">
                 <h3 id="dream-view-title">Просмотр цели</h3>
                 <button type="button" class="close-modal-btn" id="dream-view-close" aria-label="Закрыть просмотр">&times;</button>
@@ -475,7 +476,7 @@
                 </div>
             </div>
         </div>
-    </div>
+    </dialog>
 
     <!-- Элемент для всплывающих уведомлений -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions"></div>
