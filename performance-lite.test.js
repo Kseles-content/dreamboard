@@ -363,7 +363,7 @@ test('27. import/export controls не меняются (export/import видим
 test('28. script order storage→backup→import→performance→trash→app и PRECACHE содержит performance/trash', () => {
     const scripts = [...INDEX_HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
     const local = scripts.filter(s => !s.startsWith('http'));
-    const expected = ['storage.js', 'backup.js', 'import.js', 'performance.js', 'trash.js', 'app.js'];
+    const expected = ['storage.js', 'backup.js', 'import.js', 'performance.js', 'trash.js', 'config.js', 'auth.js', 'app.js', 'sw-register.js'];
     assert.deepStrictEqual(local, expected, `порядок скриптов: ${local.join(' → ')}`);
     const precache = SW_JS.slice(SW_JS.indexOf('const PRECACHE_URLS'), SW_JS.indexOf('];'));
     const precacheIdx = precache.indexOf("'./performance.js'");
@@ -377,9 +377,9 @@ test('28. script order storage→backup→import→performance→trash→app и 
     assert.ok(fs.existsSync(path.join(__dirname, 'trash.js')));
 });
 
-test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v14)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v14';/.test(SW_JS),
-        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v14');
+test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v15)', () => {
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v15';/.test(SW_JS),
+        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v15');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v13'/.test(SW_JS), 'статический dreamboard-v13 CACHE_NAME отсутствует');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v14'/.test(SW_JS), 'статический dreamboard-v14 CACHE_NAME отсутствует');
 });

@@ -397,12 +397,18 @@ test('16. контракты не тронуты: schemaVersion 2, backup format
     assert.ok(STYLE_CSS.includes('html.performance-lite'), 'lite не сломан');
 });
 
-test('17. script order и PRECACHE: новых runtime-файлов нет (всё в app.js/style.css)', () => {
-    const scripts = (INDEX_HTML.match(/src="([^"]*\.js)"/g) || []).filter(s => !s.includes('cdnjs'));
-    assert.deepStrictEqual(scripts, ['src="storage.js"', 'src="backup.js"', 'src="import.js"', 'src="performance.js"', 'src="trash.js"', 'src="app.js"'],
-        'порядок скриптов не изменён');
+test('17. script order сохраняет UX runtime и добавляет Stage 7B перед app.js', () => {
+    const scripts = (INDEX_HTML.match(/src="([^"]*\.js)"/g) || []);
+    assert.deepStrictEqual(scripts, [
+        'src="assets/vendor/html2canvas-1.4.1.min.js"',
+        'src="storage.js"', 'src="backup.js"', 'src="import.js"',
+        'src="performance.js"', 'src="trash.js"', 'src="config.js"',
+        'src="auth.js"', 'src="app.js"', 'src="sw-register.js"'
+    ], 'Stage 7B script order (supabase-js intentionally NOT static — loaded dynamically by auth.js)');
     const SW_JS = fs.readFileSync(path.join(__dirname, 'service-worker.js'), 'utf8');
     assert.ok(SW_JS.includes("'./app.js'") && SW_JS.includes("'./style.css'"), 'PRECACHE без изменений');
+    // SDK остаётся в PRECACHE (offline-доступ после включения), но не исполняется статически
+    assert.ok(SW_JS.includes("'./assets/vendor/supabase-js-2.112.2.min.js'"), 'SDK precached');
 });
 
 // ==========================================================================

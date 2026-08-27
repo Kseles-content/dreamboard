@@ -3094,3 +3094,109 @@ html.performance-lite .breath-circle-inner.hold {
     transform: none !important;
     box-shadow: none !important;
 }
+/* Stage 7B: optional account UI. Hidden while the production feature flag is off. */
+.account-toggle-btn[hidden] {
+    display: none !important;
+}
+
+.auth-dialog {
+    position: fixed;
+    inset: 0;
+    width: min(94vw, 560px);
+    max-width: 560px;
+    max-height: min(90dvh, 760px);
+    margin: auto;
+    padding: 0;
+    border: 0;
+    color: var(--text-primary);
+    background: transparent;
+}
+
+.auth-dialog::backdrop {
+    background: rgba(4, 3, 12, 0.82);
+    backdrop-filter: blur(8px);
+}
+
+.auth-content {
+    display: flex;
+    flex-direction: column;
+    max-height: min(90dvh, 760px);
+    overflow-y: auto;
+}
+
+.auth-local-note,
+.auth-sync-note {
+    margin: 0.35rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+
+.auth-sync-note {
+    margin: 0 1.5rem 1.5rem;
+}
+
+.auth-mode-tabs {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0 1.5rem 0.75rem;
+    overflow-x: auto;
+}
+
+.auth-mode-tabs .btn {
+    flex: 0 0 auto;
+    min-height: 44px;
+}
+
+.auth-session-panel {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin: 0 1.5rem 1rem;
+    padding: 0.85rem 1rem;
+    border: 1px solid rgba(119, 232, 193, 0.28);
+    border-radius: 12px;
+}
+
+.auth-session-panel[hidden] { display: none; }
+.auth-session-status { margin: 0; overflow-wrap: anywhere; }
+
+.auth-form {
+    padding-top: 0;
+}
+
+.auth-form input:not([type="hidden"]) {
+    width: 100%;
+    min-height: 44px;
+}
+
+.auth-turnstile:empty {
+    display: none;
+}
+
+.auth-message {
+    min-height: 1.4em;
+    margin: 0;
+    font-size: 0.9rem;
+}
+
+.auth-message[data-kind="error"] { color: #ff879e; }
+.auth-message[data-kind="success"] { color: #77e8c1; }
+
+@media (max-width: 600px) {
+    .auth-dialog {
+        width: 100vw;
+        max-width: none;
+        max-height: 100dvh;
+        margin: 0;
+    }
+
+    .auth-content {
+        min-height: 100dvh;
+        max-height: 100dvh;
+        border-radius: 0;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+    }
+}
