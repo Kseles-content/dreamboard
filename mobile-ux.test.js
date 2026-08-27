@@ -502,13 +502,115 @@ test('25. desktop: layout не изменён (top-row/panel — display:content
 });
 
 test('26. компактный доступ к «Режиму Манифестации» при свёрнутом меню', () => {
-    const compactBtn = INDEX_HTML.match(/<button id="mobile-manifest-btn"[\s\S]*?Режим Манифестации[\s\S]*?<\/button>/);
-    assert.ok(compactBtn, 'mobile-manifest-btn с текстом «Режим Манифестации» есть');
-    assert.ok(APP_JS.includes("mobileManifestBtn.addEventListener('click'"), 'компактная кнопка привязана');
-    assert.ok(APP_JS.includes('startManifestBtn.click()'), 'использует ту же логику, что основная кнопка');
+    const compactBtn = INDEX_HTML.match(/<button id="mobile-manifest-btn"[\s\S]*?<\/button>/);
+    assert.ok(compactBtn, 'mobile-manifest-btn есть');
+    assert.ok(/Манифестация/.test(compactBtn[0]), 'видимый текст «Манифестация»');
+    assert.ok(/aria-label="Режим манифестации"/.test(compactBtn[0]), 'aria-label «Режим манифестации»');
+    assert.ok(/title="Режим манифестации"/.test(compactBtn[0]), 'title «Режим манифестации»');
+    assert.ok(APP_JS.includes("mobileManifestBtn.addEventListener('click', startManifestationFromGesture)"),
+        'компактная кнопка ведёт в общий user-gesture путь');
+    assert.ok(!APP_JS.includes('startManifestBtn.click()'), 'нет делегирования через синтетический click');
     const block = mediaBlock(STYLE_CSS, '(max-width: 600px)');
     assert.ok(block && /\.mobile-manifest-btn\s*\{[^}]*display:\s*inline-flex;/.test(block),
         'компактная manifest видна на mobile (в т.ч. при свёрнутом меню)');
     assert.ok(/\.app-header\.menu-collapsed\s+#mobile-menu-panel\s*\{[\s\S]*?display:\s*none;/.test(STYLE_CSS),
         'при сворачивании скрывается только панель (filters/actions)');
+    // Основная кнопка на desktop — текст не изменён
+    const mainBtn = INDEX_HTML.match(/<button id="start-manifest-btn"[\s\S]*?<\/button>/);
+    assert.ok(mainBtn && /Режим Манифестации/.test(mainBtn[0]), 'desktop-текст основной кнопки не изменён');
+});
+
+// ==========================================================================
+// 6. FULLSCREEN МАНИФЕСТАЦИИ (hotfix: manifest fullscreen)
+// ==========================================================================
+
+test('27. обе кнопки запускают один общий user-gesture путь (startManifestationFromGesture)', () => {
+    assert.ok(APP_JS.includes("startManifestBtn.addEventListener('click', startManifestationFromGesture)"),
+        'основная кнопка → общий путь');
+    assert.ok(APP_JS.includes("mobileManifestBtn.addEventListener('click', startManifestationFromGesture)"),
+        'компактная кнопка → тот же общий путь');
+    assert.ok(!APP_JS.includes('startManifestBtn.click()'), 'нет синтетического click-делегирования');
+    const fn = extractFunction(APP_JS, 'startManifestationFromGesture');
+    assert.ok(fn, 'startManifestationFromGesture есть');
+    assert.ok(fn.includes('enterManifestMode(activeDreams)'), 'активация overlay');
+    assert.ok(fn.includes('requestFullscreenForManifestOverlay()'),
+        'fullscreen запрашивается после активации overlay в том же gesture');
+});
+
+test('28. requestFullscreenForManifestOverlay: try/catch + .catch, без повторных запросов', () => {
+    const fn = extractFunction(APP_JS, 'requestFullscreenForManifestOverlay');
+    assert.ok(fn, 'requestFullscreenForManifestOverlay есть');
+    assert.ok(fn.includes('try') && fn.includes('catch'), 'sync throw → try/catch');
+    assert.ok(fn.includes('.catch('), 'Promise rejection → .catch(() => {})');
+    assert.ok(fn.includes("typeof manifestOverlay.requestFullscreen !== 'function'"),
+        'unsupported API → тихий no-op');
+    // Вызов только из user-gesture пути: ровно один call-site (`();` — не определение)
+    const calls = (APP_JS.match(/requestFullscreenForManifestOverlay\(\);/g) || []).length;
+    assert.strictEqual(calls, 1, 'fullscreen запрашивается ТОЛЬКО из жеста (не на visibilitychange/fullscreenchange)');
+    // Нет orientation lock
+    assert.ok(!APP_JS.includes('screen.orientation.lock'), 'orientation lock не добавлен');
+});
+
+test('29. динамический: fullscreen манифестации success/reject/throw/unsupported', async () => {
+    const fnSrc = extractFunction(APP_JS, 'requestFullscreenForManifestOverlay');
+    assert.ok(fnSrc, 'функция извлекается');
+    // Функция замыкается на manifestOverlay — передаём фейк через sandbox-параметр
+    const makeFn = (fakeOverlay) => new Function('manifestOverlay', `return (${fnSrc});`)(fakeOverlay);
+    const unhandled = [];
+    const onUnhandled = (r) => unhandled.push(r);
+    process.on('unhandledRejection', onUnhandled);
+    try {
+        // success
+        const okViewer = { active: true, requestFullscreen: () => Promise.resolve() };
+        makeFn(okViewer)();
+        await new Promise(r => setTimeout(r, 20));
+        assert.strictEqual(okViewer.active, true, 'success: overlay остаётся активным');
+        // reject → обработан, нет unhandledrejection
+        const rejViewer = { active: true, requestFullscreen: () => Promise.reject(new Error('NotAllowedError')) };
+        makeFn(rejViewer)();
+        await new Promise(r => setTimeout(r, 20));
+        assert.strictEqual(unhandled.length, 0, 'reject обработан — нет unhandledrejection');
+        assert.strictEqual(rejViewer.active, true, 'reject: манифестация продолжается (overlay активен)');
+        // sync throw
+        const thrViewer = { active: true, requestFullscreen: () => { throw new Error('sync'); } };
+        makeFn(thrViewer)(); // не должно бросить
+        assert.strictEqual(thrViewer.active, true, 'throw: overlay активен');
+        // unsupported (нет метода)
+        makeFn({ active: true })();
+        assert.strictEqual(unhandled.length, 0, 'нет unhandledrejection ни в одном сценарии');
+    } finally {
+        process.removeListener('unhandledRejection', onUnhandled);
+    }
+});
+
+test('30. exit: document.exitFullscreen() только если fullscreenElement === manifestOverlay; viewer независим', () => {
+    const exitFn = extractFunction(APP_JS, 'exitManifestMode');
+    assert.ok(exitFn, 'exitManifestMode есть');
+    assert.ok(exitFn.includes('document.fullscreenElement === manifestOverlay'),
+        'guard: exit только для overlay манифестации');
+    assert.ok(exitFn.includes('document.exitFullscreen()'), 'exitFullscreen вызывается');
+    assert.ok(exitFn.includes('.catch('), 'rejection выхода обработан');
+    // Viewer-путь не сломан: его guard и функция остались
+    assert.ok(APP_JS.includes('document.fullscreenElement === dreamViewModal'),
+        'viewer guard на месте (независим от манифестации)');
+    assert.ok(APP_JS.includes('requestFullscreenForViewer(dreamViewModal)'), 'viewer fullscreen на месте');
+    const manifestFn = extractFunction(APP_JS, 'requestFullscreenForManifestOverlay');
+    assert.ok(manifestFn && !manifestFn.includes('dreamViewModal'), 'manifest fullscreen не трогает viewer');
+});
+
+test('31. компактная кнопка: короткая подпись + полное aria-label; текст не обрезается (nowrap)', () => {
+    const compactBtn = INDEX_HTML.match(/<button id="mobile-manifest-btn"[\s\S]*?<\/button>/);
+    assert.ok(compactBtn, 'кнопка есть');
+    const visible = compactBtn[0].match(/<span>([^<]*)<\/span>/);
+    assert.ok(visible && visible[1] === 'Манифестация', 'видимый текст — короткий «Манифестация»');
+    assert.ok(/aria-label="Режим манифестации"/.test(compactBtn[0]), 'полное aria-label «Режим манифестации»');
+    assert.ok(/title="Режим манифестации"/.test(compactBtn[0]), 'полный title «Режим манифестации»');
+    // На mobile текст не обрезается: nowrap + нет overflow-обрезания
+    const block = mediaBlock(STYLE_CSS, '(max-width: 600px)');
+    assert.ok(block, 'блок 600px есть');
+    assert.ok(/\.mobile-manifest-btn\s*\{[^}]*white-space:\s*nowrap;/.test(block), 'nowrap — текст не переносится');
+    assert.ok(!/\.mobile-manifest-btn\s*\{[^}]*overflow:\s*hidden;/.test(block), 'нет скрытия переполнения (обрезания)');
+    // Основная кнопка desktop: текст прежний
+    const mainBtn = INDEX_HTML.match(/<button id="start-manifest-btn"[\s\S]*?<\/button>/);
+    assert.ok(mainBtn && /<span>Режим Манифестации<\/span>/.test(mainBtn[0]), 'desktop-текст основной кнопки не изменён');
 });

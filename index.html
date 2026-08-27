@@ -53,9 +53,11 @@
 
             <!-- Компактный доступ к «Режиму Манифестации»: виден на mobile
                  (в т.ч. при свёрнутом меню); на desktop скрыт — используется
-                 основная кнопка в .header-actions. -->
-            <button id="mobile-manifest-btn" class="glow-btn mobile-manifest-btn" type="button">
-                <span>Режим Манифестации</span>
+                 основная кнопка в .header-actions. Короткая подпись
+                 «Манифестация», полное имя — в aria-label/title. -->
+            <button id="mobile-manifest-btn" class="glow-btn mobile-manifest-btn" type="button"
+                    aria-label="Режим манифестации" title="Режим манифестации">
+                <span>Манифестация</span>
             </button>
 
             <!-- Native-кнопка сворачивания мобильного меню (mobile только):

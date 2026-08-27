@@ -2815,16 +2815,40 @@ document.addEventListener('DOMContentLoaded', () => {
         "С каждым днем я приближаюсь к своему идеальному будущему."
     ];
 
-    startManifestBtn.addEventListener('click', () => {
+    // Общий user-gesture путь для ОБЕИХ кнопок (основной и компактной):
+    // проверка активных целей → активация overlay → запрос fullscreen
+    // манифестации (только в рамках прямого пользовательского нажатия).
+    function startManifestationFromGesture() {
         // Проверяем, есть ли активные цели
         const activeDreams = dreams.filter(d => d.status === 'active');
         if (activeDreams.length === 0) {
             showToast('Создайте хотя бы одну мечту, чтобы войти в Режим Манифестации', 'info');
             return;
         }
-        
         enterManifestMode(activeDreams);
-    });
+        // Fullscreen манифестации — после активации overlay, в том же user
+        // gesture. Promise rejection → .catch(() => {}), sync throw → try/catch;
+        // unsupported/rejected API — манифестация продолжает работать обычно.
+        requestFullscreenForManifestOverlay();
+    }
+
+    // requestFullscreen() для overlay манифестации. Ошибки/отсутствие API
+    // не фатальны. Повторно fullscreen НЕ запрашивается (только из user
+    // gesture — ни на visibilitychange, ни на fullscreenchange).
+    function requestFullscreenForManifestOverlay() {
+        if (!manifestOverlay || typeof manifestOverlay.requestFullscreen !== 'function') return;
+        let fsPromise;
+        try {
+            fsPromise = manifestOverlay.requestFullscreen();
+        } catch (err) {
+            return; // Fullscreen API недоступно/отклонено — не фатально
+        }
+        if (fsPromise && typeof fsPromise.then === 'function') {
+            fsPromise.catch(() => { /* Fullscreen отклонён — обычный режим манифестации */ });
+        }
+    }
+
+    startManifestBtn.addEventListener('click', startManifestationFromGesture);
 
     exitManifestBtn.addEventListener('click', () => {
         exitManifestMode();
@@ -2871,12 +2895,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     initMobileMenu();
 
-    // Компактная кнопка «Режим Манифестации» (видна при свёрнутом мобильном меню)
-    // использует ту же логику, что и основная кнопка в .header-actions.
-    if (mobileManifestBtn && startManifestBtn) {
-        mobileManifestBtn.addEventListener('click', () => {
-            startManifestBtn.click();
-        });
+    // Компактная кнопка «Манифестация» (видна при свёрнутом мобильном меню)
+    // использует тот же общий user-gesture путь, что и основная кнопка
+    // (trusted click → fullscreen запрашивается в рамках жеста).
+    if (mobileManifestBtn) {
+        mobileManifestBtn.addEventListener('click', startManifestationFromGesture);
     }
 
     function enterManifestMode(activeDreams) {
@@ -2912,6 +2935,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function exitManifestMode() {
+        // Выход из fullscreen только если именно overlay манифестации является
+        // fullscreen element (чужой fullscreen не трогаем — viewer независим).
+        if (document.fullscreenElement === manifestOverlay) {
+            try {
+                const fsExit = document.exitFullscreen();
+                if (fsExit && typeof fsExit.catch === 'function') {
+                    fsExit.catch(() => { /* не фатально */ });
+                }
+            } catch (err) {
+                /* не фатально */
+            }
+        }
         manifestOverlay.classList.remove('active');
         document.body.style.overflow = '';
         
