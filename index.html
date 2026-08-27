@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com; connect-src 'self' https://*.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>DreamBoard — Интерактивный Коллаж Желаний</title>
     <meta name="description" content="DreamBoard — премиальное веб-приложение для визуализации целей и мечтаний. Создавайте интерактивные коллажи желаний, медитируйте в иммерсивном режиме и воплощайте мечты в жизнь.">
     <meta name="theme-color" content="#07050f">
@@ -178,6 +179,14 @@
                         <path d="M19 6l-1 14H6L5 6m3 0V4h8v2"/>
                     </svg>
                     <span id="trash-count" class="trash-count" hidden>0</span>
+                </button>
+
+                <button id="account-toggle-btn" class="icon-btn account-toggle-btn" type="button"
+                        title="Аккаунт и синхронизация" aria-label="Аккаунт и синхронизация" hidden>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M20 21a8 8 0 0 0-16 0"/>
+                        <circle cx="12" cy="7" r="4"/>
+                    </svg>
                 </button>
 
                 <!-- Индикатор состояния локального хранения (v14) -->
@@ -505,28 +514,53 @@
         </div>
     </dialog>
 
+    <dialog id="auth-modal" class="auth-dialog" aria-labelledby="auth-modal-title">
+        <div class="modal-content glass-card auth-content">
+            <header class="modal-header">
+                <div>
+                    <h3 id="auth-modal-title">Аккаунт DreamBoard</h3>
+                    <p class="auth-local-note">Регистрация необязательна. Без аккаунта все данные остаются только на этом устройстве.</p>
+                </div>
+                <button type="button" class="close-modal-btn" id="auth-close-btn" aria-label="Закрыть">&times;</button>
+            </header>
+            <div class="auth-mode-tabs" role="group" aria-label="Действие с аккаунтом">
+                <button type="button" class="btn secondary" data-auth-mode="signin">Вход</button>
+                <button type="button" class="btn secondary" data-auth-mode="signup">Регистрация</button>
+                <button type="button" class="btn secondary" data-auth-mode="reset">Сброс пароля</button>
+            </div>
+            <div id="auth-session-panel" class="auth-session-panel" hidden>
+                <p id="auth-session-status" class="auth-session-status"></p>
+                <button id="auth-signout-btn" type="button" class="btn secondary">Выйти</button>
+            </div>
+            <form id="auth-form" class="modal-form auth-form" novalidate>
+                <label for="auth-email">Email</label>
+                <input id="auth-email" name="email" type="email" inputmode="email" autocomplete="email" maxlength="254" required>
+                <label for="auth-password">Пароль</label>
+                <input id="auth-password" name="password" type="password" autocomplete="current-password" minlength="8" maxlength="128" required>
+                <input id="auth-captcha-token" type="hidden" value="">
+                <div id="auth-turnstile" class="auth-turnstile" aria-label="Проверка безопасности"></div>
+                <p id="auth-message" class="auth-message" role="status" aria-live="polite"></p>
+                <button id="auth-submit-btn" type="submit" class="btn primary">Войти</button>
+            </form>
+            <p class="auth-sync-note">Вход не загружает мечты в облако. Синхронизация включается отдельно и только с вашего согласия.</p>
+        </div>
+    </dialog>
+
     <!-- Элемент для всплывающих уведомлений -->
     <div id="toast-container" class="toast-container" aria-live="polite" aria-relevant="additions"></div>
 
     <!-- html2canvas для экспорта PNG -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    <script src="assets/vendor/html2canvas-1.4.1.min.js" integrity="sha384-ZZ1pncU3bQe8y31yfZdMFdSpttDoPmOZg2wguVK9almUodir1PghgT0eY7Mrty8H"></script>
+    <script src="assets/vendor/supabase-js-2.112.2.min.js" integrity="sha384-OUpie84zd1LdwNlK9uJJQRwab0BLqo3eKYKFh7hSVL58FSk7wPp2l0kfUMIIoaQd"></script>
 
     <script src="storage.js"></script>
     <script src="backup.js"></script>
     <script src="import.js"></script>
     <script src="performance.js"></script>
     <script src="trash.js"></script>
+    <script src="config.js"></script>
+    <script src="auth.js"></script>
     <script src="app.js"></script>
-
-    <!-- Регистрация Service Worker (PWA) -->
-    <script>
-        if ('serviceWorker' in navigator) {
-            window.addEventListener('load', () => {
-                navigator.serviceWorker.register('service-worker.js')
-                    .then(reg => console.log('SW зарегистрирован:', reg.scope))
-                    .catch(err => console.log('SW ошибка:', err));
-            });
-        }
-    </script>
+    <script src="sw-register.js"></script>
 </body>
 </html>
