@@ -18,7 +18,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-for _ in {1..30}; do
+for _ in {1..90}; do
   if curl -fsS "http://127.0.0.1:${PORT}/health" >/tmp/dreamboard-health.json 2>/dev/null; then
     break
   fi
@@ -27,7 +27,10 @@ done
 
 if ! grep -q '"status":"ok"' /tmp/dreamboard-health.json; then
   echo "Health check failed"
+  echo "--- health payload ---"
   cat /tmp/dreamboard-health.json || true
+  echo "--- api log tail ---"
+  tail -n 120 /tmp/dreamboard-api.log || true
   exit 1
 fi
 
