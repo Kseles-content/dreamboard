@@ -1,0 +1,32 @@
+name: Static DreamBoard regression
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '*.js'
+      - '*.html'
+      - '*.css'
+      - 'version.txt'
+      - 'manifest.json'
+      - 'assets/**'
+      - '.github/workflows/static-app.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  static-app-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Test local data, authorization, offline cache and breathing audio
+        run: node --test *.test.js
+      - name: Check application syntax
+        run: |
+          node --check app.js
+          node --check auth.js
+          node --check service-worker.js

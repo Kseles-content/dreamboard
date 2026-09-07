@@ -73,6 +73,10 @@
         if (code.indexOf('invalid_credentials') !== -1) return 'Неверный email или пароль.';
         if (code.indexOf('email_not_confirmed') !== -1) return 'Подтвердите email по ссылке из письма.';
         if (code.indexOf('over_request_rate_limit') !== -1) return 'Слишком много попыток. Попробуйте позже.';
+        if (code.indexOf('captcha') !== -1) return 'Проверка безопасности не пройдена. Повторите её.';
+        if (code.indexOf('weak_password') !== -1 || code.indexOf('password_too_short') !== -1) {
+            return 'Пароль слишком простой. Используйте не менее 10 символов, буквы разного регистра, цифры и специальный знак.';
+        }
         return fallback || 'Не удалось выполнить запрос. Попробуйте позже.';
     }
 
@@ -83,8 +87,13 @@
         return Object.freeze({
             getSession: function () { return client.auth.getSession(); },
             onAuthStateChange: function (callback) { return client.auth.onAuthStateChange(callback); },
-            signIn: function (email, password) {
-                return client.auth.signInWithPassword({ email: String(email).trim(), password: String(password) });
+            signIn: function (email, password, captchaToken) {
+                if (config.requireCaptcha && !captchaToken) return Promise.reject({ code: 'captcha_required' });
+                return client.auth.signInWithPassword({
+                    email: String(email).trim(),
+                    password: String(password),
+                    options: { captchaToken: captchaToken || undefined }
+                });
             },
             signUp: function (email, password, captchaToken) {
                 if (config.requireCaptcha && !captchaToken) return Promise.reject({ code: 'captcha_required' });
@@ -135,13 +144,19 @@
     function setupAuthUi(win, config) {
         var button = win.document.getElementById('account-toggle-btn');
         var dialog = win.document.getElementById('auth-modal');
+        var recoveryRequested = /(?:^|[&#])type=recovery(?:&|$)/.test(String(win.location && win.location.hash || ''));
         var client = win.supabase.createClient(config.supabaseUrl, config.supabasePublishableKey, {
             auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
         });
         var service = createAuthService(client, config, win.location);
         var form = win.document.getElementById('auth-form');
+        var modeTabs = win.document.querySelector('.auth-mode-tabs');
         var email = win.document.getElementById('auth-email');
+        var emailLabel = win.document.getElementById('auth-email-label');
         var password = win.document.getElementById('auth-password');
+        var passwordLabel = win.document.getElementById('auth-password-label');
+        var passwordField = win.document.getElementById('auth-password-field');
+        var passwordToggle = win.document.getElementById('auth-password-toggle');
         var message = win.document.getElementById('auth-message');
         var sessionPanel = win.document.getElementById('auth-session-panel');
         var sessionStatus = win.document.getElementById('auth-session-status');
@@ -149,6 +164,7 @@
         var captchaInput = win.document.getElementById('auth-captcha-token');
         var captchaContainer = win.document.getElementById('auth-turnstile');
         var mode = 'signin';
+        var signedIn = false;
         var opener = null;
 
         function setMessage(text, kind) {
@@ -156,19 +172,46 @@
             message.textContent = text || '';
             message.dataset.kind = kind || '';
         }
+        function applyView() {
+            var recovery = mode === 'recovery';
+            if (sessionPanel) sessionPanel.hidden = !signedIn || recovery;
+            if (form) form.hidden = signedIn && !recovery;
+            if (modeTabs) modeTabs.hidden = signedIn || recovery;
+        }
         function setMode(next) {
             mode = next;
-            if (password) password.hidden = next === 'reset';
+            var reset = next === 'reset';
+            var recovery = next === 'recovery';
+            if (emailLabel) emailLabel.hidden = recovery;
+            if (email) {
+                email.hidden = recovery;
+                email.required = !recovery;
+            }
+            if (passwordLabel) passwordLabel.hidden = reset;
+            if (passwordField) passwordField.hidden = reset;
+            else if (password) password.hidden = reset;
+            if (captchaContainer) captchaContainer.hidden = recovery;
+            if (password) {
+                password.type = 'password';
+                password.required = !reset;
+                password.autocomplete = next === 'signin' ? 'current-password' : 'new-password';
+            }
+            if (passwordToggle) {
+                passwordToggle.setAttribute('aria-pressed', 'false');
+                passwordToggle.setAttribute('aria-label', 'Показать пароль');
+                passwordToggle.title = 'Показать пароль';
+            }
             var submit = win.document.getElementById('auth-submit-btn');
             if (submit) submit.textContent = next === 'signup' ? 'Создать аккаунт' : next === 'reset' ? 'Отправить ссылку' : next === 'recovery' ? 'Сохранить новый пароль' : 'Войти';
             setMessage('', '');
+            applyView();
         }
         function showSession(session) {
-            var signedIn = !!(session && session.user);
-            if (sessionPanel) sessionPanel.hidden = !signedIn;
+            signedIn = !!(session && session.user);
             if (sessionStatus) sessionStatus.textContent = signedIn
                 ? 'Выполнен вход: ' + String(session.user.email || 'аккаунт') + '. Синхронизация выключена.' : '';
             if (button) button.dataset.signedIn = signedIn ? 'true' : 'false';
+            applyView();
         }
         function closeDialog() {
             if (dialog && dialog.open) dialog.close();
@@ -182,6 +225,14 @@
         });
         var close = win.document.getElementById('auth-close-btn');
         if (close) close.addEventListener('click', closeDialog);
+        if (password && passwordToggle) passwordToggle.addEventListener('click', function () {
+            var visible = password.type === 'password';
+            password.type = visible ? 'text' : 'password';
+            passwordToggle.setAttribute('aria-pressed', visible ? 'true' : 'false');
+            passwordToggle.setAttribute('aria-label', visible ? 'Скрыть пароль' : 'Показать пароль');
+            passwordToggle.title = visible ? 'Скрыть пароль' : 'Показать пароль';
+            password.focus();
+        });
         if (dialog) dialog.addEventListener('click', function (event) { if (event.target === dialog) closeDialog(); });
         ['signin', 'signup', 'reset'].forEach(function (name) {
             var control = win.document.querySelector('[data-auth-mode="' + name + '"]');
@@ -191,19 +242,27 @@
             event.preventDefault();
             var mail = email ? email.value : '';
             var pass = password ? password.value : '';
-            var invalid = validateCredentials(mail, pass, mode !== 'reset');
+            var invalid = mode === 'recovery'
+                ? (String(pass || '').length < 8 ? 'Пароль должен содержать не менее 8 символов.' : '')
+                : validateCredentials(mail, pass, mode !== 'reset');
             if (invalid) return setMessage(invalid, 'error');
             var token = captchaInput ? captchaInput.value : '';
             var task = mode === 'signup' ? service.signUp(mail, pass, token)
                 : mode === 'reset' ? service.resetPassword(mail, token)
                     : mode === 'recovery' ? service.updatePassword(pass)
-                    : service.signIn(mail, pass);
+                    : service.signIn(mail, pass, token);
             task.then(function (result) {
                 if (result && result.error) throw result.error;
                 setMessage(mode === 'reset' ? 'Проверьте почту.' : mode === 'signup' ? 'Проверьте почту для подтверждения.' : mode === 'recovery' ? 'Новый пароль сохранён.' : 'Вход выполнен. Синхронизация выключена.', 'success');
             }).catch(function (error) {
                 if (error && error.code === 'captcha_required') setMessage('Подтвердите, что вы не робот.', 'error');
                 else setMessage(safeMessage(error), 'error');
+            }).finally(function () {
+                if (mode === 'recovery') return;
+                if (captchaInput) captchaInput.value = '';
+                if (win.turnstile && typeof win.turnstile.reset === 'function' && captchaContainer) {
+                    win.turnstile.reset(captchaContainer);
+                }
             });
         });
         if (signOut) signOut.addEventListener('click', function () {
@@ -222,10 +281,14 @@
                 if (password) password.focus();
             }
         });
+        if (recoveryRequested) {
+            setMode('recovery');
+            if (dialog && !dialog.open) dialog.showModal();
+            if (password) password.focus();
+        }
         if (config.requireCaptcha) mountTurnstile(win, config.turnstileSiteKey, captchaContainer, captchaInput);
         return { enabled: true, ready: true, client: client, service: service };
     }
-
     function initBrowser(env) {
         var win = env || (typeof window !== 'undefined' ? window : null);
         if (!win || !win.document) return { enabled: false };

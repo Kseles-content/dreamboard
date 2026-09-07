@@ -1118,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let audioCtx = null;
     let isSoundOn = false;
     let ambientSynth = null; // Постоянные осцилляторы
-    let chimeInterval = null;
+    // Звук следует фазам дыхания, отдельный случайный таймер не нужен.
 
     function initAudioContext() {
         if (!audioCtx) {
@@ -1243,116 +1243,90 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Синтез фоновой музыки для Режима Манифестации
+    // Мягкое созвучие C–E–G: чистые синусы, без расстройки и резких переливов.
     function startManifestationMusic() {
-        if (!isSoundOn) return;
+        if (!isSoundOn || document.hidden || ambientSynth) return;
         initAudioContext();
-        
+        if (!audioCtx) return;
         const now = audioCtx.currentTime;
-        ambientSynth = {};
-        
-        // Создаем низкочастотный фильтр (BiquadFilter)
-        const filter = audioCtx.createBiquadFilter();
-        filter.type = 'lowpass';
-        filter.Q.value = 1.0;
-        filter.frequency.setValueAtTime(300, now);
-        
-        // LFO для фильтра (модуляция частоты среза)
-        const lfo = audioCtx.createOscillator();
-        const lfoGain = audioCtx.createGain();
-        lfo.type = 'sine';
-        lfo.frequency.value = 0.08; // Крайне медленная волна (12.5 сек)
-        lfoGain.gain.value = 120; // Качание в диапазоне +-120Hz
-        
-        lfo.connect(lfoGain);
-        lfoGain.connect(filter.frequency);
-        lfo.start(now);
-        
-        // Delay для объема
-        const delay = audioCtx.createDelay();
-        delay.delayTime.value = 0.4;
-        const feedback = audioCtx.createGain();
-        feedback.gain.value = 0.5;
-        
-        delay.connect(feedback);
-        feedback.connect(delay);
-        
-        // Мастер-громкость
         const masterGain = audioCtx.createGain();
-        masterGain.gain.setValueAtTime(0, now);
-        masterGain.gain.linearRampToValueAtTime(0.12, now + 3.0); // Медленное нарастание
-        
-        filter.connect(masterGain);
-        delay.connect(masterGain);
+        masterGain.gain.setValueAtTime(0.0001, now);
         masterGain.connect(audioCtx.destination);
-        
-        // Запускаем 3 осциллятора для создания глубокого минорного 9-аккорда
-        const frequencies = [130.81, 196.00, 261.63, 311.13, 392.00]; // C3, G3, C4, Eb4, G4 (Cm)
         const oscillators = [];
-        
-        frequencies.forEach((freq, idx) => {
+        const gains = [];
+        [130.81, 261.63, 329.63, 392.00].forEach((freq, idx) => {
             const osc = audioCtx.createOscillator();
-            const oscGain = audioCtx.createGain();
-            
-            osc.connect(oscGain);
-            oscGain.connect(filter);
-            if (idx > 2) oscGain.connect(delay); // Пускаем верхние частоты в дилей
-            
-            osc.type = idx % 2 === 0 ? 'triangle' : 'sine';
+            const gain = audioCtx.createGain();
+            osc.type = 'sine';
             osc.frequency.value = freq;
-            osc.detune.value = (Math.random() - 0.5) * 12; // Расстройка для жирного хоруса
-            
-            oscGain.gain.setValueAtTime(0.04, now);
+            gain.gain.value = [0.032, 0.020, 0.016, 0.014][idx];
+            osc.connect(gain);
+            gain.connect(masterGain);
             osc.start(now);
-            
             oscillators.push(osc);
+            gains.push(gain);
         });
+        ambientSynth = { oscillators, gains, masterGain };
+        updateBreathingSound();
+    }
 
-        // Сохраняем ссылки для остановки
-        ambientSynth.oscillators = oscillators;
-        ambientSynth.lfo = lfo;
-        ambientSynth.masterGain = masterGain;
-        
-        // Каждые 6 секунд запускаем космические переливы
-        chimeInterval = setInterval(() => {
-            if (Math.random() > 0.3) {
-                playSoundEffect('chime-scale');
-                setTimeout(() => playSoundEffect('chime-scale'), 350);
-            }
-        }, 6000);
+    function updateBreathingSound() {
+        if (!isSoundOn || !ambientSynth || !audioCtx || document.hidden) return;
+        const now = audioCtx.currentTime;
+        const gain = ambientSynth.masterGain.gain;
+        // Сохраняем текущую громкость при смене фазы, чтобы не было щелчка.
+        if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+        else {
+            const current = gain.value;
+            gain.cancelScheduledValues(now);
+            gain.setValueAtTime(current, now);
+        }
+        const expanded = breathCircle.classList.contains('inhale') || breathCircle.classList.contains('hold');
+        gain.linearRampToValueAtTime(expanded ? 0.65 : 0.20, now + 4);
     }
 
     function stopManifestationMusic() {
-        if (ambientSynth) {
-            const now = audioCtx ? audioCtx.currentTime : 0;
-            if (ambientSynth.masterGain && audioCtx) {
-                ambientSynth.masterGain.gain.cancelScheduledValues(now);
-                ambientSynth.masterGain.gain.setValueAtTime(ambientSynth.masterGain.gain.value, now);
-                ambientSynth.masterGain.gain.exponentialRampToValueAtTime(0.0001, now + 1.5);
-            }
-            
-            setTimeout(() => {
-                try {
-                    if (ambientSynth.oscillators) ambientSynth.oscillators.forEach(o => o.stop());
-                    if (ambientSynth.lfo) ambientSynth.lfo.stop();
-                } catch(e) {}
-                ambientSynth = null;
-            }, 1600);
+        // Захватываем именно старый синтезатор: быстрый повторный вход не
+        // должен остановить новый звук отложенным завершением старого.
+        const synth = ambientSynth;
+        ambientSynth = null;
+        if (!synth || !audioCtx) return;
+        const now = audioCtx.currentTime;
+        const gain = synth.masterGain.gain;
+        if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+        else {
+            const current = gain.value;
+            gain.cancelScheduledValues(now);
+            gain.setValueAtTime(current, now);
         }
-        if (chimeInterval) {
-            clearInterval(chimeInterval);
-            chimeInterval = null;
-        }
+        gain.linearRampToValueAtTime(0, now + 0.25);
+        synth.oscillators.forEach(osc => osc.stop(now + 0.3));
+        synth.oscillators[0].onended = () => {
+            synth.oscillators.forEach(osc => osc.disconnect());
+            synth.gains.forEach(node => node.disconnect());
+            synth.masterGain.disconnect();
+        };
     }
 
     function setupAudioToggle() {
+        const manifestAudioBtn = document.getElementById('manifest-audio-btn');
+        if (manifestAudioBtn) manifestAudioBtn.addEventListener('click', () => audioToggleBtn.click());
         audioToggleBtn.addEventListener('click', () => {
             isSoundOn = !isSoundOn;
+            const label = isSoundOn ? 'Выключить звук дыхания' : 'Включить звук дыхания';
+            audioToggleBtn.setAttribute('aria-pressed', String(isSoundOn));
+            audioToggleBtn.setAttribute('aria-label', label);
+            audioToggleBtn.title = label;
+            if (manifestAudioBtn) {
+                manifestAudioBtn.setAttribute('aria-pressed', String(isSoundOn));
+                manifestAudioBtn.setAttribute('aria-label', label);
+                manifestAudioBtn.title = label;
+            }
             if (isSoundOn) {
                 audioToggleBtn.classList.remove('muted');
                 initAudioContext();
-                playSoundEffect('chime-scale');
-                showToast('Звуковые эффекты и эмбиент включены', 'info');
+                if (!manifestOverlay.classList.contains('active')) playSoundEffect('chime-scale');
+                if (!manifestOverlay.classList.contains('active')) showToast('Мягкий звук включён', 'info');
                 // Если мы в Режиме Манифестации - заводим эмбиент
                 if (manifestOverlay.classList.contains('active') && !ambientSynth) {
                     startManifestationMusic();
@@ -1360,7 +1334,7 @@ document.addEventListener('DOMContentLoaded', () => {
             } else {
                 audioToggleBtn.classList.add('muted');
                 stopManifestationMusic();
-                showToast('Звук выключен', 'info');
+                if (!manifestOverlay.classList.contains('active')) showToast('Звук выключен', 'info');
             }
         });
     }
@@ -2908,6 +2882,7 @@ document.addEventListener('DOMContentLoaded', () => {
         isManifestPlaying = true;
         
         manifestPlayBtn.classList.add('active');
+        manifestPlayBtn.setAttribute('aria-label', 'Приостановить смену мечтаний');
         manifestPlayBtn.querySelector('.pause-icon').classList.remove('hidden');
         manifestPlayBtn.querySelector('.play-icon').classList.add('hidden');
         
@@ -2996,10 +2971,7 @@ document.addEventListener('DOMContentLoaded', () => {
         pauseAmbientParticles();
         stopManifestStarfield();
 
-        if (chimeInterval) {
-            clearInterval(chimeInterval);
-            chimeInterval = null;
-        }
+        stopManifestationMusic();
 
         if (manifestOverlay.classList.contains('active')) {
             if (manifestInterval) {
@@ -3032,19 +3004,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!manifestInterval && activeDreams.length > 0) {
                 startManifestLoop(activeDreams); // текущий слайд не сбрасывается
             }
+            if (isSoundOn && !ambientSynth) startManifestationMusic();
             if (!breathGuideTimer) {
                 startBreathingGuide(); // фаза начинается с безопасного «Вдох»
             }
-            // Звук сам не включается: переливы возобновляются только если
-            // музыка манифестации была активна до скрытия вкладки.
-            if (isSoundOn && ambientSynth && !chimeInterval) {
-                chimeInterval = setInterval(() => {
-                    if (Math.random() > 0.3) {
-                        playSoundEffect('chime-scale');
-                        setTimeout(() => playSoundEffect('chime-scale'), 350);
-                    }
-                }, 6000);
-            }
+
         }
     }
 
@@ -3092,7 +3056,6 @@ document.addEventListener('DOMContentLoaded', () => {
             manifestAffirmationText.style.opacity = 0.9;
         }, 800);
         
-        playSoundEffect('chime-scale');
     }
 
     function updateManifestCardInfo(dream) {
@@ -3135,6 +3098,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Управление кнопками плеера
     manifestPlayBtn.addEventListener('click', () => {
         isManifestPlaying = !isManifestPlaying;
+        manifestPlayBtn.setAttribute('aria-label', isManifestPlaying ? 'Приостановить смену мечтаний' : 'Продолжить смену мечтаний');
         manifestPlayBtn.classList.toggle('active', isManifestPlaying);
         
         if (isManifestPlaying) {
@@ -3241,8 +3205,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 breathCircle.className = 'breath-circle-inner';
                 phase = 0;
             }
+            updateBreathingSound();
         }
         
+        // Новый цикл всегда заново запускает и CSS-анимацию вдоха.
+        breathCircle.className = 'breath-circle-inner';
+        void breathCircle.offsetWidth;
         runPhase();
         breathGuideTimer = setInterval(runPhase, 4000);
     }
