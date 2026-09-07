@@ -310,6 +310,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Экспорт резервной копии (Этап 3): переносимый JSON-бэкап.
         const exportJsonBtn = document.getElementById('export-json-btn');
+        document.getElementById('storage-help-export-btn')?.addEventListener('click', () => exportJsonBtn?.click());
+        document.getElementById('storage-help-import-btn')?.addEventListener('click', () => document.getElementById('import-json-btn')?.click());
         if (exportJsonBtn) {
             exportJsonBtn.addEventListener('click', () => {
                 handleExportBackup();
@@ -3104,11 +3106,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isManifestPlaying) {
             manifestPlayBtn.querySelector('.pause-icon').classList.remove('hidden');
             manifestPlayBtn.querySelector('.play-icon').classList.add('hidden');
-            showToast('Манифестация возобновлена', 'info');
         } else {
             manifestPlayBtn.querySelector('.pause-icon').classList.add('hidden');
             manifestPlayBtn.querySelector('.play-icon').classList.remove('hidden');
-            showToast('Пауза', 'info');
         }
     });
 
