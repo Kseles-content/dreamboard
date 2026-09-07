@@ -1,0 +1,193 @@
+/* Гид дыхания: движется только transform, без анимированных теней и фильтров. */
+.breath-guide-container {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: auto;
+    height: auto;
+    padding: 8px 16px;
+    background: #171323;
+    border: 1px solid #514765;
+    z-index: 6;
+    pointer-events: none;
+}
+.breath-circle-outer {
+    position: relative;
+    inset: auto;
+    transform: none;
+    width: 52px;
+    height: 52px;
+    flex: 0 0 52px;
+}
+.breath-circle-inner {
+    width: 48px;
+    height: 48px;
+    background: none;
+    box-shadow: none;
+    transform: scale(.64);
+    animation: none;
+}
+.breath-circle-inner svg { display: block; width: 100%; height: 100%; }
+.breath-caption { min-width: 100px; text-align: left; }
+#breath-text {
+    position: static !important;
+    display: block;
+    width: auto;
+    color: #f5efff;
+    font-size: 13px;
+    line-height: 1.4;
+    letter-spacing: .5px;
+    text-align: left;
+}
+.breath-subtext { margin: 3px 0 0; color: #c9bfd9; }
+#manifest-audio-btn[aria-pressed="true"] .sound-muted-mark { display: none; }
+#manifest-audio-btn[aria-pressed="true"] { color: #b4f5ee; border-color: #b4f5ee; }
+@keyframes breath-expand { from { transform: scale(.64); } to { transform: scale(1); } }
+@keyframes breath-contract { from { transform: scale(1); } to { transform: scale(.64); } }
+/* Исключение из lite только для полезной дыхательной подсказки. */
+@media (prefers-reduced-motion: no-preference) {
+    .breath-circle-inner.inhale,
+    html.performance-lite .breath-circle-inner.inhale {
+        animation: breath-expand 4s ease-in-out forwards !important;
+    }
+    .breath-circle-inner.hold,
+    html.performance-lite .breath-circle-inner.hold {
+        transform: scale(1);
+        box-shadow: none;
+    }
+    .breath-circle-inner.exhale,
+    html.performance-lite .breath-circle-inner.exhale {
+        animation: breath-contract 4s ease-in-out forwards !important;
+    }
+}
+@media (prefers-reduced-motion: reduce) {
+    .breath-circle-inner,
+    html.performance-lite .breath-circle-inner {
+        transform: none !important;
+        animation: none !important;
+        box-shadow: none !important;
+    }
+}
+/* Своя строка над доской: круг не перекрывает фото, текст и кнопки.
+   В обеих ориентациях телефон работает без обязательного поворота. */
+@media (max-width: 900px), (pointer: coarse) and (max-width: 1200px) {
+    .manifest-overlay {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 44px;
+        grid-template-rows: auto minmax(150px, 1fr) auto auto;
+        gap: 8px;
+        padding: calc(8px + env(safe-area-inset-top, 0px))
+                 calc(12px + env(safe-area-inset-right, 0px))
+                 calc(8px + env(safe-area-inset-bottom, 0px))
+                 calc(12px + env(safe-area-inset-left, 0px));
+        overflow-y: auto;
+        align-items: stretch;
+        justify-content: stretch;
+    }
+    .manifest-overlay.active .manifest-rotate-prompt { display: none !important; }
+    .manifest-overlay.active .breath-guide-container {
+        display: flex;
+        position: relative;
+        inset: auto;
+        transform: none;
+        grid-row: 1;
+        grid-column: 1;
+        justify-self: start;
+        align-self: center;
+        margin: 0;
+        padding: 2px 12px 2px 4px;
+        width: auto;
+        height: auto;
+        border-radius: 32px;
+    }
+    .breath-subtext { display: none; }
+    .exit-manifest-btn {
+        position: sticky;
+        inset: auto;
+        top: 0;
+        grid-row: 1;
+        grid-column: 2;
+        align-self: center;
+        width: 44px;
+        height: 44px;
+        margin: 0;
+    }
+    .manifest-overlay.active .manifest-content {
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        inset: auto;
+        grid-row: 2;
+        grid-column: 1 / -1;
+        width: 100%;
+        height: 100%;
+        min-height: 150px;
+        max-width: none;
+        margin: 0;
+        border-radius: 16px;
+        overflow: hidden;
+    }
+    .manifest-slider-container {
+        position: relative;
+        inset: auto;
+        width: 100%;
+        height: auto;
+        min-height: 80px;
+        flex: 1 1 0;
+    }
+    .manifest-slide-img { object-fit: contain; }
+    .manifest-slide-overlay { background: none; }
+    .manifest-card-info {
+        position: relative;
+        inset: auto;
+        width: 100%;
+        max-width: none;
+        max-height: 32dvh;
+        min-height: 0;
+        margin: 0;
+        padding: 10px 14px;
+        overflow-y: auto;
+        flex: 0 1 auto;
+        border-radius: 0;
+    }
+    #manifest-title { font-size: 18px; margin: 4px 0 6px; }
+    .manifest-card-info .card-badge { position: static; display: inline-block; margin-bottom: 4px; }
+    #manifest-desc { display: block; font-size: 13px; margin-bottom: 8px; }
+    .manifest-overlay.active .manifest-affirmation-slider {
+        display: block;
+        position: relative;
+        inset: auto;
+        transform: none;
+        grid-row: 3;
+        grid-column: 1 / -1;
+        width: auto;
+        margin: 0;
+        padding: 4px 8px;
+    }
+    #manifest-affirmation-text { font-size: 12px; line-height: 1.35; }
+    .manifest-overlay.active .manifest-controls {
+        display: flex;
+        flex-direction: row;
+        position: relative;
+        inset: auto;
+        grid-row: 4;
+        grid-column: 1 / -1;
+        justify-self: center;
+        gap: 12px;
+        width: auto;
+        margin: 0;
+        padding: 0;
+    }
+    .manifest-control-btn,
+    .manifest-control-btn#manifest-play-btn {
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+    }
+}
+@media (orientation: landscape) and (max-height: 500px) {
+    .manifest-overlay.active .manifest-content { flex-direction: row; }
+    .manifest-slider-container { height: 100%; min-width: 0; flex: 1.2 1 0; }
+    .manifest-card-info { width: auto; max-height: 100%; flex: 1 1 0; }
+}

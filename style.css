@@ -3079,20 +3079,9 @@ html.performance-lite *:not(.toast):not(.toast *) {
     animation: none !important;
 }
 
-/* Ken Burns и дыхательная анимация: без scale и animated box-shadow,
-   фазовый текст и лёгкий opacity сохраняются */
+/* Ken Burns выключен; функциональный гид дыхания настроен отдельно ниже. */
 html.performance-lite .manifest-slide.active .manifest-slide-img {
     animation: none !important;
-}
-html.performance-lite .breath-circle-inner.inhale,
-html.performance-lite .breath-circle-inner.exhale {
-    transform: none !important;
-    box-shadow: none !important;
-    opacity: 0.85;
-}
-html.performance-lite .breath-circle-inner.hold {
-    transform: none !important;
-    box-shadow: none !important;
 }
 /* Stage 7B: optional account UI. Hidden while the production feature flag is off. */
 .account-toggle-btn[hidden] {
@@ -3169,7 +3158,63 @@ html.performance-lite .breath-circle-inner.hold {
 .auth-form input:not([type="hidden"]) {
     width: 100%;
     min-height: 44px;
+    padding: 12px 16px;
+    border: 1px solid var(--panel-glass-border);
+    border-radius: var(--radius-sm);
+    background: rgba(0, 0, 0, 0.3);
+    color: var(--text-primary);
+    caret-color: var(--text-primary);
+    font: inherit;
 }
+
+.auth-form input:not([type="hidden"]):hover,
+.auth-form input:not([type="hidden"]):focus {
+    background: rgba(0, 0, 0, 0.4);
+    color: var(--text-primary);
+}
+
+.auth-form input:-webkit-autofill,
+.auth-form input:-webkit-autofill:hover,
+.auth-form input:-webkit-autofill:focus {
+    -webkit-text-fill-color: var(--text-primary);
+    caret-color: var(--text-primary);
+    box-shadow: 0 0 0 1000px #0a0814 inset;
+}
+
+.auth-password-field { position: relative; }
+.auth-password-field[hidden] { display: none; }
+.auth-password-field #auth-password { padding-right: 52px; }
+
+.auth-password-toggle {
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    border: 0;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: transparent;
+    cursor: pointer;
+    transform: translateY(-50%);
+}
+
+.auth-password-toggle:hover,
+.auth-password-toggle:focus-visible {
+    color: var(--text-primary);
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.auth-password-toggle:focus-visible {
+    outline: 2px solid #00f2fe;
+    outline-offset: -2px;
+}
+
+.auth-password-toggle[aria-pressed="true"] .auth-password-toggle-slash { display: none; }
 
 .auth-turnstile:empty {
     display: none;

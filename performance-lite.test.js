@@ -191,14 +191,14 @@ test('15. hidden pause/resume таймеров без дубликатов', () 
     const pauseBody = functionBody(APP_JS, 'pauseDecorativeLoops');
     const resumeBody = functionBody(APP_JS, 'resumeDecorativeLoops');
     // Пауза всех декоративных таймеров.
-    assert.ok(pauseBody.includes('clearInterval(chimeInterval)'));
+    assert.ok(pauseBody.includes('stopManifestationMusic()'));
     assert.ok(pauseBody.includes('clearInterval(manifestInterval)'));
     assert.ok(pauseBody.includes('clearInterval(breathGuideTimer)'));
     assert.ok(pauseBody.includes('stopManifestStarfield();'));
     // Возобновление только активных, без дублей.
     assert.ok(/if \(!manifestInterval && activeDreams\.length > 0\)/.test(resumeBody));
     assert.ok(/if \(!breathGuideTimer\)/.test(resumeBody));
-    assert.ok(/if \(isSoundOn && ambientSynth && !chimeInterval\)/.test(resumeBody), 'звук не включается сам');
+    assert.ok(/if \(isSoundOn && !ambientSynth\)/.test(resumeBody), 'звук не включается сам');
     // Слайд не сбрасывается: currentManifestIdx не переустанавливается в resume.
     assert.ok(!resumeBody.includes('currentManifestIdx = 0'), 'resume не должен сбрасывать текущий слайд');
 });
@@ -325,7 +325,7 @@ test('25. CSS lite отключает ambient/backdrop/glow/kenburns', () => {
     assert.ok(/box-shadow:\s*none\s*!important/.test(STYLE_CSS));
     assert.ok(/html\.performance-lite\s+\.category-career:hover/.test(STYLE_CSS), 'hover-свечения отключены');
     assert.ok(/html\.performance-lite\s+\.manifest-slide\.active\s+\.manifest-slide-img\s*\{\s*animation:\s*none\s*!important/.test(STYLE_CSS), 'kenburns отключён');
-    assert.ok(/html\.performance-lite\s+\.breath-circle-inner\.inhale/.test(STYLE_CSS), 'дыхание без scale');
+    assert.ok(/html\.performance-lite\s+\.breath-circle-inner\.inhale/.test(fs.readFileSync(path.join(__dirname, 'manifest-breath.css'), 'utf8')), 'дыхание включено отдельно от декора');
     assert.ok(/transform:\s*none\s*!important/.test(STYLE_CSS));
     assert.ok(/html\.performance-lite\s+\*\s*\{\s*transition:\s*none\s*!important/.test(STYLE_CSS), 'декоративные transition отключены');
     assert.ok(/animation:\s*none\s*!important/.test(STYLE_CSS), 'декоративные animation отключены');
@@ -377,9 +377,9 @@ test('28. script order storage→backup→import→performance→trash→app и 
     assert.ok(fs.existsSync(path.join(__dirname, 'trash.js')));
 });
 
-test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v15)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v15';/.test(SW_JS),
-        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v15');
+test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v16)', () => {
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v16';/.test(SW_JS),
+        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v16');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v13'/.test(SW_JS), 'статический dreamboard-v13 CACHE_NAME отсутствует');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v14'/.test(SW_JS), 'статический dreamboard-v14 CACHE_NAME отсутствует');
 });
