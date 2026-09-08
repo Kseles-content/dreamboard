@@ -20,7 +20,7 @@ var SCOPE_NAME = (function () {
     return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
 })();
 
-var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v18';
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v19';
 
 // Старые scoped-версии ТЕКУЩЕГО scope: dreamboard-<scope>-v<digits>
 var SCOPE_OLD_RE = new RegExp('^dreamboard-' + SCOPE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-v\\d+$');
@@ -100,6 +100,8 @@ self.addEventListener('activate', event => {
 // Для внешних ресурсов (шрифты, картинки Unsplash): Сначала Сеть, потом Кэш
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
+    // Search results and limits are transient; do not persist query text in SW caches.
+    if (url.hostname === 'kseles.ru' && url.pathname === '/dreamboard-api/photos') return;
 
     // Для навигационных запросов и локальных файлов — Cache First
     if (url.origin === location.origin) {

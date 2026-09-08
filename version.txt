@@ -1,4 +1,4 @@
-Build: 2026-09-08-v18-image-library
-Expected cache: runtime scoped cache name dreamboard-<scope>-v18
-Production: dreamboard-dreamboard-v18
-Preview: dreamboard-dreamboard-v14-preview-v18
+Build: 2026-09-08-v19-web-photos
+Expected cache: runtime scoped cache name dreamboard-<scope>-v19
+Production: dreamboard-dreamboard-v19
+Preview: dreamboard-dreamboard-v14-preview-v19

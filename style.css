@@ -3308,3 +3308,9 @@ html.performance-lite .manifest-slide.active .manifest-slide-img {
     #dream-modal .form-group.half { min-width: 130px; }
     #dream-modal .modal-header h3 { font-size: 21px; }
 }
+
+.photo-credit { display: block; color: #b5d4e6; font-size: 11px; line-height: 1.5; padding: 6px 2px; text-decoration: underline; }
+#photo-provider-credit a { color: #b5d4e6; }
+#photo-search-more { width: 100%; margin-top: 12px; min-height: 44px; }
+#photo-search-more[hidden], #photo-provider-credit[hidden] { display: none; }
+.image-library-item { width: 100%; }

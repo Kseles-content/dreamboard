@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com; connect-src 'self' https://*.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com https://images.pexels.com; connect-src 'self' https://kseles.ru https://*.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>DreamBoard — Интерактивный Коллаж Желаний</title>
     <meta name="description" content="DreamBoard — премиальное веб-приложение для визуализации целей и мечтаний. Создавайте интерактивные коллажи желаний, медитируйте в иммерсивном режиме и воплощайте мечты в жизнь.">
     <meta name="theme-color" content="#07050f">
@@ -305,12 +305,14 @@
                         <label class="image-library-source-label" for="image-library-source">Показывать</label>
                         <select id="image-library-source">
                             <option value="local">Встроенные обложки · офлайн</option>
+                            <option value="web">В сети · фотографии Pexels</option>
                             <option value="all">Все подборки · фото требуют интернет</option>
                         </select>
                         <div class="unsplash-search-row">
                             <input type="text" id="unsplash-search-input" placeholder="Море, любовь, работа…" aria-label="Поиск по подборке" enterkeyhint="search">
                             <button type="button" id="unsplash-search-btn" class="simple-btn">Искать</button>
                         </div>
+                        <p id="photo-provider-credit" class="image-library-hint" hidden>Фотографии: <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer">Pexels</a></p>
                         <p id="image-library-status" class="image-library-hint" role="status" aria-live="polite"></p>
                         <div id="image-choice-preview" class="image-choice-preview hidden">
                             <img id="image-choice-photo" alt="">
@@ -323,6 +325,7 @@
                         <div id="unsplash-results-grid" class="unsplash-results-grid">
                             <!-- Сюда подгрузятся картинки -->
                         </div>
+                        <button type="button" id="photo-search-more" class="simple-btn" hidden>Ещё фотографии</button>
                     </div>
                     
                     <!-- Вариант 2: Прямой URL -->

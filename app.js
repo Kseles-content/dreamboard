@@ -134,6 +134,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let tempMilestones = [];
     let currentLocalImagePreviewUrl = null;
     let pendingLocalImageRef = null;
+    let selectedImageCredit = null;
     const LOCAL_IMAGE_PREFIX = 'dbimage:';
     const LOCAL_IMAGE_DB_NAME = 'dreamboard-local-images';
     const LOCAL_IMAGE_STORE = 'images';
@@ -2224,6 +2225,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openDreamModal(dream = null) {
         tempMilestones = [];
+        selectedImageCredit = dream && dream.imageCredit ? dream.imageCredit : null;
         resetLocalImagePreview(true);
         
         if (dream) {
@@ -2271,6 +2273,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeDreamModal() {
         dreamModal.classList.remove('active');
+        if (webPhotoController) webPhotoController.abort();
+        ++webPhotoRequest;
         resetLocalImagePreview(true);
     }
 
@@ -2309,6 +2313,22 @@ document.addEventListener('DOMContentLoaded', () => {
         dreamViewDreamTitle.textContent = dream.title || '';
         dreamViewYear.textContent = dream.year ? `${dream.year} г.` : '';
         dreamViewDesc.textContent = dream.desc || '';
+        let credit = dreamViewDesc.parentElement.querySelector('.dream-photo-credit');
+        if (credit) credit.remove();
+        if (dream.imageCredit) {
+            try {
+                const source = new URL(dream.imageCredit.sourceUrl);
+                if (source.origin === 'https://www.pexels.com') {
+                    credit = document.createElement('a');
+                    credit.className = 'dream-photo-credit photo-credit';
+                    credit.href = source.href;
+                    credit.target = '_blank';
+                    credit.rel = 'noopener noreferrer';
+                    credit.textContent = `${dream.imageCredit.author} · Pexels`;
+                    dreamViewDesc.after(credit);
+                }
+            } catch { /* Ignore malformed optional metadata from old copies. */ }
+        }
 
         // Этапы — создаются безопасными DOM API.
         dreamViewMilestones.textContent = '';
@@ -2518,17 +2538,91 @@ document.addEventListener('DOMContentLoaded', () => {
     const imageUseButton = document.getElementById('image-choice-use');
     let imageRenderId = 0;
     let previewChoice = null;
+    let webPhotoController = null;
+    let webPhotoRequest = 0;
+    let webPhotoItems = [];
+    let webPhotoPage = 0;
+    let webPhotoQuery = '';
+    const webPhotoMore = document.getElementById('photo-search-more');
+    const photoProviderCredit = document.getElementById('photo-provider-credit');
 
-    function renderUnsplashPresets() {
+    async function searchWebPhotos(more = false) {
+        if (webPhotoController) webPhotoController.abort();
+        const requestId = ++webPhotoRequest;
+        const query = unsplashSearchInput.value.trim();
+        more = more && query === webPhotoQuery;
+        if (!more) { webPhotoItems = []; webPhotoPage = 0; }
+        renderUnsplashPresets(webPhotoItems);
+        webPhotoMore.hidden = true;
+        if (!query) { imageLibraryStatus.textContent = 'Что найти? Например: море, уютный дом или путешествие.'; return; }
+        if (!navigator.onLine) { imageLibraryStatus.textContent = 'Нет интернета. Встроенные обложки и фото с устройства доступны.'; return; }
+        if (query.length > 100) { imageLibraryStatus.textContent = 'Сократите запрос до 100 символов.'; return; }
+        webPhotoController = new AbortController();
+        const controller = webPhotoController;
+        const timer = setTimeout(() => controller.abort(), 10000);
+        imageLibraryStatus.textContent = 'Ищем фотографии…';
+        unsplashResultsGrid.setAttribute('aria-busy', 'true');
+        try {
+            const endpoint = new URL(DreamBoardConfig.photoSearchUrl);
+            endpoint.search = new URLSearchParams({ q: query, page: String(webPhotoPage + 1) });
+            const response = await fetch(endpoint, { signal: controller.signal, credentials: 'omit', cache: 'no-store' });
+            if (response.status === 429) throw new Error('Лимит поиска временно исчерпан. Попробуйте позже или выберите встроенную обложку.');
+            if (!response.ok) throw new Error('Поиск сейчас недоступен. Нажмите «Искать», чтобы повторить.');
+            const data = await response.json();
+            if (!Array.isArray(data.photos)) throw new Error('Не удалось получить фотографии. Повторите поиск.');
+            if (requestId !== webPhotoRequest || imageLibrarySource.value !== 'web') return;
+            const safePhotos = data.photos.filter(photo => {
+                try { return [photo.url, photo.thumbnail].every(value => {
+                    const u = new URL(value); return u.protocol === 'https:' && u.hostname === 'images.pexels.com' && !u.username && !u.password;
+                }) && new URL(photo.sourceUrl).origin === 'https://www.pexels.com'; } catch { return false; }
+            });
+            const seen = new Set(webPhotoItems.map(item => item.url));
+            webPhotoItems = webPhotoItems.concat(safePhotos.filter(item => !seen.has(item.url)));
+            webPhotoPage = data.page;
+            webPhotoQuery = query;
+            renderUnsplashPresets(webPhotoItems);
+            webPhotoMore.hidden = !data.hasMore;
+        } catch (error) {
+            if (requestId !== webPhotoRequest || imageLibrarySource.value !== 'web') return;
+            imageLibraryStatus.textContent = controller.signal.aborted
+                ? 'Поиск занял слишком много времени. Нажмите «Искать», чтобы повторить.'
+                : error instanceof TypeError ? 'Не удалось связаться с поиском. Проверьте интернет и повторите.' : error.message;
+            webPhotoMore.hidden = !more;
+        } finally {
+            clearTimeout(timer);
+            if (requestId === webPhotoRequest) unsplashResultsGrid.setAttribute('aria-busy', 'false');
+        }
+    }
+    webPhotoMore.addEventListener('click', () => searchWebPhotos(true));
+    unsplashSearchInput.addEventListener('input', () => {
+        if (imageLibrarySource.value !== 'web') return;
+        if (webPhotoController) webPhotoController.abort();
+        ++webPhotoRequest;
+        webPhotoMore.hidden = true;
+        unsplashResultsGrid.setAttribute('aria-busy', 'false');
+        imageLibraryStatus.textContent = 'Нажмите «Искать» или Enter, чтобы найти фотографии.';
+    });
+
+    function renderUnsplashPresets(providedItems) {
+        const isWeb = imageLibrarySource.value === 'web';
+        photoProviderCredit.hidden = !isWeb;
+        unsplashSearchInput.setAttribute('aria-label', isWeb ? 'Поиск фотографий в сети' : 'Поиск по подборке');
+        if (isWeb && !Array.isArray(providedItems)) { searchWebPhotos(); return; }
+        if (!isWeb) {
+            if (webPhotoController) webPhotoController.abort();
+            ++webPhotoRequest;
+            webPhotoMore.hidden = true;
+            unsplashResultsGrid.setAttribute('aria-busy', 'false');
+        }
         const renderId = ++imageRenderId;
         imagePreview.classList.add('hidden');
         previewChoice = null;
         imageUseButton.disabled = true;
         unsplashResultsGrid.replaceChildren();
-        const items = DreamBoardImageLibrary.search(unsplashSearchInput.value, imageLibrarySource.value, dreamCategorySelect.value);
+        const items = Array.isArray(providedItems) ? providedItems : DreamBoardImageLibrary.search(unsplashSearchInput.value, imageLibrarySource.value, dreamCategorySelect.value);
         imageLibraryStatus.textContent = items.length
-            ? `В подборке: ${items.length}. Нажмите на обложку, чтобы рассмотреть.`
-            : 'В подборке ничего не найдено. Попробуйте «море», «любовь», «работа» или добавьте своё фото.';
+            ? `${isWeb ? 'Найдено фотографий' : 'В подборке'}: ${items.length}. Нажмите на обложку, чтобы рассмотреть.`
+            : 'Ничего не найдено. Попробуйте другие слова или добавьте своё фото.';
         let failed = 0;
         items.forEach(item => {
             const button = document.createElement('button');
@@ -2560,7 +2654,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 failed++;
                 imageLibraryStatus.textContent = `Не загрузилось: ${failed}. Повторите поиск или выберите встроенную обложку / своё фото.`;
             };
-            img.src = item.local ? item.url : item.url.replace('w=800', 'w=360&auto=format&fit=crop');
+            img.src = item.thumbnail || (item.local ? item.url : item.url.replace('w=800', 'w=360&auto=format&fit=crop'));
             button.append(img, caption);
             button.addEventListener('click', () => {
                 previewChoice = item;
@@ -2576,7 +2670,17 @@ document.addEventListener('DOMContentLoaded', () => {
                 imagePreview.classList.remove('hidden');
                 imagePreview.scrollIntoView({ block: 'nearest' });
             });
-            unsplashResultsGrid.append(button);
+            if (item.sourceUrl) {
+                const tile = document.createElement('div');
+                const credit = document.createElement('a');
+                credit.href = item.sourceUrl;
+                credit.target = '_blank';
+                credit.rel = 'noopener noreferrer';
+                credit.className = 'photo-credit';
+                credit.textContent = `${item.author || 'Автор'} · Pexels`;
+                tile.append(button, credit);
+                unsplashResultsGrid.append(tile);
+            } else { unsplashResultsGrid.append(button); }
         });
     }
 
@@ -2584,9 +2688,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!previewChoice || imageUseButton.disabled) return;
         discardPendingLocalUpload();
         dreamImageFinalPath.value = previewChoice.url;
+        selectedImageCredit = previewChoice.sourceUrl ? {
+            imageUrl: previewChoice.url, author: previewChoice.author || 'Автор', sourceUrl: previewChoice.sourceUrl
+        } : null;
         imageLibraryStatus.textContent = `Выбрано: ${previewChoice.title}`;
         const selectedTitle = previewChoice.title;
-        renderUnsplashPresets();
+        renderUnsplashPresets(imageLibrarySource.value === 'web' ? webPhotoItems : undefined);
         imageLibraryStatus.textContent = `Выбрано: ${selectedTitle}. Можно сохранить мечту.`;
         unsplashSearchInput.focus({ preventScroll: true });
         playSoundEffect('hover');
@@ -2676,6 +2783,11 @@ document.addEventListener('DOMContentLoaded', () => {
             createdDream = newDream;
         }
 
+        const editedDream = createdDream || (changedIndex !== -1 ? dreams[changedIndex] : null);
+        if (editedDream) {
+            delete editedDream.imageCredit;
+            if (selectedImageCredit && selectedImageCredit.imageUrl === finalImage) editedDream.imageCredit = { ...selectedImageCredit };
+        }
         const saveResult = saveDreams();
         if (!saveResult.ok) {
             if (changedIndex !== -1 && previousDreamSnapshot) dreams[changedIndex] = previousDreamSnapshot;
