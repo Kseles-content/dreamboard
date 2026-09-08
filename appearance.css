@@ -182,4 +182,5 @@ html[data-theme="paper"] .manifest-overlay .icon-btn { color: #f3f1f8; }
 #png-export-preview { display:block; width:100%; height:auto; max-height:48dvh; object-fit:contain; margin:16px 0; }
 .png-export-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
 .png-export-actions .btn { min-height:44px; text-decoration:none; }
+#png-export-dialog .btn.primary { background:var(--view-accent-fill); color:var(--text-primary); box-shadow:none; border:1px solid var(--view-border); }
 #png-export-dialog [hidden] { display:none; }

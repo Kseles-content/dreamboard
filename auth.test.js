@@ -102,7 +102,7 @@ test('8. scripts are self-hosted, pinned with SRI, and no inline script remains'
 test('9. CSP restricts scripts and allows only required Supabase/Turnstile connections', () => {
     assert.match(INDEX, /Content-Security-Policy/);
     assert.match(INDEX, /script-src 'self' https:\/\/challenges\.cloudflare\.com/);
-    assert.match(INDEX, /connect-src 'self' https:\/\/kseles\.ru https:\/\/\*\.supabase\.co https:\/\/challenges\.cloudflare\.com/);
+    assert.match(INDEX, /connect-src 'self' data: blob: https:\/\/images\.unsplash\.com https:\/\/images\.pexels\.com https:\/\/kseles\.ru https:\/\/\*\.supabase\.co https:\/\/challenges\.cloudflare\.com/);
     assert.match(INDEX, /object-src 'none'/);
     assert.doesNotMatch(INDEX, /script-src[^;]*'unsafe-inline'/);
 });
