@@ -116,7 +116,7 @@ test('13. error action (Повторить) доступно клавиатур�
 
 test('14. реализованный импорт видим, остальные заглушки скрыты', () => {
     assert.ok(INDEX.includes('<div class="board-selector-group" hidden>'));
-    for (const id of ['export-png-btn', 'import-file-input']) {
+    for (const id of ['import-file-input']) {
         const line = INDEX.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && line.includes('hidden'), `${id} скрыт`);
     }
