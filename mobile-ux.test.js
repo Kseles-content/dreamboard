@@ -400,6 +400,7 @@ test('16. контракты не тронуты: schemaVersion 2, backup format
 test('17. script order сохраняет UX runtime и добавляет Stage 7B перед app.js', () => {
     const scripts = (INDEX_HTML.match(/src="([^"]*\.js)"/g) || []);
     assert.deepStrictEqual(scripts, [
+        'src="appearance.js"',
         'src="assets/vendor/html2canvas-1.4.1.min.js"',
         'src="storage.js"', 'src="backup.js"', 'src="import.js"',
         'src="performance.js"', 'src="trash.js"', 'src="config.js"',

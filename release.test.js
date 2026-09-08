@@ -31,14 +31,14 @@ const IMPORT_JS = fs.readFileSync(path.join(__dirname, 'import.js'), 'utf8');
 
 const PROD_SCOPE = 'https://example.com/dreamboard/';
 const PREVIEW_SCOPE = 'https://example.com/dreamboard-v14-preview/';
-const PROD_CACHE = 'dreamboard-dreamboard-v19';
-const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v19';
+const PROD_CACHE = 'dreamboard-dreamboard-v20';
+const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v20';
 const LEGACY_V13 = 'dreamboard-v13';
 const OLD_PROD_SCOPED = 'dreamboard-dreamboard-v13';
 const OLD_PREVIEW_SCOPED = 'dreamboard-dreamboard-v14-preview-v13';
 
 const EXPECTED_PRECACHE = [
-    './', './index.html', './style.css', './manifest-breath.css', './storage.js', './backup.js',
+    './', './index.html', './style.css', './appearance.css', './appearance.js', './manifest-breath.css', './storage.js', './backup.js',
     './import.js', './performance.js', './trash.js', './config.js',
     './auth.js', './app.js', './image-library.js', './sw-register.js', './manifest.json',
     './assets/vendor/html2canvas-1.4.1.min.js',
@@ -118,15 +118,15 @@ function runActivate(sw) {
 // --- version.txt -----------------------------------------------------------
 
 test('1. version.txt: Stage 7B v15 identifier', () => {
-    assert.ok(/Build: 2026-09-08-v19-web-photos/.test(VERSION_TXT), 'Build = v15 Stage 7B');
+    assert.ok(/Build: 2026-09-08-v20-board-appearance/.test(VERSION_TXT), 'Build = v15 Stage 7B');
     assert.ok(!/2026-06-06-v13/.test(VERSION_TXT), 'нет старого v13 build identifier');
 });
 
 test('2. version.txt: Expected cache описывает scoped runtime-name, не один глобальный', () => {
     assert.ok(/Expected cache: runtime scoped cache name/.test(VERSION_TXT), 'описан runtime scoped cache');
-    assert.ok(/dreamboard-<scope>-v19/.test(VERSION_TXT), 'формула dreamboard-<scope>-v19');
-    assert.ok(/dreamboard-dreamboard-v19/.test(VERSION_TXT), 'пример production имени');
-    assert.ok(/dreamboard-dreamboard-v14-preview-v19/.test(VERSION_TXT), 'пример preview имени');
+    assert.ok(/dreamboard-<scope>-v20/.test(VERSION_TXT), 'формула dreamboard-<scope>-v20');
+    assert.ok(/dreamboard-dreamboard-v20/.test(VERSION_TXT), 'пример production имени');
+    assert.ok(/dreamboard-dreamboard-v14-preview-v20/.test(VERSION_TXT), 'пример preview имени');
     assert.ok(!/Expected cache: dreamboard-v14\s*$/.test(VERSION_TXT), 'не обещает один глобальный cache name');
 });
 
@@ -138,7 +138,7 @@ test('3. production scope: runtime cache name = dreamboard-dreamboard-v14', () =
     assert.ok(rt, 'SW вызвал __DB_SW_RUNTIME__');
     assert.strictEqual(rt.cacheName, PROD_CACHE, 'production cache name');
     assert.strictEqual(rt.scopeName, 'dreamboard', 'scope name нормализован');
-    assert.strictEqual(rt.precacheUrls.length, 28, '28 PRECACHE entries');
+    assert.strictEqual(rt.precacheUrls.length, 30, '30 PRECACHE entries');
 });
 
 test('4. preview scope: runtime cache name = dreamboard-dreamboard-v14-preview-v14', () => {
@@ -156,18 +156,18 @@ test('5. один source-файл вычисляет разные cache names (p
     assert.notStrictEqual(prod.cacheName, prev.cacheName, 'cache names изолированы по scope');
     assert.ok(prod.cacheName.startsWith('dreamboard-') && prev.cacheName.startsWith('dreamboard-'),
         'оба в namespace DreamBoard');
-    assert.ok(prod.cacheName.endsWith('-v19') && prev.cacheName.endsWith('-v19'), 'оба версии v15');
+    assert.ok(prod.cacheName.endsWith('-v20') && prev.cacheName.endsWith('-v20'), 'оба версии v15');
 });
 
 // --- install ---------------------------------------------------------------
 
-test('6. install (production) создаёт НОВЫЙ scoped cache со всеми 28 PRECACHE entries', async () => {
+test('6. install (production) создаёт НОВЫЙ scoped cache со всеми 30 PRECACHE entries', async () => {
     const sw = loadSW(PROD_SCOPE, [LEGACY_V13]);
     await runInstall(sw);
     assert.ok(sw.opened.includes(PROD_CACHE), 'caches.open(dreamboard-dreamboard-v14) вызван');
     const urls = sw.store.get(PROD_CACHE);
     assert.ok(urls, 'новый кэш создан');
-    assert.strictEqual(urls.size, 28, 'ровно 28 entries');
+    assert.strictEqual(urls.size, 30, 'ровно 30 entries');
     for (const u of EXPECTED_PRECACHE) assert.ok(urls.has(u), 'entry отсутствует: ' + u);
     assert.ok(sw.sandbox.__skipWaitingCalled, 'skipWaiting вызван');
     assert.ok(sw.store.has(LEGACY_V13), 'install не трогает legacy');
@@ -223,11 +223,11 @@ test('11. текущие кэши (production и preview) всегда сохр�
 
 // --- PRECACHE --------------------------------------------------------------
 
-test('12. PRECACHE_URLS содержит все 28 entries, все файлы существуют на диске', () => {
+test('12. PRECACHE_URLS содержит все 30 entries, все файлы существуют на диске', () => {
     const m = SW_JS.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
     assert.ok(m, 'PRECACHE_URLS найден');
     const urls = Array.from(m[1].matchAll(/'([^']+)'/g), x => x[1]);
-    assert.strictEqual(urls.length, 28, 'ровно 28 entries');
+    assert.strictEqual(urls.length, 30, 'ровно 30 entries');
     assert.deepStrictEqual(urls, EXPECTED_PRECACHE, 'набор entries совпадает с ожидаемым');
     for (const u of urls) {
         const rel = u.replace(/^\.\//, '');
@@ -249,7 +249,7 @@ test('13. контракты не изменены: schemaVersion 2, backup form
 });
 
 test('14. SW: scope-изоляция реализована (SCOPE_NAME, SCOPE_OLD_RE, IS_PRODUCTION_SCOPE)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v19';/.test(SW_JS),
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v20';/.test(SW_JS),
         'CACHE_NAME строится из scope во время исполнения');
     assert.ok(/SCOPE_OLD_RE/.test(SW_JS) && /IS_PRODUCTION_SCOPE/.test(SW_JS) && /LEGACY_CACHE_RE/.test(SW_JS),
         'механика activate-фильтра на месте');

@@ -224,19 +224,31 @@ test('17. renderAll вызывает ровно один renderer (только 
 });
 
 test('18. переключение grid → canvas рендерит canvas', () => {
-    const btnBlock = APP_JS.slice(APP_JS.indexOf("canvasViewBtn.addEventListener('click'"));
-    const block = btnBlock.slice(0, btnBlock.indexOf('});') + 3);
-    assert.ok(block.includes("currentViewMode = 'canvas'"));
-    assert.ok(block.includes('renderCanvas()'), 'при активации canvas должен рендериться canvas');
-    assert.ok(block.includes('updateCanvasTransform()'));
+    const state = exerciseViewTransition('grid', 'canvas');
+    assert.strictEqual(state.currentViewMode, 'canvas');
+    assert.deepStrictEqual(state.calls, ['canvas', 'transform']);
+    assert.strictEqual(state.canvasViewBtn.pressed, 'true');
+    assert.strictEqual(state.gridViewBtn.pressed, 'false');
 });
 
 test('19. переключение canvas → grid рендерит grid', () => {
-    const btnBlock = APP_JS.slice(APP_JS.indexOf("gridViewBtn.addEventListener('click'"));
-    const block = btnBlock.slice(0, btnBlock.indexOf('});') + 3);
-    assert.ok(block.includes("currentViewMode = 'grid'"));
-    assert.ok(block.includes('renderGrid()'), 'при активации grid должен рендериться grid');
+    const state = exerciseViewTransition('canvas', 'grid');
+    assert.strictEqual(state.currentViewMode, 'grid');
+    assert.deepStrictEqual(state.calls, ['grid']);
+    assert.strictEqual(state.gridViewBtn.pressed, 'true');
 });
+
+function exerciseViewTransition(from, to) {
+    const vm = require('node:vm');
+    const element = () => ({ classList: { toggle() {} }, setAttribute(name, value) { this.pressed = value; } });
+    const calls = [];
+    const state = { currentViewMode: from, gridViewBtn: element(), canvasViewBtn: element(),
+        gridViewSection: element(), canvasViewSection: element(), calls,
+        renderGrid: () => calls.push('grid'), renderCanvas: () => calls.push('canvas'),
+        updateCanvasTransform: () => calls.push('transform') };
+    vm.runInNewContext(`function applyBoardView(view) ${functionBody(APP_JS, 'applyBoardView')}\napplyBoardView('${to}'); applyBoardView('${to}');`, state);
+    return state;
+}
 
 // ==========================================================================
 // 20-24. CANVAS INPUT И LOCALSTORAGE
@@ -363,7 +375,7 @@ test('27. import/export controls не меняются (export/import видим
 test('28. script order storage→backup→import→performance→trash→app и PRECACHE содержит performance/trash', () => {
     const scripts = [...INDEX_HTML.matchAll(/<script src="([^"]+)"><\/script>/g)].map(m => m[1]);
     const local = scripts.filter(s => !s.startsWith('http'));
-    const expected = ['storage.js', 'backup.js', 'import.js', 'performance.js', 'trash.js', 'config.js', 'auth.js', 'image-library.js', 'app.js', 'sw-register.js'];
+    const expected = ['appearance.js', 'storage.js', 'backup.js', 'import.js', 'performance.js', 'trash.js', 'config.js', 'auth.js', 'image-library.js', 'app.js', 'sw-register.js'];
     assert.deepStrictEqual(local, expected, `порядок скриптов: ${local.join(' → ')}`);
     const precache = SW_JS.slice(SW_JS.indexOf('const PRECACHE_URLS'), SW_JS.indexOf('];'));
     const precacheIdx = precache.indexOf("'./performance.js'");
@@ -377,9 +389,9 @@ test('28. script order storage→backup→import→performance→trash→app и 
     assert.ok(fs.existsSync(path.join(__dirname, 'trash.js')));
 });
 
-test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v19)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v19';/.test(SW_JS),
-        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v19');
+test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v20)', () => {
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v20';/.test(SW_JS),
+        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v20');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v13'/.test(SW_JS), 'статический dreamboard-v13 CACHE_NAME отсутствует');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v14'/.test(SW_JS), 'статический dreamboard-v14 CACHE_NAME отсутствует');
 });
