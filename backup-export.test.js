@@ -531,7 +531,7 @@ test('31. export-json-btn visible (index.html)', () => {
 
 test('32. PNG и file input hidden; реализованный import-json видим (index.html)', () => {
     const idx = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
-    for (const id of ['export-png-btn', 'import-file-input']) {
+    for (const id of ['import-file-input']) {
         const line = idx.split('\n').find(l => l.includes(`id="${id}"`));
         assert.ok(line && line.includes('hidden'), `${id} скрыта`);
     }
@@ -548,10 +548,10 @@ test('33. backup.js подключён до app.js', () => {
     assert.ok(iStorage < iBackup && iBackup < iApp, 'порядок: storage.js → backup.js → app.js');
 });
 
-test('34. backup.js присутствует в PRECACHE, CACHE_NAME scoped (dreamboard-<scope>-v20)', () => {
+test('34. backup.js присутствует в PRECACHE, CACHE_NAME scoped (dreamboard-<scope>-v21)', () => {
     const sw = fs.readFileSync(path.join(__dirname, 'service-worker.js'), 'utf8');
     assert.ok(sw.includes("'./backup.js'"), 'backup.js в PRECACHE_URLS');
-    assert.ok(sw.includes("var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v20';"), 'CACHE_NAME scoped по scope');
+    assert.ok(sw.includes("var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v21';"), 'CACHE_NAME scoped по scope');
 });
 
 // --- дополнительные проверки (раздел 9 ТЗ) ------------------------------------

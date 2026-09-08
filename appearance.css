@@ -171,3 +171,16 @@ html[data-theme="paper"] .manifest-overlay .icon-btn { color: #f3f1f8; }
     .appearance-fields { grid-template-columns: 1fr; }
     html[data-card-size="compact"] #dreams-masonry-grid { column-count: 1; }
 }
+
+/* PNG preview stays usable on narrow screens. */
+#png-export-dialog { width:min(680px, calc(100vw - 24px)); max-height:90dvh; overflow:auto; box-sizing:border-box; border:1px solid var(--view-border); border-radius:20px; padding:22px; background:var(--view-surface); color:var(--text-primary); }
+#png-export-dialog::backdrop { background:#0009; }
+#png-export-dialog h2 { margin:0 0 12px; }
+#png-export-dialog p { line-height:1.5; margin:12px 0; }
+#png-export-dialog select { width:100%; margin-top:8px; min-height:44px; background:var(--view-input); color:var(--text-primary); border:1px solid var(--view-border); border-radius:8px; padding:8px; }
+.png-export-note { font-size:13px; color:var(--text-secondary); }
+#png-export-preview { display:block; width:100%; height:auto; max-height:48dvh; object-fit:contain; margin:16px 0; }
+.png-export-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:16px; }
+.png-export-actions .btn { min-height:44px; text-decoration:none; }
+#png-export-dialog .btn.primary { background:var(--view-accent-fill); color:var(--text-primary); box-shadow:none; border:1px solid var(--view-border); }
+#png-export-dialog [hidden] { display:none; }

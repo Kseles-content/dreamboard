@@ -841,6 +841,11 @@ document.addEventListener('DOMContentLoaded', () => {
     // ==========================================================================
     // 2.2 ЭКСПОРТ РЕЗЕРВНОЙ КОПИИ (Этап 3: переносимый JSON-бэкап)
     // ==========================================================================
+    document.getElementById('export-png-btn').addEventListener('click', () => {
+        const selected = dreams.filter(d => d.status === 'active' && (currentCategoryFilter === 'all' || d.category === currentCategoryFilter));
+        DreamBoardPng.open(JSON.parse(JSON.stringify(selected)), DreamBoardAppearance.get(), getLocalImageBlob);
+    });
+
     let exportBusy = false;
 
     async function handleExportBackup() {
