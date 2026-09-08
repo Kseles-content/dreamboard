@@ -20,7 +20,7 @@ var SCOPE_NAME = (function () {
     return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
 })();
 
-var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v16';
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v19';
 
 // Старые scoped-версии ТЕКУЩЕГО scope: dreamboard-<scope>-v<digits>
 var SCOPE_OLD_RE = new RegExp('^dreamboard-' + SCOPE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-v\\d+$');
@@ -43,6 +43,7 @@ const PRECACHE_URLS = [
     './config.js',
     './auth.js',
     './app.js',
+    './image-library.js',
     './sw-register.js',
     './manifest.json',
     './assets/vendor/html2canvas-1.4.1.min.js',
@@ -51,6 +52,12 @@ const PRECACHE_URLS = [
     './assets/icons/icon-512.png',
     './assets/images/dream_career.png',
     './assets/images/dream_travel.png',
+    './assets/images/cover-career.svg',
+    './assets/images/cover-wealth.svg',
+    './assets/images/cover-health.svg',
+    './assets/images/cover-travel.svg',
+    './assets/images/cover-relationships.svg',
+    './assets/images/cover-growth.svg',
     './assets/images/og-preview.png'
 ];
 
@@ -93,6 +100,8 @@ self.addEventListener('activate', event => {
 // Для внешних ресурсов (шрифты, картинки Unsplash): Сначала Сеть, потом Кэш
 self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
+    // Search results and limits are transient; do not persist query text in SW caches.
+    if (url.hostname === 'kseles.ru' && url.pathname === '/dreamboard-api/photos') return;
 
     // Для навигационных запросов и локальных файлов — Cache First
     if (url.origin === location.origin) {

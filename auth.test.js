@@ -102,7 +102,7 @@ test('8. scripts are self-hosted, pinned with SRI, and no inline script remains'
 test('9. CSP restricts scripts and allows only required Supabase/Turnstile connections', () => {
     assert.match(INDEX, /Content-Security-Policy/);
     assert.match(INDEX, /script-src 'self' https:\/\/challenges\.cloudflare\.com/);
-    assert.match(INDEX, /connect-src 'self' https:\/\/\*\.supabase\.co https:\/\/challenges\.cloudflare\.com/);
+    assert.match(INDEX, /connect-src 'self' https:\/\/kseles\.ru https:\/\/\*\.supabase\.co https:\/\/challenges\.cloudflare\.com/);
     assert.match(INDEX, /object-src 'none'/);
     assert.doesNotMatch(INDEX, /script-src[^;]*'unsafe-inline'/);
 });
@@ -112,7 +112,7 @@ test('10. Stage 7B resources are all precached under scoped v15 cache', () => {
         assert.ok(SW.includes("'./" + file + "'"), file + ' is precached');
         assert.ok(fs.existsSync(path.join(__dirname, file)), file + ' exists');
     }
-    assert.match(SW, /CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v16'/);
+    assert.match(SW, /CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v19'/);
 });
 
 test('11. Turnstile loads only through the fixed official endpoint and writes token via callback', async () => {

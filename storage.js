@@ -177,7 +177,7 @@
         var status = ALLOWED_STATUSES.indexOf(raw.status) !== -1 ? raw.status : 'active';
         var year = isReasonableInteger(raw.year, YEAR_MIN, YEAR_MAX) ? raw.year : null;
 
-        return {
+        var normalized = {
             id: id,
             title: raw.title,
             category: category,
@@ -189,6 +189,17 @@
             canvasPos: normalizeCanvasPos(raw.canvasPos),
             gratitudeNote: typeof raw.gratitudeNote === 'string' ? raw.gratitudeNote : ''
         };
+        if (isPlainObject(raw.imageCredit) && raw.imageCredit.imageUrl === normalized.imageUrl &&
+            typeof raw.imageCredit.author === 'string' && typeof raw.imageCredit.sourceUrl === 'string') {
+            try {
+                var source = new URL(raw.imageCredit.sourceUrl);
+                if (source.origin === 'https://www.pexels.com' && !source.username && !source.password) {
+                    normalized.imageCredit = { imageUrl: normalized.imageUrl,
+                        author: raw.imageCredit.author.slice(0, 120), sourceUrl: source.href };
+                }
+            } catch (e) { /* Optional photo attribution must not break old data. */ }
+        }
+        return normalized;
     }
 
     function normalizeDreams(list) {

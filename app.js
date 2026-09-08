@@ -134,50 +134,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let tempMilestones = [];
     let currentLocalImagePreviewUrl = null;
     let pendingLocalImageRef = null;
+    let selectedImageCredit = null;
     const LOCAL_IMAGE_PREFIX = 'dbimage:';
     const LOCAL_IMAGE_DB_NAME = 'dreamboard-local-images';
     const LOCAL_IMAGE_STORE = 'images';
     const localImageObjectUrls = new Map();
-
-    // Библиотека красивых Unsplash картинок по категориям для быстрого выбора
-    const UNSPLASH_PRESETS = {
-        career: [
-            'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800',
-            'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800',
-            'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800',
-            'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800'
-        ],
-        wealth: [
-            'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=800',
-            'https://images.unsplash.com/photo-1563013544-824ae1d704d3?w=800',
-            'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=800',
-            'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800'
-        ],
-        health: [
-            'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800',
-            'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800',
-            'https://images.unsplash.com/photo-1486218119243-13883505764c?w=800',
-            'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800'
-        ],
-        travel: [
-            'https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=800',
-            'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800',
-            'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800',
-            'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800'
-        ],
-        relationships: [
-            'https://images.unsplash.com/photo-1511180595966-530979eb674c?w=800',
-            'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=800',
-            'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=800',
-            'https://images.unsplash.com/photo-1517857398124-b624b5a2542a?w=800'
-        ],
-        growth: [
-            'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=800',
-            'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800',
-            'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=800',
-            'https://images.unsplash.com/photo-1447069387593-a5de0862481e?w=800'
-        ]
-    };
 
     // DOM Элементы
     const gridViewBtn = document.getElementById('view-grid-btn');
@@ -310,6 +271,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Экспорт резервной копии (Этап 3): переносимый JSON-бэкап.
         const exportJsonBtn = document.getElementById('export-json-btn');
+        document.getElementById('storage-help-export-btn')?.addEventListener('click', () => exportJsonBtn?.click());
+        document.getElementById('storage-help-import-btn')?.addEventListener('click', () => document.getElementById('import-json-btn')?.click());
         if (exportJsonBtn) {
             exportJsonBtn.addEventListener('click', () => {
                 handleExportBackup();
@@ -2262,6 +2225,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function openDreamModal(dream = null) {
         tempMilestones = [];
+        selectedImageCredit = dream && dream.imageCredit ? dream.imageCredit : null;
         resetLocalImagePreview(true);
         
         if (dream) {
@@ -2287,7 +2251,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dreamForm.reset();
             
             // Ставим картинку-заглушку по умолчанию
-            dreamImageFinalPath.value = UNSPLASH_PRESETS.career[0];
+            dreamImageFinalPath.value = 'assets/images/cover-' + (currentCategoryFilter === 'all' ? 'career' : currentCategoryFilter) + '.svg';
             
             // Если мы находимся в фильтре категорий, автоматически подставляем категорию
             if (currentCategoryFilter !== 'all') {
@@ -2295,6 +2259,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
+        unsplashSearchInput.value = '';
+        document.getElementById('dream-image-url').value = '';
+        document.getElementById('image-library-source').value = 'local';
         renderModalMilestones();
         renderUnsplashPresets();
         
@@ -2306,6 +2273,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function closeDreamModal() {
         dreamModal.classList.remove('active');
+        if (webPhotoController) webPhotoController.abort();
+        ++webPhotoRequest;
         resetLocalImagePreview(true);
     }
 
@@ -2344,6 +2313,22 @@ document.addEventListener('DOMContentLoaded', () => {
         dreamViewDreamTitle.textContent = dream.title || '';
         dreamViewYear.textContent = dream.year ? `${dream.year} г.` : '';
         dreamViewDesc.textContent = dream.desc || '';
+        let credit = dreamViewDesc.parentElement.querySelector('.dream-photo-credit');
+        if (credit) credit.remove();
+        if (dream.imageCredit) {
+            try {
+                const source = new URL(dream.imageCredit.sourceUrl);
+                if (source.origin === 'https://www.pexels.com') {
+                    credit = document.createElement('a');
+                    credit.className = 'dream-photo-credit photo-credit';
+                    credit.href = source.href;
+                    credit.target = '_blank';
+                    credit.rel = 'noopener noreferrer';
+                    credit.textContent = `${dream.imageCredit.author} · Pexels`;
+                    dreamViewDesc.after(credit);
+                }
+            } catch { /* Ignore malformed optional metadata from old copies. */ }
+        }
 
         // Этапы — создаются безопасными DOM API.
         dreamViewMilestones.textContent = '';
@@ -2458,6 +2443,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function switchImageTab(tab) {
         tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        tabButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
         if (tab === 'unsplash') {
             unsplashTab.classList.remove('hidden');
             uploadTab.classList.add('hidden');
@@ -2543,70 +2529,188 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Отрисовка пресетов картинок Unsplash
-    function renderUnsplashPresets() {
-        unsplashResultsGrid.innerHTML = '';
-        const cat = dreamCategorySelect.value;
-        const photos = UNSPLASH_PRESETS[cat] || UNSPLASH_PRESETS.career;
-        
-        photos.forEach(url => {
-            const img = document.createElement('img');
-            img.src = url;
-            img.className = 'unsplash-img-item';
-            if (dreamImageFinalPath.value === url) {
-                img.classList.add('selected');
-            }
-            
-            img.addEventListener('click', () => {
-                unsplashResultsGrid.querySelectorAll('.unsplash-img-item').forEach(i => i.classList.remove('selected'));
-                img.classList.add('selected');
-                discardPendingLocalUpload();
-                dreamImageFinalPath.value = url;
-                playSoundEffect('hover');
+    // Подборка доступна без аккаунтов. Сетевые фото включаются явно.
+    const imageLibraryStatus = document.getElementById('image-library-status');
+    const imageLibrarySource = document.getElementById('image-library-source');
+    const imagePreview = document.getElementById('image-choice-preview');
+    const imagePreviewPhoto = document.getElementById('image-choice-photo');
+    const imagePreviewTitle = document.getElementById('image-choice-title');
+    const imageUseButton = document.getElementById('image-choice-use');
+    let imageRenderId = 0;
+    let previewChoice = null;
+    let webPhotoController = null;
+    let webPhotoRequest = 0;
+    let webPhotoItems = [];
+    let webPhotoPage = 0;
+    let webPhotoQuery = '';
+    const webPhotoMore = document.getElementById('photo-search-more');
+    const photoProviderCredit = document.getElementById('photo-provider-credit');
+
+    async function searchWebPhotos(more = false) {
+        if (webPhotoController) webPhotoController.abort();
+        const requestId = ++webPhotoRequest;
+        const query = unsplashSearchInput.value.trim();
+        more = more && query === webPhotoQuery;
+        if (!more) { webPhotoItems = []; webPhotoPage = 0; }
+        renderUnsplashPresets(webPhotoItems);
+        webPhotoMore.hidden = true;
+        if (!query) { imageLibraryStatus.textContent = 'Что найти? Например: море, уютный дом или путешествие.'; return; }
+        if (!navigator.onLine) { imageLibraryStatus.textContent = 'Нет интернета. Встроенные обложки и фото с устройства доступны.'; return; }
+        if (query.length > 100) { imageLibraryStatus.textContent = 'Сократите запрос до 100 символов.'; return; }
+        webPhotoController = new AbortController();
+        const controller = webPhotoController;
+        const timer = setTimeout(() => controller.abort(), 10000);
+        imageLibraryStatus.textContent = 'Ищем фотографии…';
+        unsplashResultsGrid.setAttribute('aria-busy', 'true');
+        try {
+            const endpoint = new URL(DreamBoardConfig.photoSearchUrl);
+            endpoint.search = new URLSearchParams({ q: query, page: String(webPhotoPage + 1) });
+            const response = await fetch(endpoint, { signal: controller.signal, credentials: 'omit', cache: 'no-store' });
+            if (response.status === 429) throw new Error('Лимит поиска временно исчерпан. Попробуйте позже или выберите встроенную обложку.');
+            if (!response.ok) throw new Error('Поиск сейчас недоступен. Нажмите «Искать», чтобы повторить.');
+            const data = await response.json();
+            if (!Array.isArray(data.photos)) throw new Error('Не удалось получить фотографии. Повторите поиск.');
+            if (requestId !== webPhotoRequest || imageLibrarySource.value !== 'web') return;
+            const safePhotos = data.photos.filter(photo => {
+                try { return [photo.url, photo.thumbnail].every(value => {
+                    const u = new URL(value); return u.protocol === 'https:' && u.hostname === 'images.pexels.com' && !u.username && !u.password;
+                }) && new URL(photo.sourceUrl).origin === 'https://www.pexels.com'; } catch { return false; }
             });
-            unsplashResultsGrid.appendChild(img);
+            const seen = new Set(webPhotoItems.map(item => item.url));
+            webPhotoItems = webPhotoItems.concat(safePhotos.filter(item => !seen.has(item.url)));
+            webPhotoPage = data.page;
+            webPhotoQuery = query;
+            renderUnsplashPresets(webPhotoItems);
+            webPhotoMore.hidden = !data.hasMore;
+        } catch (error) {
+            if (requestId !== webPhotoRequest || imageLibrarySource.value !== 'web') return;
+            imageLibraryStatus.textContent = controller.signal.aborted
+                ? 'Поиск занял слишком много времени. Нажмите «Искать», чтобы повторить.'
+                : error instanceof TypeError ? 'Не удалось связаться с поиском. Проверьте интернет и повторите.' : error.message;
+            webPhotoMore.hidden = !more;
+        } finally {
+            clearTimeout(timer);
+            if (requestId === webPhotoRequest) unsplashResultsGrid.setAttribute('aria-busy', 'false');
+        }
+    }
+    webPhotoMore.addEventListener('click', () => searchWebPhotos(true));
+    unsplashSearchInput.addEventListener('input', () => {
+        if (imageLibrarySource.value !== 'web') return;
+        if (webPhotoController) webPhotoController.abort();
+        ++webPhotoRequest;
+        webPhotoMore.hidden = true;
+        unsplashResultsGrid.setAttribute('aria-busy', 'false');
+        imageLibraryStatus.textContent = 'Нажмите «Искать» или Enter, чтобы найти фотографии.';
+    });
+
+    function renderUnsplashPresets(providedItems) {
+        const isWeb = imageLibrarySource.value === 'web';
+        photoProviderCredit.hidden = !isWeb;
+        unsplashSearchInput.setAttribute('aria-label', isWeb ? 'Поиск фотографий в сети' : 'Поиск по подборке');
+        if (isWeb && !Array.isArray(providedItems)) { searchWebPhotos(); return; }
+        if (!isWeb) {
+            if (webPhotoController) webPhotoController.abort();
+            ++webPhotoRequest;
+            webPhotoMore.hidden = true;
+            unsplashResultsGrid.setAttribute('aria-busy', 'false');
+        }
+        const renderId = ++imageRenderId;
+        imagePreview.classList.add('hidden');
+        previewChoice = null;
+        imageUseButton.disabled = true;
+        unsplashResultsGrid.replaceChildren();
+        const items = Array.isArray(providedItems) ? providedItems : DreamBoardImageLibrary.search(unsplashSearchInput.value, imageLibrarySource.value, dreamCategorySelect.value);
+        imageLibraryStatus.textContent = items.length
+            ? `${isWeb ? 'Найдено фотографий' : 'В подборке'}: ${items.length}. Нажмите на обложку, чтобы рассмотреть.`
+            : 'Ничего не найдено. Попробуйте другие слова или добавьте своё фото.';
+        let failed = 0;
+        items.forEach(item => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'image-library-item';
+            button.disabled = true;
+            button.setAttribute('aria-label', `Рассмотреть: ${item.title}`);
+            button.setAttribute('aria-pressed', String(dreamImageFinalPath.value === item.url));
+            const img = document.createElement('img');
+            img.alt = '';
+            img.decoding = 'async';
+            const caption = document.createElement('span');
+            caption.textContent = item.title;
+            const loadTimeout = setTimeout(() => {
+                if (!img.complete) img.onerror();
+            }, 12000);
+            img.onload = () => {
+                clearTimeout(loadTimeout);
+                if (img.hidden) return;
+                if (img.naturalWidth) button.disabled = false;
+            };
+            img.onerror = () => {
+                clearTimeout(loadTimeout);
+                if (renderId !== imageRenderId) return;
+                if (img.hidden) return;
+                button.disabled = true;
+                img.hidden = true;
+                caption.textContent = `${item.title} — не загрузилось`;
+                failed++;
+                imageLibraryStatus.textContent = `Не загрузилось: ${failed}. Повторите поиск или выберите встроенную обложку / своё фото.`;
+            };
+            img.src = item.thumbnail || (item.local ? item.url : item.url.replace('w=800', 'w=360&auto=format&fit=crop'));
+            button.append(img, caption);
+            button.addEventListener('click', () => {
+                previewChoice = item;
+                imageUseButton.disabled = true;
+                imagePreviewTitle.textContent = item.title;
+                imagePreviewPhoto.alt = item.title;
+                imagePreviewPhoto.onload = () => { imageUseButton.disabled = !imagePreviewPhoto.naturalWidth; };
+                imagePreviewPhoto.onerror = () => {
+                    imageUseButton.disabled = true;
+                    imagePreviewTitle.textContent = 'Фото не загрузилось. Выберите другое или повторите попытку.';
+                };
+                imagePreviewPhoto.src = item.url;
+                imagePreview.classList.remove('hidden');
+                imagePreview.scrollIntoView({ block: 'nearest' });
+            });
+            if (item.sourceUrl) {
+                const tile = document.createElement('div');
+                const credit = document.createElement('a');
+                credit.href = item.sourceUrl;
+                credit.target = '_blank';
+                credit.rel = 'noopener noreferrer';
+                credit.className = 'photo-credit';
+                credit.textContent = `${item.author || 'Автор'} · Pexels`;
+                tile.append(button, credit);
+                unsplashResultsGrid.append(tile);
+            } else { unsplashResultsGrid.append(button); }
         });
     }
 
-    // Перерисовка пресетов при изменении категории цели
-    dreamCategorySelect.addEventListener('change', () => {
-        renderUnsplashPresets();
-        // Автоматически выбираем первую картинку из новой категории
-        const cat = dreamCategorySelect.value;
-        if (UNSPLASH_PRESETS[cat]) {
-            discardPendingLocalUpload();
-            dreamImageFinalPath.value = UNSPLASH_PRESETS[cat][0];
-            renderUnsplashPresets();
-        }
+    imageUseButton.addEventListener('click', () => {
+        if (!previewChoice || imageUseButton.disabled) return;
+        discardPendingLocalUpload();
+        dreamImageFinalPath.value = previewChoice.url;
+        selectedImageCredit = previewChoice.sourceUrl ? {
+            imageUrl: previewChoice.url, author: previewChoice.author || 'Автор', sourceUrl: previewChoice.sourceUrl
+        } : null;
+        imageLibraryStatus.textContent = `Выбрано: ${previewChoice.title}`;
+        const selectedTitle = previewChoice.title;
+        renderUnsplashPresets(imageLibrarySource.value === 'web' ? webPhotoItems : undefined);
+        imageLibraryStatus.textContent = `Выбрано: ${selectedTitle}. Можно сохранить мечту.`;
+        unsplashSearchInput.focus({ preventScroll: true });
+        playSoundEffect('hover');
     });
-
-    // Имитация поиска по Unsplash (генерирует качественные случайные совпадения)
-    unsplashSearchBtn.addEventListener('click', () => {
-        const query = unsplashSearchInput.value.trim();
-        if (query) {
-            unsplashResultsGrid.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--text-muted); font-size:12px;">Поиск картинок...</p>`;
-            setTimeout(() => {
-                unsplashResultsGrid.innerHTML = '';
-                // Создаем 4 псевдослучайных высококачественных Unsplash фото по тегу
-                for (let i = 0; i < 4; i++) {
-                    const sig = Math.floor(Math.random() * 1000);
-                    const url = `https://images.unsplash.com/featured/800x600/?${encodeURIComponent(query)}&sig=${sig}`;
-                    
-                    const img = document.createElement('img');
-                    img.src = url;
-                    img.className = 'unsplash-img-item';
-                    
-                    img.addEventListener('click', () => {
-                        unsplashResultsGrid.querySelectorAll('.unsplash-img-item').forEach(idx => idx.classList.remove('selected'));
-                        img.classList.add('selected');
-                        discardPendingLocalUpload();
-                        dreamImageFinalPath.value = url;
-                        playSoundEffect('hover');
-                    });
-                    
-                    unsplashResultsGrid.appendChild(img);
-                }
-            }, 800);
+    document.getElementById('image-choice-close').addEventListener('click', () => {
+        imagePreview.classList.add('hidden');
+        previewChoice = null;
+        unsplashSearchInput.focus({ preventScroll: true });
+    });
+    // Категория меняет порядок предложений, но не выбранное пользователем фото.
+    dreamCategorySelect.addEventListener('change', renderUnsplashPresets);
+    imageLibrarySource.addEventListener('change', renderUnsplashPresets);
+    unsplashSearchBtn.addEventListener('click', renderUnsplashPresets);
+    unsplashSearchInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.isComposing) {
+            event.preventDefault();
+            renderUnsplashPresets();
         }
     });
 
@@ -2679,6 +2783,11 @@ document.addEventListener('DOMContentLoaded', () => {
             createdDream = newDream;
         }
 
+        const editedDream = createdDream || (changedIndex !== -1 ? dreams[changedIndex] : null);
+        if (editedDream) {
+            delete editedDream.imageCredit;
+            if (selectedImageCredit && selectedImageCredit.imageUrl === finalImage) editedDream.imageCredit = { ...selectedImageCredit };
+        }
         const saveResult = saveDreams();
         if (!saveResult.ok) {
             if (changedIndex !== -1 && previousDreamSnapshot) dreams[changedIndex] = previousDreamSnapshot;
@@ -3104,11 +3213,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isManifestPlaying) {
             manifestPlayBtn.querySelector('.pause-icon').classList.remove('hidden');
             manifestPlayBtn.querySelector('.play-icon').classList.add('hidden');
-            showToast('Манифестация возобновлена', 'info');
         } else {
             manifestPlayBtn.querySelector('.pause-icon').classList.add('hidden');
             manifestPlayBtn.querySelector('.play-icon').classList.remove('hidden');
-            showToast('Пауза', 'info');
         }
     });
 

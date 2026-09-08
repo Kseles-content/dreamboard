@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com; connect-src 'self' https://*.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' https://challenges.cloudflare.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https://images.unsplash.com https://images.pexels.com; connect-src 'self' https://kseles.ru https://*.supabase.co https://challenges.cloudflare.com; frame-src https://challenges.cloudflare.com; font-src 'self' data:; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
     <title>DreamBoard — Интерактивный Коллаж Желаний</title>
     <meta name="description" content="DreamBoard — премиальное веб-приложение для визуализации целей и мечтаний. Создавайте интерактивные коллажи желаний, медитируйте в иммерсивном режиме и воплощайте мечты в жизнь.">
     <meta name="theme-color" content="#07050f">
@@ -148,7 +148,7 @@
                 </button>
 
                 <!-- Экспорт JSON-бэкапа (Этап 3): переносимый экспорт резервной копии -->
-                <button id="export-json-btn" class="icon-btn" title="Экспорт данных (JSON-бэкап)">
+                <button id="export-json-btn" class="icon-btn" title="Скачать резервную копию" aria-label="Скачать резервную копию">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
                         <polyline points="14 2 14 8 20 8"/>
@@ -157,7 +157,7 @@
                     </svg>
                 </button>
                 <!-- Безопасное восстановление JSON-бэкапа (Этап 4) -->
-                <button id="import-json-btn" class="icon-btn" title="Восстановить данные из JSON-бэкапа">
+                <button id="import-json-btn" class="icon-btn" title="Восстановить из резервной копии" aria-label="Восстановить из резервной копии">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
                         <polyline points="17 8 12 3 7 8"/>
@@ -206,6 +206,17 @@
         </header>
 
         <!-- Рабочее пространство -->
+        <details class="storage-help">
+            <summary>Доски и резервная копия</summary>
+            <div class="storage-help-content">
+                <p>Доски сохраняются в этом браузере на этом устройстве. На другом телефоне или компьютере они не появятся автоматически.</p>
+                <p>Скачайте резервную копию перед очисткой данных браузера или сменой устройства. На новом устройстве откройте DreamBoard и выберите «Восстановить из файла».</p>
+                <div class="storage-help-actions">
+                    <button id="storage-help-export-btn" type="button" class="btn secondary">Скачать резервную копию</button>
+                    <button id="storage-help-import-btn" type="button" class="btn secondary">Восстановить из файла</button>
+                </div>
+            </div>
+        </details>
         <main class="app-workspace">
             
             <!-- Режим 1: Сетка Masonry (По умолчанию) -->
@@ -267,10 +278,10 @@
 
     <!-- Модальное окно: Создание / Редактирование Мечты -->
     <div id="dream-modal" class="modal-overlay">
-        <div class="modal-content glass-card">
+        <div class="modal-content glass-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
             <header class="modal-header">
                 <h3 id="modal-title">Создать новую мечту</h3>
-                <button class="close-modal-btn">&times;</button>
+                <button class="close-modal-btn" aria-label="Закрыть форму">&times;</button>
             </header>
             <form id="dream-form" class="modal-form">
                 <input type="hidden" id="edit-dream-id">
@@ -278,6 +289,68 @@
                 <div class="form-group">
                     <label for="dream-title-input">Название мечты</label>
                     <input type="text" id="dream-title-input" required placeholder="Например: Построить дом у океана" maxlength="60">
+                </div>
+
+                <div class="form-group">
+                    <label for="dream-image-url">Изображение</label>
+                    <div class="image-source-tabs">
+                        <button type="button" class="tab-btn active" data-tab="unsplash">Подборки</button>
+                        <button type="button" class="tab-btn" data-tab="upload">С устройства</button>
+                        <button type="button" class="tab-btn" data-tab="url">Ссылка</button>
+                    </div>
+                    
+                    <!-- Встроенная подборка: работает без внешнего API -->
+                    <div class="tab-content" id="unsplash-tab-content">
+                        <p class="image-library-hint">Обложки для ваших мечтаний. Встроенные доступны без интернета.</p>
+                        <label class="image-library-source-label" for="image-library-source">Показывать</label>
+                        <select id="image-library-source">
+                            <option value="local">Встроенные обложки · офлайн</option>
+                            <option value="web">В сети · фотографии Pexels</option>
+                            <option value="all">Все подборки · фото требуют интернет</option>
+                        </select>
+                        <div class="unsplash-search-row">
+                            <input type="text" id="unsplash-search-input" placeholder="Море, любовь, работа…" aria-label="Поиск по подборке" enterkeyhint="search">
+                            <button type="button" id="unsplash-search-btn" class="simple-btn">Искать</button>
+                        </div>
+                        <p id="photo-provider-credit" class="image-library-hint" hidden>Фотографии: <a href="https://www.pexels.com" target="_blank" rel="noopener noreferrer">Pexels</a></p>
+                        <p id="image-library-status" class="image-library-hint" role="status" aria-live="polite"></p>
+                        <div id="image-choice-preview" class="image-choice-preview hidden">
+                            <img id="image-choice-photo" alt="">
+                            <p id="image-choice-title"></p>
+                            <div class="image-choice-actions">
+                                <button type="button" id="image-choice-use" class="btn primary" disabled>Выбрать обложку</button>
+                                <button type="button" id="image-choice-close" class="simple-btn">Назад</button>
+                            </div>
+                        </div>
+                        <div id="unsplash-results-grid" class="unsplash-results-grid">
+                            <!-- Сюда подгрузятся картинки -->
+                        </div>
+                        <button type="button" id="photo-search-more" class="simple-btn" hidden>Ещё фотографии</button>
+                    </div>
+                    
+                    <!-- Вариант 2: Прямой URL -->
+                    <div class="tab-content hidden" id="url-tab-content">
+                        <input type="url" id="dream-image-url" placeholder="https://images.unsplash.com/…">
+                    </div>
+
+                    <!-- Вариант 3: Локальная загрузка с автообрезкой и сжатием -->
+                    <div class="tab-content hidden" id="upload-tab-content">
+                        <label for="dream-image-file" class="upload-dropzone">
+                            <span class="upload-dropzone-title">Выбрать картинку с устройства</span>
+                            <span class="upload-dropzone-hint">JPG, PNG или WebP. Автообрезка 16:9 и сжатие до 1280x720.</span>
+                            <input type="file" id="dream-image-file" accept="image/jpeg,image/png,image/webp,image/gif,image/*">
+                        </label>
+                        <div id="local-image-preview" class="local-image-preview hidden">
+                            <img id="local-image-preview-img" alt="Предпросмотр выбранной картинки">
+                            <div class="local-image-preview-meta">
+                                <span id="local-image-preview-name">Файл выбран</span>
+                                <span id="local-image-preview-size"></span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Скрытый инпут с итоговым путем -->
+                    <input type="hidden" id="dream-image-final-path">
                 </div>
 
                 <div class="form-row">
@@ -301,50 +374,6 @@
                 <div class="form-group">
                     <label for="dream-desc-input">Описание стремления</label>
                     <textarea id="dream-desc-input" rows="3" placeholder="Опишите ваши чувства и видение этой мечты в настоящем времени..."></textarea>
-                </div>
-
-                <div class="form-group">
-                    <label for="dream-image-url">Изображение</label>
-                    <div class="image-source-tabs">
-                        <button type="button" class="tab-btn active" data-tab="unsplash">Выбрать обложку</button>
-                        <button type="button" class="tab-btn" data-tab="upload">С устройства</button>
-                        <button type="button" class="tab-btn" data-tab="url">Вставить ссылку</button>
-                    </div>
-                    
-                    <!-- Вариант 1: Поиск по Unsplash -->
-                    <div class="tab-content" id="unsplash-tab-content">
-                        <div class="unsplash-search-row">
-                            <input type="text" id="unsplash-search-input" placeholder="Поиск красивых фото (на англ., например: ocean, tech)...">
-                            <button type="button" id="unsplash-search-btn" class="simple-btn">Искать</button>
-                        </div>
-                        <div id="unsplash-results-grid" class="unsplash-results-grid">
-                            <!-- Сюда подгрузятся картинки -->
-                        </div>
-                    </div>
-                    
-                    <!-- Вариант 2: Прямой URL -->
-                    <div class="tab-content hidden" id="url-tab-content">
-                        <input type="url" id="dream-image-url" placeholder="https://images.unsplash.com/... или любая другая ссылка">
-                    </div>
-
-                    <!-- Вариант 3: Локальная загрузка с автообрезкой и сжатием -->
-                    <div class="tab-content hidden" id="upload-tab-content">
-                        <label for="dream-image-file" class="upload-dropzone">
-                            <span class="upload-dropzone-title">Выбрать картинку с устройства</span>
-                            <span class="upload-dropzone-hint">JPG, PNG или WebP. Автообрезка 16:9 и сжатие до 1280x720.</span>
-                            <input type="file" id="dream-image-file" accept="image/jpeg,image/png,image/webp,image/gif,image/*">
-                        </label>
-                        <div id="local-image-preview" class="local-image-preview hidden">
-                            <img id="local-image-preview-img" alt="Предпросмотр выбранной картинки">
-                            <div class="local-image-preview-meta">
-                                <span id="local-image-preview-name">Файл выбран</span>
-                                <span id="local-image-preview-size"></span>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Скрытый инпут с итоговым путем -->
-                    <input type="hidden" id="dream-image-final-path">
                 </div>
 
                 <div class="form-group">
@@ -590,6 +619,7 @@
     <script src="trash.js"></script>
     <script src="config.js"></script>
     <script src="auth.js"></script>
+    <script src="image-library.js"></script>
     <script src="app.js"></script>
     <script src="sw-register.js"></script>
 </body>

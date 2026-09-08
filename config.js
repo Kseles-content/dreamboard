@@ -6,6 +6,7 @@
     // service-role key in this file (GitHub Pages serves it to every visitor).
     root.DreamBoardConfig = Object.freeze({
         authEnabled: false,
+        photoSearchUrl: 'https://kseles.ru/dreamboard-api/photos',
         supabaseUrl: '',
         supabasePublishableKey: '',
         turnstileSiteKey: '',

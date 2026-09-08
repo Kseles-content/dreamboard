@@ -1,0 +1,24 @@
+[Unit]
+Description=DreamBoard photo search
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/dreamboard-photo-search
+EnvironmentFile=/etc/dreamboard-photo-search.env
+ExecStart=/usr/bin/node /opt/dreamboard-photo-search/server.cjs
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=192M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target
