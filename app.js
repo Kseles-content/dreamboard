@@ -139,46 +139,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const LOCAL_IMAGE_STORE = 'images';
     const localImageObjectUrls = new Map();
 
-    // Библиотека красивых Unsplash картинок по категориям для быстрого выбора
-    const UNSPLASH_PRESETS = {
-        career: [
-            'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=800',
-            'https://images.unsplash.com/photo-1504384308090-c894fdcc538d?w=800',
-            'https://images.unsplash.com/photo-1498050108023-c5249f4df085?w=800',
-            'https://images.unsplash.com/photo-1486406146926-c627a92ad1ab?w=800'
-        ],
-        wealth: [
-            'https://images.unsplash.com/photo-1579621970563-ebec7560ff3e?w=800',
-            'https://images.unsplash.com/photo-1563013544-824ae1d704d3?w=800',
-            'https://images.unsplash.com/photo-1559526324-4b87b5e36e44?w=800',
-            'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800'
-        ],
-        health: [
-            'https://images.unsplash.com/photo-1506126613408-eca07ce68773?w=800',
-            'https://images.unsplash.com/photo-1470071459604-3b5ec3a7fe05?w=800',
-            'https://images.unsplash.com/photo-1486218119243-13883505764c?w=800',
-            'https://images.unsplash.com/photo-1518611012118-696072aa579a?w=800'
-        ],
-        travel: [
-            'https://images.unsplash.com/photo-1506929562872-bb421503ef21?w=800',
-            'https://images.unsplash.com/photo-1476514525535-07fb3b4ae5f1?w=800',
-            'https://images.unsplash.com/photo-1501785888041-af3ef285b470?w=800',
-            'https://images.unsplash.com/photo-1469854523086-cc02fe5d8800?w=800'
-        ],
-        relationships: [
-            'https://images.unsplash.com/photo-1511180595966-530979eb674c?w=800',
-            'https://images.unsplash.com/photo-1516589178581-6cd7833ae3b2?w=800',
-            'https://images.unsplash.com/photo-1542038784456-1ea8e935640e?w=800',
-            'https://images.unsplash.com/photo-1517857398124-b624b5a2542a?w=800'
-        ],
-        growth: [
-            'https://images.unsplash.com/photo-1456513080510-7bf3a84b82f8?w=800',
-            'https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=800',
-            'https://images.unsplash.com/photo-1518495973542-4542c06a5843?w=800',
-            'https://images.unsplash.com/photo-1447069387593-a5de0862481e?w=800'
-        ]
-    };
-
     // DOM Элементы
     const gridViewBtn = document.getElementById('view-grid-btn');
     const canvasViewBtn = document.getElementById('view-canvas-btn');
@@ -2289,7 +2249,7 @@ document.addEventListener('DOMContentLoaded', () => {
             dreamForm.reset();
             
             // Ставим картинку-заглушку по умолчанию
-            dreamImageFinalPath.value = UNSPLASH_PRESETS.career[0];
+            dreamImageFinalPath.value = 'assets/images/cover-' + (currentCategoryFilter === 'all' ? 'career' : currentCategoryFilter) + '.svg';
             
             // Если мы находимся в фильтре категорий, автоматически подставляем категорию
             if (currentCategoryFilter !== 'all') {
@@ -2297,6 +2257,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
         }
         
+        unsplashSearchInput.value = '';
+        document.getElementById('dream-image-url').value = '';
+        document.getElementById('image-library-source').value = 'local';
         renderModalMilestones();
         renderUnsplashPresets();
         
@@ -2460,6 +2423,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function switchImageTab(tab) {
         tabButtons.forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+        tabButtons.forEach(b => b.setAttribute('aria-pressed', String(b.dataset.tab === tab)));
         if (tab === 'unsplash') {
             unsplashTab.classList.remove('hidden');
             uploadTab.classList.add('hidden');
@@ -2545,70 +2509,101 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Отрисовка пресетов картинок Unsplash
+    // Подборка доступна без аккаунтов. Сетевые фото включаются явно.
+    const imageLibraryStatus = document.getElementById('image-library-status');
+    const imageLibrarySource = document.getElementById('image-library-source');
+    const imagePreview = document.getElementById('image-choice-preview');
+    const imagePreviewPhoto = document.getElementById('image-choice-photo');
+    const imagePreviewTitle = document.getElementById('image-choice-title');
+    const imageUseButton = document.getElementById('image-choice-use');
+    let imageRenderId = 0;
+    let previewChoice = null;
+
     function renderUnsplashPresets() {
-        unsplashResultsGrid.innerHTML = '';
-        const cat = dreamCategorySelect.value;
-        const photos = UNSPLASH_PRESETS[cat] || UNSPLASH_PRESETS.career;
-        
-        photos.forEach(url => {
+        const renderId = ++imageRenderId;
+        imagePreview.classList.add('hidden');
+        previewChoice = null;
+        imageUseButton.disabled = true;
+        unsplashResultsGrid.replaceChildren();
+        const items = DreamBoardImageLibrary.search(unsplashSearchInput.value, imageLibrarySource.value, dreamCategorySelect.value);
+        imageLibraryStatus.textContent = items.length
+            ? `В подборке: ${items.length}. Нажмите на обложку, чтобы рассмотреть.`
+            : 'В подборке ничего не найдено. Попробуйте «море», «любовь», «работа» или добавьте своё фото.';
+        let failed = 0;
+        items.forEach(item => {
+            const button = document.createElement('button');
+            button.type = 'button';
+            button.className = 'image-library-item';
+            button.disabled = true;
+            button.setAttribute('aria-label', `Рассмотреть: ${item.title}`);
+            button.setAttribute('aria-pressed', String(dreamImageFinalPath.value === item.url));
             const img = document.createElement('img');
-            img.src = url;
-            img.className = 'unsplash-img-item';
-            if (dreamImageFinalPath.value === url) {
-                img.classList.add('selected');
-            }
-            
-            img.addEventListener('click', () => {
-                unsplashResultsGrid.querySelectorAll('.unsplash-img-item').forEach(i => i.classList.remove('selected'));
-                img.classList.add('selected');
-                discardPendingLocalUpload();
-                dreamImageFinalPath.value = url;
-                playSoundEffect('hover');
+            img.alt = '';
+            img.decoding = 'async';
+            const caption = document.createElement('span');
+            caption.textContent = item.title;
+            const loadTimeout = setTimeout(() => {
+                if (!img.complete) img.onerror();
+            }, 12000);
+            img.onload = () => {
+                clearTimeout(loadTimeout);
+                if (img.hidden) return;
+                if (img.naturalWidth) button.disabled = false;
+            };
+            img.onerror = () => {
+                clearTimeout(loadTimeout);
+                if (renderId !== imageRenderId) return;
+                if (img.hidden) return;
+                button.disabled = true;
+                img.hidden = true;
+                caption.textContent = `${item.title} — не загрузилось`;
+                failed++;
+                imageLibraryStatus.textContent = `Не загрузилось: ${failed}. Повторите поиск или выберите встроенную обложку / своё фото.`;
+            };
+            img.src = item.local ? item.url : item.url.replace('w=800', 'w=360&auto=format&fit=crop');
+            button.append(img, caption);
+            button.addEventListener('click', () => {
+                previewChoice = item;
+                imageUseButton.disabled = true;
+                imagePreviewTitle.textContent = item.title;
+                imagePreviewPhoto.alt = item.title;
+                imagePreviewPhoto.onload = () => { imageUseButton.disabled = !imagePreviewPhoto.naturalWidth; };
+                imagePreviewPhoto.onerror = () => {
+                    imageUseButton.disabled = true;
+                    imagePreviewTitle.textContent = 'Фото не загрузилось. Выберите другое или повторите попытку.';
+                };
+                imagePreviewPhoto.src = item.url;
+                imagePreview.classList.remove('hidden');
+                imagePreview.scrollIntoView({ block: 'nearest' });
             });
-            unsplashResultsGrid.appendChild(img);
+            unsplashResultsGrid.append(button);
         });
     }
 
-    // Перерисовка пресетов при изменении категории цели
-    dreamCategorySelect.addEventListener('change', () => {
+    imageUseButton.addEventListener('click', () => {
+        if (!previewChoice || imageUseButton.disabled) return;
+        discardPendingLocalUpload();
+        dreamImageFinalPath.value = previewChoice.url;
+        imageLibraryStatus.textContent = `Выбрано: ${previewChoice.title}`;
+        const selectedTitle = previewChoice.title;
         renderUnsplashPresets();
-        // Автоматически выбираем первую картинку из новой категории
-        const cat = dreamCategorySelect.value;
-        if (UNSPLASH_PRESETS[cat]) {
-            discardPendingLocalUpload();
-            dreamImageFinalPath.value = UNSPLASH_PRESETS[cat][0];
-            renderUnsplashPresets();
-        }
+        imageLibraryStatus.textContent = `Выбрано: ${selectedTitle}. Можно сохранить мечту.`;
+        unsplashSearchInput.focus({ preventScroll: true });
+        playSoundEffect('hover');
     });
-
-    // Имитация поиска по Unsplash (генерирует качественные случайные совпадения)
-    unsplashSearchBtn.addEventListener('click', () => {
-        const query = unsplashSearchInput.value.trim();
-        if (query) {
-            unsplashResultsGrid.innerHTML = `<p style="grid-column:1/-1; text-align:center; color:var(--text-muted); font-size:12px;">Поиск картинок...</p>`;
-            setTimeout(() => {
-                unsplashResultsGrid.innerHTML = '';
-                // Создаем 4 псевдослучайных высококачественных Unsplash фото по тегу
-                for (let i = 0; i < 4; i++) {
-                    const sig = Math.floor(Math.random() * 1000);
-                    const url = `https://images.unsplash.com/featured/800x600/?${encodeURIComponent(query)}&sig=${sig}`;
-                    
-                    const img = document.createElement('img');
-                    img.src = url;
-                    img.className = 'unsplash-img-item';
-                    
-                    img.addEventListener('click', () => {
-                        unsplashResultsGrid.querySelectorAll('.unsplash-img-item').forEach(idx => idx.classList.remove('selected'));
-                        img.classList.add('selected');
-                        discardPendingLocalUpload();
-                        dreamImageFinalPath.value = url;
-                        playSoundEffect('hover');
-                    });
-                    
-                    unsplashResultsGrid.appendChild(img);
-                }
-            }, 800);
+    document.getElementById('image-choice-close').addEventListener('click', () => {
+        imagePreview.classList.add('hidden');
+        previewChoice = null;
+        unsplashSearchInput.focus({ preventScroll: true });
+    });
+    // Категория меняет порядок предложений, но не выбранное пользователем фото.
+    dreamCategorySelect.addEventListener('change', renderUnsplashPresets);
+    imageLibrarySource.addEventListener('change', renderUnsplashPresets);
+    unsplashSearchBtn.addEventListener('click', renderUnsplashPresets);
+    unsplashSearchInput.addEventListener('keydown', event => {
+        if (event.key === 'Enter' && !event.isComposing) {
+            event.preventDefault();
+            renderUnsplashPresets();
         }
     });
 

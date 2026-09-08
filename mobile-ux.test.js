@@ -403,7 +403,7 @@ test('17. script order сохраняет UX runtime и добавляет Stage
         'src="assets/vendor/html2canvas-1.4.1.min.js"',
         'src="storage.js"', 'src="backup.js"', 'src="import.js"',
         'src="performance.js"', 'src="trash.js"', 'src="config.js"',
-        'src="auth.js"', 'src="app.js"', 'src="sw-register.js"'
+        'src="auth.js"', 'src="image-library.js"', 'src="app.js"', 'src="sw-register.js"'
     ], 'Stage 7B script order (supabase-js intentionally NOT static — loaded dynamically by auth.js)');
     const SW_JS = fs.readFileSync(path.join(__dirname, 'service-worker.js'), 'utf8');
     assert.ok(SW_JS.includes("'./app.js'") && SW_JS.includes("'./style.css'"), 'PRECACHE без изменений');
