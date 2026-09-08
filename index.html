@@ -23,12 +23,15 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="DreamBoard">
 
+    <script src="appearance.js"></script>
+
     <!-- Google Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="manifest-breath.css">
+    <link rel="stylesheet" href="appearance.css">
 </head>
 <body>
     <!-- Фоновые интерактивные частицы -->
@@ -217,6 +220,10 @@
                 </div>
             </div>
         </details>
+        <div class="board-view-bar">
+            <span id="board-appearance-summary">Космос · Сетка</span>
+            <button type="button" id="board-appearance-open" aria-haspopup="dialog">Вид доски</button>
+        </div>
         <main class="app-workspace">
             
             <!-- Режим 1: Сетка Masonry (По умолчанию) -->
@@ -275,6 +282,46 @@
             </section>
         </main>
     </div>
+
+    <dialog id="board-appearance-dialog" class="appearance-dialog" aria-labelledby="board-appearance-title">
+        <form id="board-appearance-form">
+            <h2 id="board-appearance-title">Вид доски</h2>
+            <p class="appearance-intro">Настройте доску под себя. Оформление запоминается на этом устройстве.</p>
+            <fieldset>
+                <legend>Тема</legend>
+                <div class="appearance-themes">
+                    <label class="appearance-theme">
+                        <input type="radio" name="theme" value="cosmos">
+                        <span class="theme-tile"><span class="theme-mini cosmos" aria-hidden="true"><i></i><i></i><i></i></span><strong>Космос</strong></span>
+                    </label>
+                    <label class="appearance-theme">
+                        <input type="radio" name="theme" value="paper">
+                        <span class="theme-tile"><span class="theme-mini paper" aria-hidden="true"><i></i><i></i><i></i></span><strong>Бумага</strong></span>
+                    </label>
+                </div>
+            </fieldset>
+            <div class="appearance-fields">
+                <label>Расположение
+                    <select name="view"><option value="grid">Сетка</option><option value="canvas">Свободный холст</option></select>
+                </label>
+                <label>Размер в сетке
+                    <select name="size"><option value="compact">Компактные</option><option value="normal">Обычные</option><option value="large">Крупные</option></select>
+                </label>
+                <label>На карточке
+                    <select name="details"><option value="full">Все подробности</option><option value="simple">Фото и название</option></select>
+                </label>
+                <label>Размещение фото
+                    <select name="fit"><option value="cover">Заполнить обложку</option><option value="contain">Показать целиком</option></select>
+                </label>
+            </div>
+            <button type="button" id="board-appearance-reset">Вернуть стандартный вид</button>
+            <p id="board-appearance-status" role="status" aria-live="polite"></p>
+            <div class="appearance-actions">
+                <button type="button" id="board-appearance-cancel" class="btn secondary">Отмена</button>
+                <button type="submit" id="board-appearance-done" class="btn primary">Готово</button>
+            </div>
+        </form>
+    </dialog>
 
     <!-- Модальное окно: Создание / Редактирование Мечты -->
     <div id="dream-modal" class="modal-overlay">

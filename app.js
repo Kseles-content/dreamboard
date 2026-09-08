@@ -81,7 +81,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let trashItems = [];             // persistent recently-deleted records
     let trashProtected = false;      // corrupt/future trash must never be overwritten
     let currentCategoryFilter = 'all';
-    let currentViewMode = 'grid'; // 'grid' | 'canvas'
+    let currentViewMode = DreamBoardAppearance.get().view; // 'grid' | 'canvas'
 
     // Performance-профиль: lite для слабых/мобильных устройств (performance.js).
     // isLite определяется детерминированной чистой функцией shouldEnableLiteProfile
@@ -3483,33 +3483,28 @@ document.addEventListener('DOMContentLoaded', () => {
     // 11. НАВИГАЦИЯ: ПЕРЕКЛЮЧЕНИЕ ВИДОВ И ФИЛЬТРОВ
     // ==========================================================================
     
-    // Переключение Вид Сетки / Вид Холста
-    gridViewBtn.addEventListener('click', () => {
-        if (currentViewMode !== 'grid') {
-            currentViewMode = 'grid';
-            gridViewBtn.classList.add('active');
-            canvasViewBtn.classList.remove('active');
-            gridViewSection.classList.add('active');
-            canvasViewSection.classList.remove('active');
-            playSoundEffect('hover');
-            renderGrid();
+    // Layout is a device preference; camera/card coordinates use existing storage.
+    function applyBoardView(view) {
+        const changed = currentViewMode !== view;
+        currentViewMode = view;
+        gridViewBtn.classList.toggle('active', view === 'grid');
+        canvasViewBtn.classList.toggle('active', view === 'canvas');
+        gridViewBtn.setAttribute('aria-pressed', String(view === 'grid'));
+        canvasViewBtn.setAttribute('aria-pressed', String(view === 'canvas'));
+        gridViewSection.classList.toggle('active', view === 'grid');
+        canvasViewSection.classList.toggle('active', view === 'canvas');
+        if (changed) {
+            if (view === 'grid') renderGrid();
+            else { renderCanvas(); updateCanvasTransform(); }
         }
-    });
-
-    canvasViewBtn.addEventListener('click', () => {
-        if (currentViewMode !== 'canvas') {
-            currentViewMode = 'canvas';
-            canvasViewBtn.classList.add('active');
-            gridViewBtn.classList.remove('active');
-            canvasViewSection.classList.add('active');
-            gridViewSection.classList.remove('active');
-            playSoundEffect('hover');
-            
-            // Сбрасываем и рендерим холст
-            renderCanvas();
-            updateCanvasTransform();
-        }
-    });
+    }
+    document.addEventListener('dreamboard:appearance', event => applyBoardView(event.detail.view));
+    function chooseBoardView(view) {
+        if (!DreamBoardAppearance.set({ view })) showToast('Вид изменён на эту сессию: браузер не разрешил сохранить настройку.', 'info');
+        playSoundEffect('hover');
+    }
+    gridViewBtn.addEventListener('click', () => chooseBoardView('grid'));
+    canvasViewBtn.addEventListener('click', () => chooseBoardView('canvas'));
 
     // Клик по фильтрам категорий в шапке
     filterButtons.forEach(btn => {
@@ -3604,4 +3599,5 @@ document.addEventListener('DOMContentLoaded', () => {
     // СТАРТ ПРИЛОЖЕНИЯ
     // ==========================================================================
     init();
+    applyBoardView(DreamBoardAppearance.get().view);
 });

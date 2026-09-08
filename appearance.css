@@ -1,0 +1,173 @@
+/* Appearance affects this device's view, independently of board data and motion settings. */
+:root {
+    --bg-dark: #090c16;
+    --bg-space: radial-gradient(ellipse at 25% 0%, #1b2140 0%, #090c16 75%);
+    --panel-glass: rgba(20, 27, 43, .92);
+    --panel-glass-border: #344057;
+    --text-secondary: #b2bfd3;
+    --text-muted: #99a8bf;
+    --view-surface: #151e30;
+    --view-input: #0e1728;
+    --view-border: #475973;
+    --view-accent: #9fdcd2;
+    --view-accent-fill: #28473f;
+    color-scheme: dark;
+}
+html[data-theme="paper"] {
+    --bg-dark: #f3efe7;
+    --bg-space: radial-gradient(ellipse at 25% 0%, #fffcf6, #efe9df);
+    --panel-glass: #fffdf8;
+    --panel-glass-border: #d7cebf;
+    --panel-glass-hover: #ebe5da;
+    --text-primary: #292c2b;
+    --text-secondary: #545d5b;
+    --text-muted: #626a67;
+    --shadow-glow: 0 5px 20px rgba(68, 57, 38, .08);
+    --view-surface: #fffdf8;
+    --view-input: #f7f3eb;
+    --view-border: #879183;
+    --view-accent: #21695b;
+    --view-accent-fill: #e1eee5;
+    --career-color: #086278;
+    --wealth-color: #216947;
+    --health-color: #aa2947;
+    --travel-color: #965205;
+    --relationships-color: #993458;
+    --growth-color: #66518e;
+    color-scheme: light;
+}
+.board-view-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 30px; flex-shrink: 0; border-bottom: 1px solid var(--panel-glass-border); }
+#board-appearance-summary { color: var(--text-secondary); font-size: 12px; }
+#board-appearance-open { color: var(--text-primary); min-height: 40px; padding: 8px 14px; border: 1px solid var(--view-border); border-radius: 10px; background: var(--view-surface); cursor: pointer; font: inherit; font-size: 13px; }
+.appearance-dialog { margin: auto; width: min(540px, calc(100% - 24px)); max-height: 90dvh; overflow-y: auto; padding: 24px; background: var(--view-surface); color: var(--text-primary); border: 1px solid var(--view-border); border-radius: 22px; box-shadow: 0 20px 80px #0005; }
+.appearance-dialog::backdrop { background: #080d1c88; }
+.appearance-dialog h2 { font-size: 24px; margin-bottom: 8px; }
+.appearance-intro, #board-appearance-status { font-size: 13px; line-height: 1.5; color: var(--text-secondary); margin: 8px 0 18px; }
+.appearance-dialog fieldset { border: 0; padding: 0; margin: 20px 0; }
+.appearance-dialog legend { font-size: 14px; font-weight: 600; margin-bottom: 10px; }
+.appearance-themes { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.appearance-theme { position: relative; cursor: pointer; }
+.appearance-theme input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.theme-tile { display: block; border: 2px solid var(--view-border); border-radius: 14px; padding: 10px; font-size: 14px; }
+.appearance-theme input:checked + .theme-tile { border-color: var(--view-accent); background: var(--view-accent-fill); }
+.appearance-theme input:checked + .theme-tile strong::after { content: ' ✓'; }
+.appearance-theme input:focus-visible + .theme-tile { outline: 3px solid var(--view-accent); outline-offset: 3px; }
+.theme-mini { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; border-radius: 8px; padding: 12px 8px; height: 65px; margin-bottom: 9px; }
+.theme-mini i { display: block; border-radius: 4px; }
+.theme-mini.cosmos { background: #0e1525; }
+.theme-mini.cosmos i { background: linear-gradient(#7ca5a8 60%, #293950 60%); }
+.theme-mini.paper { background: #eae4d8; }
+.theme-mini.paper i { background: linear-gradient(#97b7a6 60%, #fffdf8 60%); }
+.appearance-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 12px; }
+.appearance-fields label { font-size: 13px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 8px; }
+.appearance-dialog select { width: 100%; min-height: 44px; padding: 10px; border: 1px solid var(--view-border); border-radius: 10px; font: inherit; color: var(--text-primary); background: var(--view-input); }
+.appearance-dialog select:disabled { opacity: .5; }
+.appearance-dialog select:focus-visible, #board-appearance-open:focus-visible { outline: 2px solid var(--view-accent); outline-offset: 3px; }
+.appearance-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+#board-appearance-reset { margin-top: 18px; color: var(--text-secondary); text-decoration: underline; background: none; border: 0; min-height: 44px; cursor: pointer; }
+.appearance-dialog .btn.secondary { color: var(--text-primary); border: 1px solid var(--view-border); background: var(--view-input); }
+.appearance-dialog .btn.primary { background: var(--view-accent); color: #102b26; }
+html[data-theme="paper"] .appearance-dialog .btn.primary { color: white; }
+
+/* Card scale only changes the grid. Canvas geometry remains user content. */
+html[data-card-size] #dreams-masonry-grid { column-count: auto; column-width: 290px; }
+html[data-card-size="compact"] #dreams-masonry-grid { column-width: 220px; column-gap: 16px; }
+html[data-card-size="large"] #dreams-masonry-grid { column-width: 390px; }
+html[data-card-size="compact"] #dreams-masonry-grid .card-body { padding: 14px; }
+html[data-card-size="compact"] #dreams-masonry-grid .card-image-wrapper { height: 199px; }
+html[data-card-size="compact"] #dreams-masonry-grid .card-image { height: calc(100% - 44px); }
+html[data-card-size="compact"] #dreams-masonry-grid .card-quick-actions {
+    display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0;
+    width: 100%; height: 44px; left: 0; top: auto; bottom: 0; padding: 0;
+    opacity: 1; pointer-events: auto; transform: none; border-radius: 0;
+    background: var(--view-surface); border-top: 1px solid var(--panel-glass-border);
+}
+html[data-card-size="compact"] #dreams-masonry-grid .action-round-btn {
+    min-width: 0; width: 100%; height: 44px; border: 0; border-radius: 0;
+    background: transparent; color: var(--text-primary); box-shadow: none; transform: none;
+}
+html[data-card-size="compact"] #dreams-masonry-grid .action-round-btn:hover { background: var(--panel-glass-hover); }
+html[data-card-size="large"] #dreams-masonry-grid .card-image-wrapper { height: 245px; }
+html[data-card-details="simple"] .app-workspace .card-desc,
+html[data-card-details="simple"] .app-workspace .card-milestones { display: none; }
+html[data-image-fit="contain"] .app-workspace .card-image { object-fit: contain; transform: none; }
+html[data-image-fit="contain"] .app-workspace .card-image-overlay { background: none; }
+.image-library-item span { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; padding: 0; margin: 8px; min-height: 2.7em; max-height: 2.7em; }
+
+/* Shared readable surfaces, including lite mode. */
+.app-header { background: var(--view-surface); }
+.modal-content.glass-card { background: var(--view-surface); }
+.glass-card:hover { border-color: var(--view-border); box-shadow: var(--shadow-glow); }
+html[data-theme="paper"] .ambient-canvas { opacity: .1; }
+html[data-theme="paper"] .header-logo h1 { background: none; color: var(--text-primary); -webkit-text-fill-color: var(--text-primary); }
+html[data-theme="paper"] .icon-btn,
+html[data-theme="paper"] .toggle-btn,
+html[data-theme="paper"] .filter-btn,
+html[data-theme="paper"] .canvas-control-btn { color: var(--text-secondary); }
+html[data-theme="paper"] .view-toggle-group,
+html[data-theme="paper"] .category-filters,
+html[data-theme="paper"] .canvas-controls,
+html[data-theme="paper"] .canvas-tip,
+html[data-theme="paper"] .mobile-menu-toggle,
+html[data-theme="paper"] .storage-help,
+html[data-theme="paper"] .trash-item { background: var(--view-surface); color: var(--text-primary); border-color: var(--panel-glass-border); }
+html[data-theme="paper"] .toggle-btn.active,
+html[data-theme="paper"] .filter-btn.active { background: var(--view-accent-fill); color: var(--view-accent); }
+html[data-theme="paper"] .neon-btn,
+html[data-theme="paper"] .btn.secondary,
+html[data-theme="paper"] .simple-btn { color: var(--text-primary); border-color: var(--view-border); background: var(--view-input); }
+html[data-theme="paper"] .glow-btn { background: #286e60; color: white; box-shadow: 0 3px 12px #286e6022; }
+html[data-theme="paper"] .neon-btn:hover { background: #e4eee5; border-color: #286e60; box-shadow: none; }
+html[data-theme="paper"] .card-milestones { border-color: var(--panel-glass-border); }
+html[data-theme="paper"] .filter-btn .dot { box-shadow: none; }
+html[data-theme="paper"] .card-badge { background: #fffdf8ee; color: var(--text-primary); border: 1px solid #a5b09f; }
+html[data-theme="paper"] .milestone-item.checked .milestone-checkbox { color: white; }
+html[data-theme="paper"] .canvas-viewport { background: #ede8de; }
+html[data-theme="paper"] .canvas-grid-bg { background-image: radial-gradient(#627965 1px, transparent 1px); background-size: 40px 40px; opacity: .3; }
+html[data-theme="paper"] .toast { background: var(--view-surface); color: var(--text-primary); border-color: var(--view-border); }
+html[data-theme="paper"] .toast-action { color: var(--view-accent); }
+html[data-theme="paper"] #dream-modal .modal-content,
+html[data-theme="paper"] #dream-modal .modal-footer { background: var(--view-surface); border-color: var(--view-border); }
+html[data-theme="paper"] .modal-form input:not([type="hidden"]),
+html[data-theme="paper"] .modal-form textarea,
+html[data-theme="paper"] .modal-form select,
+html[data-theme="paper"] #dream-modal .modal-form input:not([type="hidden"]),
+html[data-theme="paper"] #dream-modal .modal-form textarea,
+html[data-theme="paper"] #dream-modal .modal-form select { background: var(--view-input); color: var(--text-primary); border-color: var(--view-border); }
+html[data-theme="paper"] #dream-modal input::placeholder,
+html[data-theme="paper"] #dream-modal textarea::placeholder { color: #69716a; }
+html[data-theme="paper"] #dream-modal .tab-btn { color: var(--text-secondary); }
+html[data-theme="paper"] #dream-modal .tab-btn.active { color: var(--view-accent); }
+html[data-theme="paper"] #dream-modal .tab-btn.active::after { background: var(--view-accent); }
+html[data-theme="paper"] .image-library-item { background: #eee9e0; color: var(--text-primary); }
+html[data-theme="paper"] .image-library-item[aria-pressed="true"] { border-color: var(--view-accent); }
+html[data-theme="paper"] .image-library-hint,
+html[data-theme="paper"] .photo-credit,
+html[data-theme="paper"] #photo-provider-credit a { color: #375e53; }
+html[data-theme="paper"] .upload-dropzone { background: #f1eee6; border-color: var(--view-border); }
+html[data-theme="paper"] .close-modal-btn { color: var(--text-secondary); }
+html[data-theme="paper"] #dream-modal button:focus-visible,
+html[data-theme="paper"] #dream-modal input:focus-visible,
+html[data-theme="paper"] #dream-modal select:focus-visible { outline-color: var(--view-accent); }
+/* The practice retains its calm dark backdrop and high-contrast breathing guide. */
+.manifest-overlay {
+    --text-primary: #f3f1f8; --text-secondary: #c8cedc; --text-muted: #a8b5c9;
+    --panel-glass: rgba(20, 27, 43, .92); --panel-glass-border: #344057;
+    color: var(--text-primary);
+}
+html[data-theme="paper"] .manifest-overlay .card-badge { background: #263647; color: #f3f1f8; border-color: #50687a; }
+html[data-theme="paper"] .app-workspace .card-year { background: #fffdf8e8; color: #343b36; }
+html[data-theme="paper"] .manifest-overlay .icon-btn { color: #f3f1f8; }
+@media (max-width: 600px) {
+    .board-view-bar { padding: 5px 14px; }
+    .appearance-dialog { padding: 20px 16px; }
+    html[data-card-size="compact"] #dreams-masonry-grid { column-width: auto; column-count: 2; column-gap: 10px; }
+    html[data-card-size="compact"] #dreams-masonry-grid .card-image-wrapper { height: 169px; }
+    html[data-card-size="compact"] #dreams-masonry-grid .card-body { padding: 10px; }
+    html[data-card-size="compact"] #dreams-masonry-grid .card-title { font-size: 15px; }
+    html[data-card-size="compact"] #dreams-masonry-grid .card-badge { max-width: calc(100% - 16px); left: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+}
+@media (max-width: 350px) {
+    .appearance-fields { grid-template-columns: 1fr; }
+    html[data-card-size="compact"] #dreams-masonry-grid { column-count: 1; }
+}
