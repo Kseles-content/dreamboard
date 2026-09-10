@@ -389,9 +389,9 @@ test('28. script order storage→backup→import→performance→trash→app и 
     assert.ok(fs.existsSync(path.join(__dirname, 'trash.js')));
 });
 
-test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v23)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v23';/.test(SW_JS),
-        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v23');
+test('29. CACHE_NAME строится runtime по scope (dreamboard-<scope>-v24)', () => {
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v24';/.test(SW_JS),
+        'CACHE_NAME изолирован по scope: dreamboard-<scope>-v24');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v13'/.test(SW_JS), 'статический dreamboard-v13 CACHE_NAME отсутствует');
     assert.ok(!/const CACHE_NAME = 'dreamboard-v14'/.test(SW_JS), 'статический dreamboard-v14 CACHE_NAME отсутствует');
 });

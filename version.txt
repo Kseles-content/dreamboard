@@ -1,4 +1,4 @@
-Build: 2026-09-10-v23-breath-rotation
-Expected cache: runtime scoped cache name dreamboard-<scope>-v23
-Production: dreamboard-dreamboard-v23
-Preview: dreamboard-dreamboard-v14-preview-v23
+Build: 2026-09-10-v24-project-info
+Expected cache: runtime scoped cache name dreamboard-<scope>-v24
+Production: dreamboard-dreamboard-v24
+Preview: dreamboard-dreamboard-v14-preview-v24
