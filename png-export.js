@@ -177,6 +177,7 @@
             const result = await api.render(dreams, appearance, readLocal, (n, total) => { status.textContent = `Готовим карточки: ${n} из ${total}`; }, format.value);
             url = URL.createObjectURL(result.blob); preview.src = url; preview.hidden = false;
             download.href = url; download.download = 'Kseles-DreamBoards-' + new Date().toISOString().slice(0, 10) + '.png'; download.hidden = false;
+            try { root.DreamBoardAnalytics?.track('png_ready'); } catch (_) { /* Optional statistics. */ }
             status.textContent = `${result.width} × ${result.height} · PNG` + (result.missing ? ` · Фото недоступны: ${result.missing}. Они заменены подписью — проверьте предпросмотр.` : ' · Готово к сохранению');
         } catch (error) { status.textContent = error.message || 'Не удалось подготовить PNG. Попробуйте ещё раз.'; }
         finally { close.disabled = prepare.disabled = format.disabled = false; dialog.removeEventListener('cancel', prevent); }

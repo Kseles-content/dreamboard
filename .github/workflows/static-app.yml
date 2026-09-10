@@ -10,6 +10,9 @@ on:
       - 'version.txt'
       - 'manifest.json'
       - 'assets/**'
+      - 'about/**'
+      - 'welcome/**'
+      - 'infra/statistics/**'
       - '.github/workflows/static-app.yml'
 
 permissions:
@@ -30,3 +33,6 @@ jobs:
           node --check app.js
           node --check auth.js
           node --check service-worker.js
+          node --check analytics.js
+      - name: Check aggregate statistics and privacy
+        run: python3 -m unittest discover -s infra/statistics -p 'test_*.py'

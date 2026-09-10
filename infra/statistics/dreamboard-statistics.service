@@ -1,0 +1,20 @@
+[Unit]
+Description=DreamBoard aggregate statistics
+After=network.target
+
+[Service]
+DynamicUser=yes
+StateDirectory=dreamboard-statistics
+UMask=0077
+ExecStart=/usr/bin/python3 /opt/dreamboard-statistics/server.py
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+MemoryMax=96M
+CPUQuota=20%
+
+[Install]
+WantedBy=multi-user.target
