@@ -4,62 +4,66 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const vm = require('node:vm');
 const source = fs.readFileSync(require('node:path').join(__dirname, 'app.js'), 'utf8');
+const flush = () => new Promise(resolve => setImmediate(resolve));
 function harness() {
-    const oscillators = [], gains = [];
-    const context = {
+    const voices = [], gains = [];
+    let resolveFetch, fetches = 0;
+    const request = new Promise(resolve => { resolveFetch = resolve; });
+    const c = {
         isSoundOn: true, ambientSynth: null, document: { hidden: false },
-        breathCircle: { classList: { contains: name => name === context.phase } },
-        phase: 'inhale', initAudioContext() {},
+        breathCircle: { classList: { contains: name => name === c.phase } },
+        phase: 'inhale', initAudioContext() {}, showToast() {},
+        fetch() { fetches++; return request; },
+        audioToggleBtn: { click() { c.isSoundOn=false; c.stopManifestationMusic(); } },
         audioCtx: {
-            currentTime: 10, destination: {},
+            currentTime: 10, destination: {}, decodeAudioData: async () => ({ duration: 9 }),
             createGain() {
-                const node = { disconnected: false, connect() {}, disconnect() { this.disconnected = true; },
-                    gain: { value: 0, targets: [], setValueAtTime(v) { this.value=v; }, cancelAndHoldAtTime() {}, linearRampToValueAtTime(v,t) { this.targets.push([v,t]); } } };
+                const node = { disconnected: false, connect() {}, disconnect() { this.disconnected=true; },
+                    gain: { value: 0, targets: [], setValueAtTime(v) { this.value=v; }, cancelAndHoldAtTime() {}, cancelScheduledValues() {}, linearRampToValueAtTime(v,t) { this.targets.push([v,t]); } } };
                 gains.push(node); return node;
             },
-            createOscillator() {
-                const node = { frequency: {}, connect() {}, disconnect() {}, start() {}, stop(t) { this.stopAt=t; } };
-                oscillators.push(node); return node;
+            createBufferSource() {
+                const node = { connect() {}, disconnect() {}, start(t,offset) { this.offset=offset; }, stop(t) { this.stopAt=t; } };
+                voices.push(node); return node;
             }
         }
     };
-    vm.createContext(context);
-    vm.runInContext(source.slice(source.indexOf('    function startManifestationMusic()'),source.indexOf('    function setupAudioToggle()')),context);
-    return { context, oscillators, gains };
+    vm.createContext(c);
+    vm.runInContext(source.slice(source.indexOf('    let meditationBellBufferPromise'), source.indexOf('    function setupAudioToggle()')),c);
+    return { c, voices, gains, fetches: () => fetches,
+        loaded: () => resolveFetch({ ok:true, arrayBuffer:async () => new ArrayBuffer(8) }),
+        failed: () => resolveFetch({ ok:false }) };
 }
-test('дыхательный звук: четыре синуса, громкость следует вдоху и выдоху', () => {
-    const {context:c,oscillators,gains}=harness();
-    c.startManifestationMusic();
-    assert.deepEqual(oscillators.map(o=>o.frequency.value),[130.81,261.63,329.63,392]);
-    assert.ok(oscillators.every(o=>o.type==='sine'));
-    assert.deepEqual(gains[0].gain.targets.at(-1),[0.65,14]);
-    c.phase='exhale'; c.updateBreathingSound();
-    assert.deepEqual(gains[0].gain.targets.at(-1),[0.20,14]);
+test('selected bell plays on inhale/exhale, not hold or duplicate updates', async () => {
+    const h=harness(), c=h.c;
+    c.startManifestationMusic(); h.loaded(); await flush();
+    assert.equal(h.voices.length,1); assert.equal(h.voices[0].offset,.25);
+    c.updateBreathingSound(); c.phase='hold'; c.updateBreathingSound(); assert.equal(h.voices.length,1);
+    c.phase='exhale'; c.updateBreathingSound(); assert.equal(h.voices.length,2); assert.equal(h.gains.at(-1).gain.value,.8);
 });
-test('mute и скрытая вкладка не создают звук; повторный start не дублирует осцилляторы', () => {
-    const {context:c,oscillators}=harness();
-    c.isSoundOn=false; c.startManifestationMusic(); assert.equal(oscillators.length,0);
-    c.isSoundOn=true; c.document.hidden=true; c.startManifestationMusic(); assert.equal(oscillators.length,0);
-    c.document.hidden=false; c.startManifestationMusic(); c.startManifestationMusic(); assert.equal(oscillators.length,4);
+test('mute/hidden suppress loading; stop during download prevents delayed playback', async () => {
+    const h=harness(), c=h.c;
+    c.isSoundOn=false; c.startManifestationMusic(); c.isSoundOn=true; c.document.hidden=true; c.startManifestationMusic();
+    assert.equal(h.fetches(),0);
+    c.document.hidden=false; c.startManifestationMusic(); c.stopManifestationMusic(); h.loaded(); await flush();
+    assert.equal(h.voices.length,0); assert.equal(c.ambientSynth,null);
 });
-test('быстрое выключение и включение: завершение старого звука не останавливает новый', () => {
-    const {context:c,oscillators,gains}=harness();
-    c.startManifestationMusic(); c.stopManifestationMusic();
-    assert.equal(c.ambientSynth,null);
-    assert.ok(oscillators.every(o=>o.stopAt===10.3));
-    c.startManifestationMusic(); const current=c.ambientSynth;
-    oscillators[0].onended();
-    assert.equal(c.ambientSynth,current);
-    assert.ok(gains[0].disconnected);
-    assert.ok(oscillators.slice(4).every(o=>o.stopAt===undefined));
+test('rapid restart reuses buffer; old ending cannot stop the new sound', async () => {
+    const h=harness(), c=h.c;
+    c.startManifestationMusic(); h.loaded(); await flush(); c.stopManifestationMusic();
+    assert.equal(h.voices[0].stopAt,10.3);
+    c.startManifestationMusic(); await flush(); const current=c.ambientSynth; h.voices[0].onended();
+    assert.equal(c.ambientSynth,current); assert.ok(h.gains[0].disconnected);
+    assert.equal(h.voices[1].stopAt,undefined); assert.equal(h.fetches(),1);
 });
-test('старый браузер без cancelAndHoldAtTime сохраняет текущую громкость', () => {
-    const {context:c,gains}=harness();
-    c.startManifestationMusic();
-    const param=gains[0].gain;
-    delete param.cancelAndHoldAtTime;
-    let cancelled=false; param.cancelScheduledValues=()=>{cancelled=true;}; param.value=.3;
-    c.phase='exhale'; c.updateBreathingSound();
-    assert.ok(cancelled); assert.equal(param.value,.3);
-    c.stopManifestationMusic(); assert.equal(c.ambientSynth,null);
+test('download failure resets the sound control', async () => {
+    const h=harness(), c=h.c;
+    c.startManifestationMusic(); h.failed(); await flush();
+    assert.equal(c.ambientSynth,null); assert.equal(c.isSoundOn,false); assert.equal(h.voices.length,0);
+});
+test('older audio engines fade out and release voices', async () => {
+    const h=harness(), c=h.c;
+    c.startManifestationMusic(); h.loaded(); await flush(); delete h.gains[0].gain.cancelAndHoldAtTime;
+    c.stopManifestationMusic(); assert.deepEqual(h.gains[0].gain.targets.at(-1),[0,10.25]);
+    h.voices[0].onended(); assert.ok(h.gains[0].disconnected);
 });
