@@ -1211,62 +1211,68 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Мягкий медитативный колокольчик: основной тон и тихие обертоны.
-    // Верхние обертоны затухают раньше, оставляя спокойное длинное послезвучие.
+    // Точный образец 01, выбранный пользователем. Декодируем один раз,
+    // файл хранится в офлайн-кэше вместе с приложением.
+    let meditationBellBufferPromise = null;
     function startManifestationMusic() {
         if (!isSoundOn || document.hidden || ambientSynth) return;
         initAudioContext();
         if (!audioCtx) return;
         const now = audioCtx.currentTime;
         const masterGain = audioCtx.createGain();
+        masterGain.gain.value = 0.0001;
         masterGain.gain.setValueAtTime(0.0001, now);
-        masterGain.gain.linearRampToValueAtTime(0.75, now + 0.2);
+        masterGain.gain.linearRampToValueAtTime(0.7, now + 0.025);
         masterGain.connect(audioCtx.destination);
-        const oscillators = [];
-        const gains = [];
-        [261.63, 523.26, 784.89, 1308.15].forEach(freq => {
-            const osc = audioCtx.createOscillator();
-            const gain = audioCtx.createGain();
-            osc.type = 'sine';
-            osc.frequency.value = freq;
-            gain.gain.value = 0.0001;
-            gain.gain.setValueAtTime(0.0001, now);
-            osc.connect(gain);
-            gain.connect(masterGain);
-            osc.start(now);
-            oscillators.push(osc);
-            gains.push(gain);
+        const synth = { masterGain, voices: new Set(), buffer: null, lastPhase: null };
+        ambientSynth = synth;
+        if (!meditationBellBufferPromise) {
+            meditationBellBufferPromise = fetch('assets/audio/meditation-bell-01.mp3')
+                .then(response => {
+                    if (!response.ok) throw new Error('Bell unavailable');
+                    return response.arrayBuffer();
+                })
+                .then(bytes => audioCtx.decodeAudioData(bytes))
+                .catch(error => { meditationBellBufferPromise = null; throw error; });
+        }
+        meditationBellBufferPromise.then(buffer => {
+            if (ambientSynth !== synth || !isSoundOn || document.hidden) return;
+            synth.buffer = buffer;
+            updateBreathingSound(true);
+        }).catch(() => {
+            if (ambientSynth !== synth) return;
+            if (isSoundOn) audioToggleBtn.click();
+            else stopManifestationMusic();
+            showToast('Не удалось загрузить колокольчик. Попробуйте включить звук ещё раз.', 'info');
         });
-        ambientSynth = { oscillators, gains, masterGain };
-        updateBreathingSound(true);
     }
 
     function updateBreathingSound(force = false) {
-        if (!isSoundOn || !ambientSynth || !audioCtx || document.hidden) return;
+        const synth = ambientSynth;
+        if (!isSoundOn || !synth || !synth.buffer || !audioCtx || document.hidden) return;
         const phase = breathCircle.classList.contains('inhale') ? 'inhale'
             : breathCircle.classList.contains('exhale') ? 'exhale' : 'rest';
-        if (!force && ambientSynth.lastPhase === phase) return;
-        ambientSynth.lastPhase = phase;
-        // На задержках колокольчик свободно затухает, новый звук не запускается.
+        if (!force && synth.lastPhase === phase) return;
+        synth.lastPhase = phase;
         if (!force && phase === 'rest') return;
-        const now = audioCtx.currentTime;
-        ambientSynth.gains.forEach((node, index) => {
-            const gain = node.gain;
-            const current = Math.max(0.0001, gain.value);
-            if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-            else gain.cancelScheduledValues(now);
-            // Явная точка начала не позволяет новой огибающей растянуться
-            // назад от конца предыдущего затухания и создать щелчок.
-            gain.setValueAtTime(current, now);
-            const softness = phase === 'exhale' ? 0.8 : 1;
-            gain.linearRampToValueAtTime([0.045, 0.012, 0.004, 0.0015][index] * softness, now + 0.18);
-            gain.exponentialRampToValueAtTime(0.0001, now + [7.5, 5.5, 3.5, 2.2][index]);
-        });
+        const source = audioCtx.createBufferSource();
+        const gain = audioCtx.createGain();
+        gain.gain.value = phase === 'exhale' ? 0.8 : 1;
+        source.buffer = synth.buffer;
+        source.connect(gain);
+        gain.connect(synth.masterGain);
+        synth.voices.add(source);
+        source.onended = () => {
+            source.disconnect();
+            gain.disconnect();
+            synth.voices.delete(source);
+            if (ambientSynth !== synth && synth.voices.size === 0) synth.masterGain.disconnect();
+        };
+        // В образце перед звоном есть 250 мс тишины; начинаем с самого звука.
+        source.start(audioCtx.currentTime, 0.25);
     }
 
     function stopManifestationMusic() {
-        // Захватываем именно старый синтезатор: быстрый повторный вход не
-        // должен остановить новый звук отложенным завершением старого.
         const synth = ambientSynth;
         ambientSynth = null;
         if (!synth || !audioCtx) return;
@@ -1274,17 +1280,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const gain = synth.masterGain.gain;
         const current = gain.value;
         if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-        else {
-            gain.cancelScheduledValues(now);
-        }
+        else gain.cancelScheduledValues(now);
         gain.setValueAtTime(current, now);
         gain.linearRampToValueAtTime(0, now + 0.25);
-        synth.oscillators.forEach(osc => osc.stop(now + 0.3));
-        synth.oscillators[0].onended = () => {
-            synth.oscillators.forEach(osc => osc.disconnect());
-            synth.gains.forEach(node => node.disconnect());
-            synth.masterGain.disconnect();
-        };
+        synth.voices.forEach(source => source.stop(now + 0.3));
+        if (synth.voices.size === 0) synth.masterGain.disconnect();
     }
 
     function setupAudioToggle() {

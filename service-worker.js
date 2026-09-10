@@ -20,7 +20,7 @@ var SCOPE_NAME = (function () {
     return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
 })();
 
-var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v25';
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v27';
 
 // Старые scoped-версии ТЕКУЩЕГО scope: dreamboard-<scope>-v<digits>
 var SCOPE_OLD_RE = new RegExp('^dreamboard-' + SCOPE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-v\\d+$');
@@ -49,6 +49,7 @@ const PRECACHE_URLS = [
     './auth.js',
     './png-export.js',
     './app.js',
+    './assets/audio/meditation-bell-01.mp3',
     './image-library.js',
     './sw-register.js',
     './manifest.json',

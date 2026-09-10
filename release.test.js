@@ -31,8 +31,8 @@ const IMPORT_JS = fs.readFileSync(path.join(__dirname, 'import.js'), 'utf8');
 
 const PROD_SCOPE = 'https://example.com/dreamboard/';
 const PREVIEW_SCOPE = 'https://example.com/dreamboard-v14-preview/';
-const PROD_CACHE = 'dreamboard-dreamboard-v25';
-const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v25';
+const PROD_CACHE = 'dreamboard-dreamboard-v27';
+const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v27';
 const LEGACY_V13 = 'dreamboard-v13';
 const OLD_PROD_SCOPED = 'dreamboard-dreamboard-v13';
 const OLD_PREVIEW_SCOPED = 'dreamboard-dreamboard-v14-preview-v13';
@@ -40,7 +40,7 @@ const OLD_PREVIEW_SCOPED = 'dreamboard-dreamboard-v14-preview-v13';
 const EXPECTED_PRECACHE = [
     './', './index.html', './style.css', './appearance.css', './appearance.js', './manifest-breath.css', './storage.js', './backup.js',
     './import.js', './performance.js', './trash.js', './config.js', './analytics.js', './about/', './welcome/landing.css',
-    './auth.js', './png-export.js', './app.js', './image-library.js', './sw-register.js', './manifest.json',
+    './auth.js', './png-export.js', './app.js', './assets/audio/meditation-bell-01.mp3', './image-library.js', './sw-register.js', './manifest.json',
     './assets/vendor/html2canvas-1.4.1.min.js',
     './assets/vendor/supabase-js-2.112.2.min.js',
     './assets/icons/icon-192.png', './assets/icons/icon-512.png',
@@ -118,15 +118,15 @@ function runActivate(sw) {
 // --- version.txt -----------------------------------------------------------
 
 test('1. version.txt: Stage 7B v15 identifier', () => {
-    assert.ok(/Build: 2026-09-10-v25-meditation-bell/.test(VERSION_TXT), 'Build = v15 Stage 7B');
+    assert.ok(/Build: 2026-09-10-v27-selected-bell/.test(VERSION_TXT), 'Build = v15 Stage 7B');
     assert.ok(!/2026-06-06-v13/.test(VERSION_TXT), 'нет старого v13 build identifier');
 });
 
 test('2. version.txt: Expected cache описывает scoped runtime-name, не один глобальный', () => {
     assert.ok(/Expected cache: runtime scoped cache name/.test(VERSION_TXT), 'описан runtime scoped cache');
-    assert.ok(/dreamboard-<scope>-v25/.test(VERSION_TXT), 'формула dreamboard-<scope>-v25');
-    assert.ok(/dreamboard-dreamboard-v25/.test(VERSION_TXT), 'пример production имени');
-    assert.ok(/dreamboard-dreamboard-v14-preview-v25/.test(VERSION_TXT), 'пример preview имени');
+    assert.ok(/dreamboard-<scope>-v27/.test(VERSION_TXT), 'формула dreamboard-<scope>-v27');
+    assert.ok(/dreamboard-dreamboard-v27/.test(VERSION_TXT), 'пример production имени');
+    assert.ok(/dreamboard-dreamboard-v14-preview-v27/.test(VERSION_TXT), 'пример preview имени');
     assert.ok(!/Expected cache: dreamboard-v14\s*$/.test(VERSION_TXT), 'не обещает один глобальный cache name');
 });
 
@@ -138,7 +138,7 @@ test('3. production scope: runtime cache name = dreamboard-dreamboard-v14', () =
     assert.ok(rt, 'SW вызвал __DB_SW_RUNTIME__');
     assert.strictEqual(rt.cacheName, PROD_CACHE, 'production cache name');
     assert.strictEqual(rt.scopeName, 'dreamboard', 'scope name нормализован');
-    assert.strictEqual(rt.precacheUrls.length, 34, '34 PRECACHE entries');
+    assert.strictEqual(rt.precacheUrls.length, 35, '35 PRECACHE entries');
 });
 
 test('4. preview scope: runtime cache name = dreamboard-dreamboard-v14-preview-v14', () => {
@@ -156,18 +156,18 @@ test('5. один source-файл вычисляет разные cache names (p
     assert.notStrictEqual(prod.cacheName, prev.cacheName, 'cache names изолированы по scope');
     assert.ok(prod.cacheName.startsWith('dreamboard-') && prev.cacheName.startsWith('dreamboard-'),
         'оба в namespace DreamBoard');
-    assert.ok(prod.cacheName.endsWith('-v25') && prev.cacheName.endsWith('-v25'), 'оба версии v15');
+    assert.ok(prod.cacheName.endsWith('-v27') && prev.cacheName.endsWith('-v27'), 'оба версии v15');
 });
 
 // --- install ---------------------------------------------------------------
 
-test('6. install (production) создаёт НОВЫЙ scoped cache со всеми 34 PRECACHE entries', async () => {
+test('6. install (production) создаёт НОВЫЙ scoped cache со всеми 35 PRECACHE entries', async () => {
     const sw = loadSW(PROD_SCOPE, [LEGACY_V13]);
     await runInstall(sw);
     assert.ok(sw.opened.includes(PROD_CACHE), 'caches.open(dreamboard-dreamboard-v14) вызван');
     const urls = sw.store.get(PROD_CACHE);
     assert.ok(urls, 'новый кэш создан');
-    assert.strictEqual(urls.size, 34, 'ровно 34 entries');
+    assert.strictEqual(urls.size, 35, 'ровно 35 entries');
     for (const u of EXPECTED_PRECACHE) assert.ok(urls.has(u), 'entry отсутствует: ' + u);
     assert.ok(sw.sandbox.__skipWaitingCalled, 'skipWaiting вызван');
     assert.ok(sw.store.has(LEGACY_V13), 'install не трогает legacy');
@@ -223,11 +223,11 @@ test('11. текущие кэши (production и preview) всегда сохр�
 
 // --- PRECACHE --------------------------------------------------------------
 
-test('12. PRECACHE_URLS содержит все 34 entries, все файлы существуют на диске', () => {
+test('12. PRECACHE_URLS содержит все 35 entries, все файлы существуют на диске', () => {
     const m = SW_JS.match(/const PRECACHE_URLS = \[([\s\S]*?)\];/);
     assert.ok(m, 'PRECACHE_URLS найден');
     const urls = Array.from(m[1].matchAll(/'([^']+)'/g), x => x[1]);
-    assert.strictEqual(urls.length, 34, 'ровно 34 entries');
+    assert.strictEqual(urls.length, 35, 'ровно 35 entries');
     assert.deepStrictEqual(urls, EXPECTED_PRECACHE, 'набор entries совпадает с ожидаемым');
     for (const u of urls) {
         const rel = u.replace(/^\.\//, '');
@@ -249,7 +249,7 @@ test('13. контракты не изменены: schemaVersion 2, backup form
 });
 
 test('14. SW: scope-изоляция реализована (SCOPE_NAME, SCOPE_OLD_RE, IS_PRODUCTION_SCOPE)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v25';/.test(SW_JS),
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v27';/.test(SW_JS),
         'CACHE_NAME строится из scope во время исполнения');
     assert.ok(/SCOPE_OLD_RE/.test(SW_JS) && /IS_PRODUCTION_SCOPE/.test(SW_JS) && /LEGACY_CACHE_RE/.test(SW_JS),
         'механика activate-фильтра на месте');
