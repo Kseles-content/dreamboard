@@ -14,7 +14,7 @@ function harness() {
             currentTime: 10, destination: {},
             createGain() {
                 const node = { disconnected: false, connect() {}, disconnect() { this.disconnected = true; },
-                    gain: { value: 0, targets: [], setValueAtTime(v) { this.value=v; }, cancelAndHoldAtTime() {}, linearRampToValueAtTime(v,t) { this.targets.push([v,t]); } } };
+                    gain: { value: 0, targets: [], setValueAtTime(v) { this.value=v; }, cancelAndHoldAtTime() {}, linearRampToValueAtTime(v,t) { this.targets.push([v,t]); }, exponentialRampToValueAtTime(v,t) { this.targets.push([v,t]); } } };
                 gains.push(node); return node;
             },
             createOscillator() {
@@ -27,14 +27,19 @@ function harness() {
     vm.runInContext(source.slice(source.indexOf('    function startManifestationMusic()'),source.indexOf('    function setupAudioToggle()')),context);
     return { context, oscillators, gains };
 }
-test('дыхательный звук: четыре синуса, громкость следует вдоху и выдоху', () => {
+test('колокольчик: мягкий вход, затухающие обертоны и более тихий выдох', () => {
     const {context:c,oscillators,gains}=harness();
     c.startManifestationMusic();
-    assert.deepEqual(oscillators.map(o=>o.frequency.value),[130.81,261.63,329.63,392]);
+    assert.deepEqual(oscillators.map(o=>o.frequency.value),[261.63,523.26,784.89,1308.15]);
     assert.ok(oscillators.every(o=>o.type==='sine'));
-    assert.deepEqual(gains[0].gain.targets.at(-1),[0.65,14]);
+    assert.deepEqual(gains[1].gain.targets,[[0.045,10.18],[0.0001,17.5]]);
+    assert.ok(gains[4].gain.targets.at(-1)[1] < gains[1].gain.targets.at(-1)[1]);
+    const count=gains[1].gain.targets.length;
+    c.updateBreathingSound(); assert.equal(gains[1].gain.targets.length,count);
+    c.phase='hold'; c.updateBreathingSound(); assert.equal(gains[1].gain.targets.length,count);
     c.phase='exhale'; c.updateBreathingSound();
-    assert.deepEqual(gains[0].gain.targets.at(-1),[0.20,14]);
+    assert.equal(gains[1].gain.targets.at(-2)[0],0.045*0.8);
+    assert.deepEqual(gains[1].gain.targets.at(-1),[0.0001,17.5]);
 });
 test('mute и скрытая вкладка не создают звук; повторный start не дублирует осцилляторы', () => {
     const {context:c,oscillators}=harness();
@@ -56,7 +61,7 @@ test('быстрое выключение и включение: заверше�
 test('старый браузер без cancelAndHoldAtTime сохраняет текущую громкость', () => {
     const {context:c,gains}=harness();
     c.startManifestationMusic();
-    const param=gains[0].gain;
+    const param=gains[1].gain;
     delete param.cancelAndHoldAtTime;
     let cancelled=false; param.cancelScheduledValues=()=>{cancelled=true;}; param.value=.3;
     c.phase='exhale'; c.updateBreathingSound();

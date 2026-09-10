@@ -1211,7 +1211,8 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Мягкое созвучие C–E–G: чистые синусы, без расстройки и резких переливов.
+    // Мягкий медитативный колокольчик: основной тон и тихие обертоны.
+    // Верхние обертоны затухают раньше, оставляя спокойное длинное послезвучие.
     function startManifestationMusic() {
         if (!isSoundOn || document.hidden || ambientSynth) return;
         initAudioContext();
@@ -1219,15 +1220,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const now = audioCtx.currentTime;
         const masterGain = audioCtx.createGain();
         masterGain.gain.setValueAtTime(0.0001, now);
+        masterGain.gain.linearRampToValueAtTime(0.75, now + 0.2);
         masterGain.connect(audioCtx.destination);
         const oscillators = [];
         const gains = [];
-        [130.81, 261.63, 329.63, 392.00].forEach((freq, idx) => {
+        [261.63, 523.26, 784.89, 1308.15].forEach(freq => {
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
             osc.type = 'sine';
             osc.frequency.value = freq;
-            gain.gain.value = [0.032, 0.020, 0.016, 0.014][idx];
+            gain.gain.value = 0.0001;
+            gain.gain.setValueAtTime(0.0001, now);
             osc.connect(gain);
             gain.connect(masterGain);
             osc.start(now);
@@ -1235,22 +1238,30 @@ document.addEventListener('DOMContentLoaded', () => {
             gains.push(gain);
         });
         ambientSynth = { oscillators, gains, masterGain };
-        updateBreathingSound();
+        updateBreathingSound(true);
     }
 
-    function updateBreathingSound() {
+    function updateBreathingSound(force = false) {
         if (!isSoundOn || !ambientSynth || !audioCtx || document.hidden) return;
+        const phase = breathCircle.classList.contains('inhale') ? 'inhale'
+            : breathCircle.classList.contains('exhale') ? 'exhale' : 'rest';
+        if (!force && ambientSynth.lastPhase === phase) return;
+        ambientSynth.lastPhase = phase;
+        // На задержках колокольчик свободно затухает, новый звук не запускается.
+        if (!force && phase === 'rest') return;
         const now = audioCtx.currentTime;
-        const gain = ambientSynth.masterGain.gain;
-        // Сохраняем текущую громкость при смене фазы, чтобы не было щелчка.
-        if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
-        else {
-            const current = gain.value;
-            gain.cancelScheduledValues(now);
+        ambientSynth.gains.forEach((node, index) => {
+            const gain = node.gain;
+            const current = Math.max(0.0001, gain.value);
+            if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
+            else gain.cancelScheduledValues(now);
+            // Явная точка начала не позволяет новой огибающей растянуться
+            // назад от конца предыдущего затухания и создать щелчок.
             gain.setValueAtTime(current, now);
-        }
-        const expanded = breathCircle.classList.contains('inhale') || breathCircle.classList.contains('hold');
-        gain.linearRampToValueAtTime(expanded ? 0.65 : 0.20, now + 4);
+            const softness = phase === 'exhale' ? 0.8 : 1;
+            gain.linearRampToValueAtTime([0.045, 0.012, 0.004, 0.0015][index] * softness, now + 0.18);
+            gain.exponentialRampToValueAtTime(0.0001, now + [7.5, 5.5, 3.5, 2.2][index]);
+        });
     }
 
     function stopManifestationMusic() {
@@ -1261,12 +1272,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!synth || !audioCtx) return;
         const now = audioCtx.currentTime;
         const gain = synth.masterGain.gain;
+        const current = gain.value;
         if (typeof gain.cancelAndHoldAtTime === 'function') gain.cancelAndHoldAtTime(now);
         else {
-            const current = gain.value;
             gain.cancelScheduledValues(now);
-            gain.setValueAtTime(current, now);
         }
+        gain.setValueAtTime(current, now);
         gain.linearRampToValueAtTime(0, now + 0.25);
         synth.oscillators.forEach(osc => osc.stop(now + 0.3));
         synth.oscillators[0].onended = () => {
