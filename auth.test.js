@@ -112,7 +112,7 @@ test('10. Stage 7B resources are all precached under scoped v15 cache', () => {
         assert.ok(SW.includes("'./" + file + "'"), file + ' is precached');
         assert.ok(fs.existsSync(path.join(__dirname, file)), file + ' exists');
     }
-    assert.match(SW, /CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v27'/);
+    assert.match(SW, /CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v28'/);
 });
 
 test('11. Turnstile loads only through the fixed official endpoint and writes token via callback', async () => {
