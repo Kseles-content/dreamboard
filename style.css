@@ -3314,5 +3314,5 @@ html.performance-lite .manifest-slide.active .manifest-slide-img {
 #photo-search-more { width: 100%; margin-top: 12px; min-height: 44px; }
 #photo-search-more[hidden], #photo-provider-credit[hidden] { display: none; }
 .image-library-item { width: 100%; }
-.project-footer { padding: 20px 12px; text-align: center; color: var(--text-secondary, #aaa); line-height: 1.8; }
-.project-footer a { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.project-info { margin-top: 12px; }
+.project-info a { color: inherit; text-decoration: underline; text-underline-offset: 3px; display: inline-block; padding: 10px 0; }
