@@ -24,7 +24,7 @@
     height: 48px;
     background: none;
     box-shadow: none;
-    transform: scale(.64);
+    transform: scale(.64) rotate(0deg);
     animation: none;
 }
 .breath-circle-inner svg { display: block; width: 100%; height: 100%; }
@@ -42,8 +42,8 @@
 .breath-subtext { margin: 3px 0 0; color: #c9bfd9; }
 #manifest-audio-btn[aria-pressed="true"] .sound-muted-mark { display: none; }
 #manifest-audio-btn[aria-pressed="true"] { color: #b4f5ee; border-color: #b4f5ee; }
-@keyframes breath-expand { from { transform: scale(.64); } to { transform: scale(1); } }
-@keyframes breath-contract { from { transform: scale(1); } to { transform: scale(.64); } }
+@keyframes breath-expand { from { transform: scale(.64) rotate(0deg); } to { transform: scale(1) rotate(180deg); } }
+@keyframes breath-contract { from { transform: scale(1) rotate(180deg); } to { transform: scale(.64) rotate(0deg); } }
 /* Исключение из lite только для полезной дыхательной подсказки. */
 @media (prefers-reduced-motion: no-preference) {
     .breath-circle-inner.inhale,
@@ -52,7 +52,7 @@
     }
     .breath-circle-inner.hold,
     html.performance-lite .breath-circle-inner.hold {
-        transform: scale(1);
+        transform: scale(1) rotate(180deg);
         box-shadow: none;
     }
     .breath-circle-inner.exhale,
