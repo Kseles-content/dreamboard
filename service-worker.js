@@ -20,7 +20,9 @@ var SCOPE_NAME = (function () {
     return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
 })();
 
-var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v28';
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v29';
+// Photo data survives application upgrades; production and preview stay isolated.
+var PHOTO_CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-photos-v1';
 
 // Старые scoped-версии ТЕКУЩЕГО scope: dreamboard-<scope>-v<digits>
 var SCOPE_OLD_RE = new RegExp('^dreamboard-' + SCOPE_NAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '-v\\d+$');
@@ -110,6 +112,41 @@ self.addEventListener('fetch', event => {
     const url = new URL(event.request.url);
     // Search results and limits are transient; do not persist query text in SW caches.
     if (url.hostname === 'kseles.ru' && url.pathname === '/dreamboard-api/photos') return;
+
+    // A normal <img> request is no-cors: its opaque response cannot be read
+    // by the PNG exporter. Fetch Pexels with CORS while displaying the photo,
+    // then share the readable response with subsequent display/export requests.
+    if (url.origin === 'https://images.pexels.com') {
+        event.respondWith((async () => {
+            let cache;
+            try { cache = await caches.open(PHOTO_CACHE_NAME); } catch (_) { /* Storage may be unavailable. */ }
+            if (cache) {
+                try {
+                    const cached = await cache.match(event.request.url);
+                    if (cached && cached.status === 200 && cached.type !== 'opaque') return cached;
+                } catch (_) { /* Continue with the network. */ }
+            }
+            try {
+                const request = new Request(event.request, { mode: 'cors', credentials: 'omit' });
+                let response;
+                try { response = await fetch(request); }
+                catch (_) {
+                    // A previous no-cors HTTP-cache entry can fail a CORS read.
+                    response = await fetch(new Request(request, { cache: 'reload' }));
+                }
+                if (cache && response.status === 200 && response.type !== 'opaque') {
+                    try { await cache.put(event.request.url, response.clone()); } catch (_) { /* Quota failure must not hide the photo. */ }
+                }
+                return response;
+            } catch (error) {
+                // Preserve ordinary display if the provider temporarily disallows
+                // CORS. Never return opaque bytes to the PNG exporter's CORS request.
+                if (event.request.mode === 'no-cors') return fetch(event.request);
+                throw error;
+            }
+        })());
+        return;
+    }
 
     // Для навигационных запросов и локальных файлов — Cache First
     if (url.origin === location.origin) {
