@@ -31,8 +31,8 @@ const IMPORT_JS = fs.readFileSync(path.join(__dirname, 'import.js'), 'utf8');
 
 const PROD_SCOPE = 'https://example.com/dreamboard/';
 const PREVIEW_SCOPE = 'https://example.com/dreamboard-v14-preview/';
-const PROD_CACHE = 'dreamboard-dreamboard-v30';
-const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v30';
+const PROD_CACHE = 'dreamboard-dreamboard-v31';
+const PREVIEW_CACHE = 'dreamboard-dreamboard-v14-preview-v31';
 const LEGACY_V13 = 'dreamboard-v13';
 const OLD_PROD_SCOPED = 'dreamboard-dreamboard-v13';
 const OLD_PREVIEW_SCOPED = 'dreamboard-dreamboard-v14-preview-v13';
@@ -118,15 +118,15 @@ function runActivate(sw) {
 // --- version.txt -----------------------------------------------------------
 
 test('1. version.txt: Stage 7B v15 identifier', () => {
-    assert.ok(/Build: 2026-09-13-v30-custom-domain/.test(VERSION_TXT), 'Build = v15 Stage 7B');
+    assert.ok(/Build: 2026-09-13-v31-telegram-install/.test(VERSION_TXT), 'Build = v15 Stage 7B');
     assert.ok(!/2026-06-06-v13/.test(VERSION_TXT), 'нет старого v13 build identifier');
 });
 
 test('2. version.txt: Expected cache описывает scoped runtime-name, не один глобальный', () => {
     assert.ok(/Expected cache: runtime scoped cache name/.test(VERSION_TXT), 'описан runtime scoped cache');
-    assert.ok(/dreamboard-<scope>-v30/.test(VERSION_TXT), 'формула dreamboard-<scope>-v30');
-    assert.ok(/dreamboard-dreamboard-v30/.test(VERSION_TXT), 'пример production имени');
-    assert.ok(/dreamboard-dreamboard-v14-preview-v30/.test(VERSION_TXT), 'пример preview имени');
+    assert.ok(/dreamboard-<scope>-v31/.test(VERSION_TXT), 'формула dreamboard-<scope>-v31');
+    assert.ok(/dreamboard-dreamboard-v31/.test(VERSION_TXT), 'пример production имени');
+    assert.ok(/dreamboard-dreamboard-v14-preview-v31/.test(VERSION_TXT), 'пример preview имени');
     assert.ok(!/Expected cache: dreamboard-v14\s*$/.test(VERSION_TXT), 'не обещает один глобальный cache name');
 });
 
@@ -156,7 +156,7 @@ test('5. один source-файл вычисляет разные cache names (p
     assert.notStrictEqual(prod.cacheName, prev.cacheName, 'cache names изолированы по scope');
     assert.ok(prod.cacheName.startsWith('dreamboard-') && prev.cacheName.startsWith('dreamboard-'),
         'оба в namespace DreamBoard');
-    assert.ok(prod.cacheName.endsWith('-v30') && prev.cacheName.endsWith('-v30'), 'оба версии v15');
+    assert.ok(prod.cacheName.endsWith('-v31') && prev.cacheName.endsWith('-v31'), 'оба версии v15');
 });
 
 // --- install ---------------------------------------------------------------
@@ -249,7 +249,7 @@ test('13. контракты не изменены: schemaVersion 2, backup form
 });
 
 test('14. SW: scope-изоляция реализована (SCOPE_NAME, SCOPE_OLD_RE, IS_PRODUCTION_SCOPE)', () => {
-    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v30';/.test(SW_JS),
+    assert.ok(/var CACHE_NAME = 'dreamboard-' \+ SCOPE_NAME \+ '-v31';/.test(SW_JS),
         'CACHE_NAME строится из scope во время исполнения');
     assert.ok(/SCOPE_OLD_RE/.test(SW_JS) && /IS_PRODUCTION_SCOPE/.test(SW_JS) && /LEGACY_CACHE_RE/.test(SW_JS),
         'механика activate-фильтра на месте');
@@ -258,10 +258,10 @@ test('14. SW: scope-изоляция реализована (SCOPE_NAME, SCOPE_O
 });
 
 test('custom domain root scope installs and retains photo cache on upgrade', async () => {
-    const sw = loadSW('https://dreamboard.kseles.ru/', ['dreamboard-root-v29', 'dreamboard-root-photos-v1']);
+    const sw = loadSW('https://dreamboard.kseles.ru/', ['dreamboard-root-v30', 'dreamboard-root-photos-v1']);
     await runInstall(sw);
     await runActivate(sw);
-    assert.ok(sw.opened.includes('dreamboard-root-v30'));
-    assert.ok(sw.deleted.includes('dreamboard-root-v29'));
+    assert.ok(sw.opened.includes('dreamboard-root-v31'));
+    assert.ok(sw.deleted.includes('dreamboard-root-v30'));
     assert.ok(!sw.deleted.includes('dreamboard-root-photos-v1'));
 });

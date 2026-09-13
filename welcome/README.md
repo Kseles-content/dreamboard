@@ -11,7 +11,7 @@
 | Кликабельный баннер | `welcome/banner/index.html` |
 | Готовый PNG 4:5 | `welcome/banner-4x5.png` |
 
-Публичные версии: [лендинг](https://kseles-content.github.io/dreamboard/welcome/), [PNG](https://kseles-content.github.io/dreamboard/welcome/banner-4x5.png), [баннер со ссылкой](https://kseles-content.github.io/dreamboard/welcome/banner/).
+Публичные версии: [лендинг](https://dreamboard.kseles.ru/welcome/), [PNG](https://dreamboard.kseles.ru/welcome/banner-4x5.png), [баннер со ссылкой](https://dreamboard.kseles.ru/welcome/banner/).
 
 Кнопки лендинга ведут в приложение по относительному адресу, сохраняя preview или production. Баннер целиком является ссылкой на `../?utm_source=personal`. В PNG ссылки нет: при размещении назначьте переход на лендинг. Допустимые метки статистики: `?utm_source=telegram`, `personal` или `pilot`.
 
