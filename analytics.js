@@ -4,7 +4,8 @@
     const sources = new Set(['telegram', 'personal', 'pilot']);
     const source = new URLSearchParams(root.location.search).get('utm_source');
     const campaign = sources.has(source) ? source : 'unknown';
-    const production = root.location.hostname === 'kseles-content.github.io' && /^\/dreamboard\//.test(root.location.pathname);
+    const production = root.location.hostname === 'dreamboard.kseles.ru' ||
+        (root.location.hostname === 'kseles-content.github.io' && /^\/dreamboard\//.test(root.location.pathname));
     let pending = 0;
     function track(event) {
         try {

@@ -13,6 +13,7 @@ EVENTS = frozenset('landing_view app_open_click app_open install_help_open appin
 SOURCES = frozenset(('unknown', 'telegram', 'personal', 'pilot'))
 DB = os.environ.get('STATISTICS_DB', '/var/lib/dreamboard-statistics/counts.sqlite3')
 ORIGIN = 'https://kseles-content.github.io'
+ORIGINS = frozenset((ORIGIN, 'https://dreamboard.kseles.ru'))
 
 
 @contextmanager
@@ -50,8 +51,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def respond(self, status):
         self.send_response(status)
-        if self.headers.get('Origin') == ORIGIN:
-            self.send_header('Access-Control-Allow-Origin', ORIGIN)
+        if self.headers.get('Origin') in ORIGINS:
+            self.send_header('Access-Control-Allow-Origin', self.headers['Origin'])
         self.send_header('Vary', 'Origin')
         self.send_header('Cache-Control', 'no-store')
         self.send_header('Content-Length', '0')
@@ -60,7 +61,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path != '/events':
             return self.respond(404)
-        if self.headers.get('Origin') != ORIGIN:
+        if self.headers.get('Origin') not in ORIGINS:
             return self.respond(403)
         try:
             length = int(self.headers.get('Content-Length', '0'))

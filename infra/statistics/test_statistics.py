@@ -56,6 +56,8 @@ class StatisticsTests(unittest.TestCase):
         try:
             valid = json.dumps(dict(event='app_open', source='pilot', environment='preview'))
             cases = [('POST', '/events', valid, server.ORIGIN, 204),
+                     ('POST', '/events', valid, 'https://dreamboard.kseles.ru', 204),
+                     ('POST', '/events', valid, 'https://dreamboard.kseles.ru.attacker.example', 403),
                      ('POST', '/events', valid, 'https://attacker.example', 403),
                      ('POST', '/events', 'x' * 257, server.ORIGIN, 413),
                      ('POST', '/events', '{"dream":"private"}', server.ORIGIN, 400),
@@ -66,6 +68,8 @@ class StatisticsTests(unittest.TestCase):
                 conn.request(method, path, body=body, headers={'Origin': origin})
                 response = conn.getresponse()
                 self.assertEqual(response.status, expected)
+                self.assertEqual(response.getheader('Access-Control-Allow-Origin'),
+                                 origin if origin in server.ORIGINS else None)
                 response.read()
                 conn.close()
         finally:
