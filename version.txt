@@ -1,4 +1,6 @@
-Build: 2026-09-11-v29-pexels-export
-Expected cache: runtime scoped cache name dreamboard-<scope>-v29
-Production: dreamboard-dreamboard-v29
-Preview: dreamboard-dreamboard-v14-preview-v29
+Build: 2026-09-13-v30-custom-domain
+Expected cache: runtime scoped cache name dreamboard-<scope>-v30
+Production: dreamboard-dreamboard-v30
+Preview: dreamboard-dreamboard-v14-preview-v30
+Custom domain: https://dreamboard.kseles.ru/
+Custom domain cache: dreamboard-root-v30

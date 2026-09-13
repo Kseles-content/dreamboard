@@ -43,3 +43,10 @@ test('unknown campaigns discarded and preview isolated', () => {
     window.DreamBoardAnalytics.track('app_open');
     assert.deepEqual(JSON.parse(requests[0].body), { event: 'app_open', source: 'unknown', environment: 'preview' });
 });
+test('custom domain is production while similar hostnames remain preview', () => {
+    for (const [hostname, expected] of [['dreamboard.kseles.ru', 'production'], ['dreamboard.kseles.ru.attacker.example', 'preview']]) {
+        const { window, requests } = fixture({ location: { hostname, pathname: '/', search: '' } });
+        window.DreamBoardAnalytics.track('app_open');
+        assert.equal(JSON.parse(requests[0].body).environment, expected);
+    }
+});
