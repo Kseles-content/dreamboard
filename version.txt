@@ -1,6 +1,6 @@
-Build: 2026-09-13-v30-custom-domain
-Expected cache: runtime scoped cache name dreamboard-<scope>-v30
-Production: dreamboard-dreamboard-v30
-Preview: dreamboard-dreamboard-v14-preview-v30
+Build: 2026-09-13-v31-telegram-install
+Expected cache: runtime scoped cache name dreamboard-<scope>-v31
+Production: dreamboard-dreamboard-v31
+Preview: dreamboard-dreamboard-v14-preview-v31
 Custom domain: https://dreamboard.kseles.ru/
-Custom domain cache: dreamboard-root-v30
+Custom domain cache: dreamboard-root-v31

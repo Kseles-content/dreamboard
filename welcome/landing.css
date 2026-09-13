@@ -11,3 +11,5 @@
 @media(max-width:360px){.hero-art{height:510px}}
 @media(prefers-reduced-motion:reduce){:root{scroll-behavior:auto}*,*::before,*::after{animation:none!important;transition:none!important}.fish-wrap{transform:none}}
 .about-page main { max-width: 840px; line-height: 1.65; } .about-page p { margin: 1em 0; } .about-page h1 { margin: .5em 0; } .about-page h2 { margin-bottom: .5em; } .about-page a { text-decoration: underline; text-underline-offset: 3px; } .about-page input { width: 20px; height: 20px; vertical-align: middle; }
+
+.photo-card.work img { object-position: right center; }
