@@ -1,6 +1,6 @@
-Build: 2026-09-14-v33-existing-board-dome
-Expected cache: runtime scoped cache name dreamboard-<scope>-v33
-Production: dreamboard-dreamboard-v33
-Preview: dreamboard-dreamboard-v14-preview-v33
+Build: 2026-09-14-v34-desktop-manifest
+Expected cache: runtime scoped cache name dreamboard-<scope>-v34
+Production: dreamboard-dreamboard-v34
+Preview: dreamboard-dreamboard-v14-preview-v34
 Custom domain: https://dreamboard.kseles.ru/
-Custom domain cache: dreamboard-root-v33
+Custom domain cache: dreamboard-root-v34
