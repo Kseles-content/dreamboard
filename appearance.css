@@ -200,6 +200,10 @@ html[data-theme="paper"] .manifest-overlay .icon-btn { color: #f3f1f8; }
 }
 
 /* Expanded photos must keep their top and bottom edges in either orientation. */
+.dream-view-content { max-height: none; border-radius: 0; }
+.dream-view-content .modal-header { padding: 10px 20px; margin-bottom: 0; gap: 12px; }
+.dream-view-content .close-modal-btn { position: static; flex-shrink: 0; width: 44px; height: 44px; display: grid; place-items: center; }
+.dream-view-info .card-badge { position: static; align-self: flex-start; }
 #dream-view-image { object-fit: contain; height: auto; }
 @media (orientation: landscape) and (max-height: 600px) and (min-width: 601px) {
     .dream-view-content { max-width: 1200px; }
