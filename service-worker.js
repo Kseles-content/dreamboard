@@ -20,7 +20,7 @@ var SCOPE_NAME = (function () {
     return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
 })();
 
-var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v32';
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v33';
 // Photo data survives application upgrades; production and preview stay isolated.
 var PHOTO_CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-photos-v1';
 

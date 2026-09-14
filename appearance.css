@@ -185,5 +185,28 @@ html[data-theme="paper"] .manifest-overlay .icon-btn { color: #f3f1f8; }
 #png-export-dialog .btn.primary { background:var(--view-accent-fill); color:var(--text-primary); box-shadow:none; border:1px solid var(--view-border); }
 #png-export-dialog [hidden] { display:none; }
 
-/* Preserve the complete dome illustration in cards and the library. */
+/* Preserve the complete dome image in cards and the library. */
 .card-image[src$="/dream_dome.png"], .image-library-item img[src$="/dream_dome.png"] { object-fit: contain; }
+
+/* Desktop Chrome at 100%: wrap controls instead of clipping the last button. */
+.app-container { width: 100%; height: 100dvh; min-width: 0; }
+@media (min-width: 769px) and (min-height: 501px) {
+    .app-header { height: auto; min-height: 76px; flex-wrap: wrap; gap: 12px 20px; padding: 12px 24px; }
+    .header-logo { flex-shrink: 0; }
+    .category-filters { min-width: 0; max-width: 100%; flex-wrap: wrap; }
+    .header-actions { flex-wrap: wrap; min-width: 0; max-width: 100%; margin-left: auto; }
+    .header-actions > * { flex-shrink: 0; }
+    #start-manifest-btn { white-space: nowrap; }
+}
+
+/* Expanded photos must keep their top and bottom edges in either orientation. */
+#dream-view-image { object-fit: contain; height: auto; }
+@media (orientation: landscape) and (max-height: 600px) and (min-width: 601px) {
+    .dream-view-content { max-width: 1200px; }
+    .dream-view-body { display: grid; grid-template-columns: minmax(0, 3fr) minmax(180px, 2fr); overflow: hidden; }
+    .dream-view-image-wrap { min-height: 0; height: 100%; display: grid; place-items: center; }
+    #dream-view-image { height: 100%; max-height: 100%; min-height: 0; }
+    .dream-view-info { max-height: 100%; overflow-y: auto; }
+}
+.manifest-slide-img,
+.manifest-slide.active .manifest-slide-img { object-fit: contain; animation: none; transform: none; }
