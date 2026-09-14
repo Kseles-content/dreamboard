@@ -20,7 +20,7 @@ var SCOPE_NAME = (function () {
     return normalizeScopeName(location.pathname.replace(/[^/]*$/, ''));
 })();
 
-var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v31';
+var CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-v32';
 // Photo data survives application upgrades; production and preview stay isolated.
 var PHOTO_CACHE_NAME = 'dreamboard-' + SCOPE_NAME + '-photos-v1';
 
@@ -61,6 +61,7 @@ const PRECACHE_URLS = [
     './assets/icons/icon-512.png',
     './assets/images/dream_career.png',
     './assets/images/dream_travel.png',
+    './assets/images/dream_dome.png',
     './assets/images/cover-career.svg',
     './assets/images/cover-wealth.svg',
     './assets/images/cover-health.svg',

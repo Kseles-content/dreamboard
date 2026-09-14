@@ -68,6 +68,17 @@ document.addEventListener('DOMContentLoaded', () => {
             ],
             status: 'active',
             canvasPos: { x: 2550, y: 2750, width: 320, height: 440 }
+        },
+        {
+            id: 'default-dome',
+            title: 'Построить свой купольный дом',
+            category: 'wealth',
+            year: 2027,
+            desc: 'Необычное, светлое и уютное пространство для всей семьи, в гармонии с природой',
+            imageUrl: 'assets/images/dream_dome.png',
+            milestones: [],
+            status: 'active',
+            canvasPos: { x: 2950, y: 2800, width: 360, height: 420 }
         }
     ];
 

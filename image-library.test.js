@@ -29,8 +29,8 @@ test('category prioritizes suggestions without hiding other matches', () => {
     assert.ok(library.search('работа', 'local', 'travel').length > 0);
 });
 test('online collection is explicit, stable and has no fake search addresses', () => {
-    assert.equal(library.search('', 'all').length, 32);
-    assert.equal(new Set(library.items.map(item => item.url)).size, 32);
+    assert.equal(library.search('', 'all').length, 33);
+    assert.equal(new Set(library.items.map(item => item.url)).size, 33);
     for (const item of library.items.filter(item => !item.local)) {
         assert.match(item.url, /^https:\/\/images\.unsplash\.com\/photo-/);
     }

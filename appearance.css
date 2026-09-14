@@ -184,3 +184,6 @@ html[data-theme="paper"] .manifest-overlay .icon-btn { color: #f3f1f8; }
 .png-export-actions .btn { min-height:44px; text-decoration:none; }
 #png-export-dialog .btn.primary { background:var(--view-accent-fill); color:var(--text-primary); box-shadow:none; border:1px solid var(--view-border); }
 #png-export-dialog [hidden] { display:none; }
+
+/* Preserve the complete dome illustration in cards and the library. */
+.card-image[src$="/dream_dome.png"], .image-library-item img[src$="/dream_dome.png"] { object-fit: contain; }
