@@ -13,3 +13,6 @@
 .about-page main { max-width: 840px; line-height: 1.65; } .about-page p { margin: 1em 0; } .about-page h1 { margin: .5em 0; } .about-page h2 { margin-bottom: .5em; } .about-page a { text-decoration: underline; text-underline-offset: 3px; } .about-page input { width: 20px; height: 20px; vertical-align: middle; }
 
 .photo-card.work img { object-position: right center; }
+
+/* Approved dome card: show the full landscape image. */
+.hero-art .art-caption{top:-5px}.hero-art .note{bottom:-50px}.photo-card.ocean{width:76%;height:auto;top:40px}.photo-card.ocean img{height:auto;aspect-ratio:3/2;object-fit:contain}.demo-card img[src$="dream_dome.png"]{height:auto;aspect-ratio:3/2;object-fit:contain}@media(max-width:700px){.photo-card.ocean{width:83%;left:1%;top:68px}.photo-card.ocean h2{font-size:21px}.photo-card.work{top:270px;width:44%;height:235px}.hero-art{height:570px}.hero-art .note{bottom:-15px}}@media(max-width:360px){.photo-card.work{top:248px}.hero-art{height:540px}}

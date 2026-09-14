@@ -2,6 +2,13 @@
 (function (root) {
     'use strict';
     const items = [
+{
+  "url": "assets/images/dream_dome.png",
+  "title": "Построить свой купольный дом",
+  "category": "wealth",
+  "tags": "дом купол купольный строительство построить семья природа пространство dome home house",
+  "local": true
+},
   {
     "url": "assets/images/cover-career.svg",
     "title": "Новые горизонты",
