@@ -373,13 +373,6 @@
         state.appVersion = APP_VERSION;
         state.savedAt = typeof opts.savedAt === 'string' ? opts.savedAt : new Date().toISOString();
 
-        var payload;
-        try {
-            payload = JSON.stringify(state);
-        } catch (e) {
-            return { ok: false, error: 'serialize-failed', warnings: [] };
-        }
-
         var existing = safeGet(storage, KEY_PRIMARY);
         if (existing.unavailable) {
             // C: localStorage недоступен.
@@ -398,6 +391,24 @@
             if (ep.ok && isPlainObject(ep.value) && isFiniteNumber(ep.value.schemaVersion) && ep.value.schemaVersion > SCHEMA_VERSION) {
                 return { ok: false, error: 'newer-schema-protected', warnings: [] };
             }
+            if (ep.ok) {
+                var previous = normalizeState(ep.value);
+                if (previous.ok && previous.state.settings.domeExampleIntroduced === true) {
+                    state.settings.domeExampleIntroduced = true;
+                }
+            }
+        }
+
+        // The acknowledgement travels atomically with the board. Keep it when
+        // later saves delete the example, so updates never resurrect it.
+        if (state.dreams.some(function (dream) { return dream.id === 'default-dome'; })) {
+            state.settings.domeExampleIntroduced = true;
+        }
+        var payload;
+        try {
+            payload = JSON.stringify(state);
+        } catch (e) {
+            return { ok: false, error: 'serialize-failed', warnings: [] };
         }
 
         // 2. Recovery ← предыдущее корректное primary (байт-в-байт).
@@ -431,6 +442,33 @@
         return saveState(storage, createState(dreams), opts);
     }
 
+    // Update existing starter boards without replacing any saved dream. Fresh
+    // boards already receive the full seed; custom/empty boards stay untouched.
+    function upgradeDomeExample(storage, loaded, defaults, trash) {
+        var unchanged = { ok: true, changed: false, added: false };
+        if (!loaded || loaded.writeProtected || loaded.source === 'defaults' ||
+            !Array.isArray(loaded.dreams) || !trash || !trash.ok || trash.protected) return unchanged;
+        var state = loaded.state ? cloneValue(loaded.state) : createState(loaded.dreams);
+        if (state.settings.domeExampleIntroduced === true) return unchanged;
+        var hasDome = state.dreams.some(function (dream) { return dream.id === 'default-dome'; });
+        var hasStarter = state.dreams.some(function (dream) {
+            return ['default-career', 'default-travel', 'default-health', 'default-wealth'].indexOf(dream.id) !== -1;
+        });
+        var wasDeleted = (trash.items || []).some(function (item) {
+            return item.dream && item.dream.id === 'default-dome';
+        });
+        if (!hasDome && !hasStarter && !wasDeleted) return unchanged;
+        var added = !hasDome && hasStarter && !wasDeleted;
+        if (added) {
+            var dome = normalizeDreams(defaults).find(function (dream) { return dream.id === 'default-dome'; });
+            if (!dome) return unchanged;
+            state.dreams.push(dome);
+        }
+        state.settings.domeExampleIntroduced = true;
+        var result = saveState(storage, state, { writeProtected: loaded.writeProtected });
+        return { ok: result.ok, changed: result.ok, added: result.ok && added, error: result.error };
+    }
+
     // --- статусы хранения (UI) -------------------------------------------------
     // Чистая функция: вычисляет статус индикатора из результатов load/save.
     // Не обращается к DOM и не хранит состояние — тестируема в Node.
@@ -461,6 +499,7 @@
         load: load,
         save: save,
         saveState: saveState,
+        upgradeDomeExample: upgradeDomeExample,
         createState: createState,
         normalizeState: normalizeState,
         normalizeDreams: normalizeDreams,

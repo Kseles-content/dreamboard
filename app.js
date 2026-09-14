@@ -328,7 +328,17 @@ document.addEventListener('DOMContentLoaded', () => {
             };
             renderStorageStatus('unavailable');
         } else {
-            const storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
+            let storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
+            if (typeof DreamBoardStorage.upgradeDomeExample === 'function' && typeof DreamBoardTrash !== 'undefined') {
+                const update = DreamBoardStorage.upgradeDomeExample(
+                    appStorage, storageResult, DEFAULT_DREAMS, DreamBoardTrash.load(appStorage)
+                );
+                if (update.changed) {
+                    storageResult = DreamBoardStorage.load(appStorage, { defaultDreams: DEFAULT_DREAMS });
+                } else if (!update.ok) {
+                    showToast('Не удалось добавить новый пример. Ваши карточки сохранены; попробуйте обновить приложение позже.', 'info');
+                }
+            }
             appStorageState = storageResult;
 
             // Миграция/восстановление показываются один раз после первого
